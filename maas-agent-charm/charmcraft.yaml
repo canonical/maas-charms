@@ -1,0 +1,45 @@
+# This file configures Charmcraft.
+# See https://juju.is/docs/sdk/charmcraft-config for guidance.
+
+# (Required)
+name: maas-agent
+
+# (Required)
+type: charm
+
+# (Recommended)
+title: MAAS Agent
+
+# (Required)
+summary: Charmed MAAS Agent
+
+# (Required)
+description: |
+  The MAAS agent (previously maas-rackd) provides highly available, fast
+  and local broadcast services to the machines provisioned by MAAS. You
+  need a MAAS Agent attached to each fabric (which is a set of trunked
+  switches). You can attach multiple agents to these physical networks
+  for high availability, with secondary agents automatically stepping to
+  provide these services if the primary agent fails.
+
+# (Required for 'charm' type)
+bases:
+  - build-on:
+      - name: ubuntu
+        channel: "22.04"
+    run-on:
+      - name: ubuntu
+        channel: "22.04"
+
+requires:
+  maas-region:
+    interface: maas-controller
+    limit: 1
+
+config:
+  options:
+    channel:
+      description: |
+        Channel for the MAAS snap.
+      default: "3.4/stable"
+      type: string
