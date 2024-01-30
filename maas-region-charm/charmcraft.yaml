@@ -1,0 +1,78 @@
+# This file configures Charmcraft.
+# See https://juju.is/docs/sdk/charmcraft-config for guidance.
+
+# (Required)
+name: maas-region
+
+# (Required)
+type: charm
+
+# (Recommended)
+title: MAAS Region Controller
+
+# (Required)
+summary: Charmed MAAS region controller
+
+# (Required)
+description: |
+  MAAS runs a software-defined data centre - it turns a collection of physical
+  servers and switches into a bare metal cloud with full open source IP address
+  management (IPAM) and instant provisioning on demand.
+
+  The MAAS region controller (maas-regiond) is the REST API server for
+  all MAAS clients, and the postgres database that maintains machine
+  state for the entire data centre (or “region”). The region controller
+  an be scaled-out and highly available given the appropriate postgres
+  setup and additional API servers.
+
+
+# (Required for 'charm' type)
+bases:
+  - build-on:
+      - name: ubuntu
+        channel: "22.04"
+    run-on:
+      - name: ubuntu
+        channel: "22.04"
+
+requires:
+  maas-db:
+    interface: postgresql_client
+    limit: 1
+
+peers:
+  maas-region:
+    interface: maas_peers
+
+provides:
+  maas-controller:
+    interface: maas-controller
+
+actions:
+  create-admin:
+    description: Create a MAAS administrator account.
+    params:
+      username:
+        type: string
+        description: Username for the new account.
+      password:
+        type: string
+        description: A password for this user.
+      email:
+        type: string
+        description: Specifies the email of the admin user.
+      ssh-import:
+        type: string
+        description: Import SSH keys from Launchpad (lp:user-id) or Github (gh:user-id).
+    required:
+      - username
+      - password
+      - email
+
+config:
+  options:
+    channel:
+      description: |
+        Channel for the MAAS snap.
+      default: "3.4/stable"
+      type: string
