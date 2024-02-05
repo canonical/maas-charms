@@ -66,6 +66,19 @@ class MaasHelper:
         return maas.channel if maas.present else None
 
     @staticmethod
+    def get_maas_id() -> str | None:
+        """Get MAAS system ID
+
+        Returns:
+            str | None: system_id, or None if not present
+        """
+        try:
+            with MAAS_ID.open() as file:
+                return file.readline().strip()
+        except OSError:
+            return None
+
+    @staticmethod
     def is_running() -> bool:
         """Check if MAAS is running.
 

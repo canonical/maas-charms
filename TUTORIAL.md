@@ -149,15 +149,17 @@ devices:
 EOF
 ```
 
-## Bootstrap Juju controller
-
-Create first controller
+### Create VMs
 
 ```shell
-lxc launch ubuntu:jammy juju-01 -p juju-host
-lxc exec juju-01 -- cloud-init status --wait
-ssh-keyscan -H juju-01.juju-lab >> ~/.ssh/known_hosts
+for h in $(seq 1 3); do \
+    lxc launch ubuntu:jammy "maas-$h" --vm -p juju-host;\
+    lxc exec "maas-$h" -- cloud-init status --wait;\
+    ssh-keyscan -H "maas-$h.juju-lab" >> ~/.ssh/known_hosts;\
+done
 ```
+
+## Bootstrap Juju controller
 
 Bootstrap cloud
 
@@ -166,74 +168,41 @@ cat >| maas-bootstrap.yaml <<EOF
 clouds:
     maas-bootstrap:
         type: manual
-        endpoint: ubuntu@juju-01.juju-lab
+        endpoint: ubuntu@maas-1.juju-lab
         regions:
             default: {}
 EOF
 
 juju add-cloud maas-bootstrap ./maas-bootstrap.yaml
 juju bootstrap maas-bootstrap maas-controller
+juju add-machine -m controller ssh:ubuntu@maas-2.juju-lab
+juju add-machine -m controller ssh:ubuntu@maas-3.juju-lab
+juju enable-ha -n 3 --to 1,2
+juju controllers --refresh
 ```
 
 ## Install Postgres DB
 
-Create a machine for the DB.
-
-```shell
-lxc launch ubuntu:jammy pgdb -p juju-host
-lxc exec pgdb -- cloud-init status --wait
-ssh-keyscan -H pgdb.juju-lab >> ~/.ssh/known_hosts
-```
-
 Deploy DB using the charm
 
 ```shell
-juju add-model database
-juju add-machine -m database ssh:pgdb.juju-lab
-juju deploy -m database postgresql --channel 14/stable --to 0
-juju status --watch 10s -m database
-```
-
-Create an offer for this service
-
-```shell
-juju offer postgresql:database,certificates lab-db
-# ...available at "admin/database.lab-db"
+juju deploy -m controller postgresql --channel 14/stable --series jammy --to 0
+juju add-unit -m controller postgresql -n 2 --to 1,2
 ```
 
 ## Install MAAS
 
-Create some hosts
-
-```shell
-for h in $(seq 1 3); do \
-    lxc stop "maas-$h";\
-    lxc delete "maas-$h";\
-done
-
-for h in $(seq 1 3); do \
-    lxc launch ubuntu:jammy "maas-$h" -p juju-host;\
-    lxc exec "maas-$h" -- cloud-init status --wait;\
-    ssh-keyscan -H "maas-$h.juju-lab" >> ~/.ssh/known_hosts;\
-done
-```
-
 Deploy Region using the charm
 
 ```shell
-juju add-model maas-region
-juju add-machine ssh:maas-1.juju-lab
-juju deploy ./maas-region-charm/maas-region_ubuntu-22.04-amd64.charm --to 0
+juju deploy -m controller ./maas-region-charm/maas-region_ubuntu-22.04-amd64.charm --to 0
 juju status --watch 10s
-juju offer maas-region:maas-controller
-# admin/maas-region.maas-region
 ```
 
 Consume DB offer
 
 ```shell
-juju consume admin/database.lab-db
-juju integrate maas-region lab-db
+juju integrate maas-region postgresql
 ```
 
 Create an Admin user
@@ -245,11 +214,7 @@ juju run maas-region/0 create-admin username=maas password=maas email=maas@examp
 Deploy Rack using the charm
 
 ```shell
-juju add-model maas-rack
-juju add-machine -m maas-rack ssh:maas-2.juju-lab
-juju deploy -m maas-rack ./maas-agent-charm/maas-agent_ubuntu-22.04-amd64.charm --to 0
-juju status --watch 10s -m maas-rack
-
-juju consume admin/maas-region.maas-region
+juju deploy -m controller ./maas-agent-charm/maas-agent_ubuntu-22.04-amd64.charm --to 1
 juju integrate maas-agent maas-region
+juju add-unit -m controller maas-agent --to 2
 ```
