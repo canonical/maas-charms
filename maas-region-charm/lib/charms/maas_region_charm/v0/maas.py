@@ -3,11 +3,15 @@
 Allows MAAS Agents to enroll with Region controllers
 """
 
+import dataclasses
 import json
+import logging
+from collections import defaultdict
+from typing import Any, Dict, MutableMapping, Self
 
-from ops import CharmBase, RelationChangedEvent, RelationEvent
+import ops
 from ops.charm import CharmEvents
-from ops.framework import EventSource, Object
+from ops.framework import EventSource, Handle, Object
 
 # The unique Charmhub library identifier, never change it
 LIBID = "50055f0422414543ba96d10a9fb7d129"
@@ -19,143 +23,219 @@ LIBAPI = 0
 # to 0 if you are raising the major API version
 LIBPATCH = 1
 
+DEFAULT_ENDPOINT_NAME = "maas-region"
+BUILTIN_JUJU_KEYS = {"ingress-address", "private-address", "egress-subnets"}
+
+
+log = logging.getLogger("maas")
+
 
 class MaasInterfaceError(Exception):
     """Common ancestor for MAAS interface related exceptions."""
 
 
-class MaasRequiresEvent(RelationEvent):
-    """Base class for MAAS region events."""
+class MaasDatabag:
+    """Base class from MAAS databags."""
 
-    @property
-    def api_url(self) -> str | None:
-        """Returns the MAAS URL."""
-        if not self.relation.app:
-            return None
+    @classmethod
+    def load(cls, data: Dict[str, str]) -> Self:
+        """Load from dictionary."""
+        return cls(**{f: data[f] for f in data if f not in BUILTIN_JUJU_KEYS})
 
-        return self.relation.data[self.relation.app].get("api_url")
-
-    @property
-    def maas_secret(self) -> str | None:
-        """Returns the MAAS URL."""
-        if not self.relation.app:
-            return None
-
-        return self.relation.data[self.relation.app].get("maas_secret")
+    def dump(self, databag: MutableMapping[str, str] | None = None) -> None:
+        """Write the contents of this model to Juju databag."""
+        if databag is None:
+            databag = {}
+        else:
+            databag.clear()
+        for f in dataclasses.fields(self):
+            databag[f.name] = getattr(self, f.name)
 
 
-class MaasApiUrlChangedEvent(MaasRequiresEvent):
-    """MAAS API URL has changed."""
+@dataclasses.dataclass
+class MaasRequirerUnitData(MaasDatabag):
+    """The schema for the Requirer side of this relation."""
+
+    model: str
+    unit: str
+    system_id: str
 
 
-class MaasSecretChangedEvent(MaasRequiresEvent):
-    """MAAS secret has changed."""
+@dataclasses.dataclass
+class MaasProviderAppData(MaasDatabag):
+    """The schema for the Provider side of this relation."""
+
+    api_url: str
+    maas_secret: str
 
 
-class MaasRegionRequiresEvents(CharmEvents):
+class MaasConfigReceivedEvent(ops.EventBase):
+    """Event emitted when the Region has shared the secret."""
+
+    def __init__(
+        self,
+        handle: Handle,
+        config: Dict[str, Any],
+    ):
+        super().__init__(handle)
+        self.config = config
+
+    def snapshot(self) -> Dict[str, Any]:
+        """Serialize the event to disk.
+
+        Not meant to be called by charm code.
+        """
+        data = super().snapshot()
+        data.update({"config": json.dumps(self.config)})
+        return data
+
+    def restore(self, snapshot: Dict[str, Any]):
+        """Deserialize the event from disk.
+
+        Not meant to be called by charm code.
+        """
+        self.config = json.loads(snapshot["config"])
+
+
+class MaasAgentRemovedEvent(ops.EventBase):
+    """Event emitted when the relation with the "maas-region" provider has been severed.
+
+    Or when the relation data has been wiped.
+    """
+
+
+class MaasRegionRequirerEvents(CharmEvents):
     """MAAS events."""
 
-    api_url_changed = EventSource(MaasApiUrlChangedEvent)
-    maas_secret_changed = EventSource(MaasSecretChangedEvent)
+    config_received = EventSource(MaasConfigReceivedEvent)
+    created = EventSource(ops.RelationCreatedEvent)
+    removed = EventSource(MaasAgentRemovedEvent)
 
 
-class MaasAgentEnrollEvent(RelationEvent):
-    """Event emitted when an Agent request enrollment."""
-
-
-class MaasRegionProvidesEvents(CharmEvents):
-    """MAAS events."""
-
-    agent_enroll = EventSource(MaasAgentEnrollEvent)
-
-
-class MaasRegionRequires(Object):
+class MaasRegionRequirer(Object):
     """Requires-side of the MAAS relation."""
 
-    on = MaasRegionRequiresEvents()
+    on = MaasRegionRequirerEvents()
 
-    def __init__(self, charm: CharmBase, relation_name: str):
-        super().__init__(charm, relation_name)
-        self.charm = charm
-        self.local_app = charm.model.app
-        self.relation_name = relation_name
+    def __init__(
+        self,
+        charm: ops.CharmBase,
+        key: str | None = None,
+        endpoint: str = DEFAULT_ENDPOINT_NAME,
+    ):
+        super().__init__(charm, key or endpoint)
+        self._charm = charm
+
+        # filter out common unhappy relation states
+        relation = self.model.get_relation(endpoint)
+        self._relation: ops.Relation | None = (
+            relation if relation and relation.app and relation.data else None
+        )
+
         self.framework.observe(
-            charm.on[relation_name].relation_changed,
+            self._charm.on[endpoint].relation_changed,
             self._on_relation_changed,
         )
-
-    def _on_relation_changed(self, event: RelationChangedEvent) -> None:
-        old_data = json.loads(event.relation.data[self.local_app].get("data", "{}"))
-        new_data = (
-            {key: value for key, value in event.relation.data[event.app].items() if key != "data"}
-            if event.app
-            else {}
+        self.framework.observe(
+            self._charm.on[endpoint].relation_created,
+            self._on_relation_created,
+        )
+        self.framework.observe(
+            self._charm.on[endpoint].relation_broken,
+            self._on_relation_broken,
         )
 
-        # update data
-        event.relation.data[self.local_app].update({"data": json.dumps(new_data)})
+    def _on_relation_changed(self, event: ops.RelationChangedEvent) -> None:
+        if self._relation:
+            if new_config := self.get_enroll_data():
+                self.on.config_received.emit(new_config)
+            elif self.is_published():
+                self.on.removed.emit()
 
-        if old_data.get("api_url") != new_data.get("api_url"):
-            getattr(self.on, "api_url_changed").emit(
-                event.relation, app=event.app, unit=event.unit
-            )
-        elif old_data.get("maas_secret") != new_data.get("maas_secret"):
-            getattr(self.on, "maas_secret_changed").emit(
-                event.relation, app=event.app, unit=event.unit
-            )
+    def _on_relation_created(self, event: ops.RelationCreatedEvent) -> None:
+        self.on.created.emit(relation=event.relation, app=event.app, unit=event.unit)
 
-    def fetch_relation_data(self) -> dict[str, str]:
-        """Get data from relation databag.
+    def _on_relation_broken(self, _event: ops.RelationBrokenEvent) -> None:
+        self.on.removed.emit()
 
-        Returns:
-            dict[str, str]: stored data
-        """
-        relation = self.charm.model.get_relation(self.relation_name)
-        if not relation or not relation.app:
-            return {}
+    def get_enroll_data(self) -> MaasProviderAppData | None:
+        """Get enrollment data from databag."""
+        relation = self._relation
+        if relation:
+            assert relation.app is not None
+            try:
+                databag = relation.data[relation.app]
+                return MaasProviderAppData.load(databag)
+            except TypeError:
+                log.info(f"invalid databag contents: {databag}")
+        return None
 
-        if data := relation.data[relation.app]:
-            return {
-                "api_url": data.get("api_url"),
-                "maas_secret": data.get("maas_secret"),
-            }
-        return {}
+    def is_published(self) -> bool:
+        """Verify that the local side has done all they need to do."""
+        relation = self._relation
+        if not relation:
+            return False
+
+        unit_data = relation.data[self._charm.unit]
+        try:
+            MaasRequirerUnitData.load(unit_data)
+            return True
+        except TypeError:
+            return False
+
+    def publish_unit_system_id(self, id: str | None) -> None:
+        """Publish unit system_id in the databag."""
+        databag_model = MaasRequirerUnitData(
+            model=self._charm.model.name,
+            unit=self._charm.unit.name,
+            system_id=id,
+        )
+        if relation := self._relation:
+            unit_databag = relation.data[self.model.unit]
+            databag_model.dump(unit_databag)
 
 
-class MaasRegionProvides(Object):
+class MaasRegionProvider(Object):
     """Provides-side of the MAAS relation."""
 
-    on = MaasRegionProvidesEvents()
+    def __init__(
+        self,
+        charm: ops.CharmBase,
+        key: str | None = None,
+        endpoint: str = DEFAULT_ENDPOINT_NAME,
+    ):
+        super().__init__(charm, key or endpoint)
+        self._charm = charm
+        self._relations = self.model.relations[endpoint]
 
-    def __init__(self, charm: CharmBase, relation_name: str):
-        super().__init__(charm, relation_name)
-        self.charm = charm
-        self.local_app = charm.model.app
-        self.local_unit = charm.unit
-        self.relation_name = relation_name
-        self.framework.observe(
-            self.charm.on[relation_name].relation_changed, self._on_relation_changed
-        )
-
-    def _on_relation_changed(self, event: RelationChangedEvent) -> None:
-        if not self.local_unit.is_leader():
-            return
-        getattr(self.on, "agent_enroll").emit(event.relation, app=event.app, unit=event.unit)
-
-    def update_relation_data(self, relation_id: int, data: dict[str, str]) -> None:
-        """Update relation databag.
+    def publish_enroll_token(self, maas_api: str, maas_secret: str) -> None:
+        """Publish enrollment data.
 
         Args:
-            relation_id (int): relation ID
-            data (dict[str, str]): new data
+            maas_api (str): MAAS API URL
+            maas_secret (str): Enrollment token
         """
-        relation = self.charm.model.get_relation(self.relation_name, relation_id)
-        if not relation:
-            raise MaasInterfaceError(
-                "Relation %s %s couldn't be retrieved", self.relation_name, relation_id
-            )
+        local_app_databag = MaasProviderAppData(api_url=maas_api, maas_secret=maas_secret)
+        for relation in self._relations:
+            if relation:
+                local_app_databag.dump(relation.data[self.model.app])
 
-        if self.local_app not in relation.data or relation.data[self.local_app] is None:
-            return
+    def gather_rack_units(self) -> dict[str, str]:
+        """Get a map of Rack units.
 
-        relation.data[self.local_app].update(data)
+        Returns:
+            dict[str, str]: map of units
+        """
+        data = defaultdict(str)
+        for relation in self._relations:
+            if not relation.app:
+                continue
+            for worker_unit in relation.units:
+                try:
+                    worker_data = MaasRequirerUnitData.load(relation.data[worker_unit])
+                    sysid = worker_data.system_id
+                except TypeError as e:
+                    log.info(f"invalid databag contents: {e}")
+                    continue
+                data[worker_unit.name] = sysid
+        return data

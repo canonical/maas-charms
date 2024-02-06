@@ -8,6 +8,7 @@ import logging
 
 import ops
 from charms.maas_region_charm.v0 import maas
+from charms.operator_libs_linux.v2.snap import SnapError
 from helper import MaasHelper
 
 logger = logging.getLogger(__name__)
@@ -30,12 +31,11 @@ class MaasRackCharm(ops.CharmBase):
         # Charm lifecycle
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.start, self._on_start)
+        self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
 
         # MAAS relation
-        self.maas_region = maas.MaasRegionRequires(self)
-        self.framework.observe(
-            self.maas_region.on.config_received, self._on_maas_config_received
-        )
+        self.maas_region = maas.MaasRegionRequirer(self)
+        self.framework.observe(self.maas_region.on.config_received, self._on_maas_config_received)
         self.framework.observe(self.maas_region.on.created, self._on_maas_created)
         # self.framework.observe(self.maas_region.on.removed, self._on_maas_removed)
 
@@ -75,29 +75,13 @@ class MaasRackCharm(ops.CharmBase):
         """Handle the MAAS controller startup.
 
         Args:
-            event (ops.StartEvent): Event from ops framework
+            _event (ops.StartEvent): Event from ops framework
         """
-        if not self.maas_region.get_enroll_data():
-            self.unit.status = ops.WaitingStatus("Waiting for enrollment token")
-            return
-
-        if not self._setup_network():
-            self.unit.status = ops.ErrorStatus("Failed to open service ports")
-            return
-
+        self.unit.status = ops.MaintenanceStatus("starting...")
+        self._setup_network()
         MaasHelper.set_running(True)
-
         if workload_version := self.version:
             self.unit.set_workload_version(workload_version)
-        else:
-            self.unit.status = ops.ErrorStatus("MAAS not installed")
-            return
-
-        if not self._initialize_maas():
-            self.unit.status = ops.ErrorStatus("Failed to initialize MAAS")
-            return
-
-        self.unit.status = ops.ActiveStatus()
 
     def _on_install(self, _event: ops.InstallEvent) -> None:
         """Install MAAS in the machine.
@@ -108,30 +92,30 @@ class MaasRackCharm(ops.CharmBase):
         self.unit.status = ops.MaintenanceStatus("installing...")
         try:
             MaasHelper.install(MAAS_SNAP_CHANNEL)
-        except Exception as ex:
-            logger.error(str(ex))
-            self.unit.status = ops.ErrorStatus(
-                f"Failed to install MAAS snap from channel '{MAAS_SNAP_CHANNEL}'"
-            )
-            return
-        self.unit.status = ops.MaintenanceStatus("initializing...")
+        except SnapError:
+            logger.exception(f"failed to install MAAS snap from channel '{MAAS_SNAP_CHANNEL}'")
 
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
-        # FIXME
+        if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
+            e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
+        elif not self.unit.opened_ports().issuperset(MAAS_RACK_PORTS):
+            e.add_status(ops.BlockedStatus("Failed to open service ports"))
+        elif not self.maas_region.get_enroll_data():
+            e.add_status(ops.WaitingStatus("Waiting for enrollment token"))
+            # ops.ErrorStatus("Failed to initialize MAAS")
+        else:
+            self.unit.status = ops.ActiveStatus()
 
     def _on_maas_config_received(self, _event: maas.MaasConfigReceivedEvent) -> None:
         self.unit.status = ops.MaintenanceStatus("enrolling...")
-        if not self._initialize_maas():
-            self.unit.status = ops.ErrorStatus("Failed to initialize MAAS")
-            return
-        self.unit.status = ops.ActiveStatus()
+        self._initialize_maas()
 
     def _on_maas_created(self, event: ops.RelationCreatedEvent):
         if id := MaasHelper.get_maas_id():
             self.maas_region.publish_unit_system_id(id)
         else:
+            logger.info("MAAS ID not available yet, deferring")
             event.defer()
-
 
 
 if __name__ == "__main__":  # pragma: nocover

@@ -6,6 +6,7 @@ Allows MAAS Agents to enroll with Region controllers
 import dataclasses
 import json
 import logging
+from collections import defaultdict
 from typing import Any, Dict, MutableMapping, Self
 
 import ops
@@ -55,6 +56,8 @@ class MaasDatabag:
 class MaasRequirerUnitData(MaasDatabag):
     """The schema for the Requirer side of this relation."""
 
+    model: str
+    unit: str
     system_id: str
 
 
@@ -101,7 +104,7 @@ class MaasAgentRemovedEvent(ops.EventBase):
     """
 
 
-class MaasRegionRequiresEvents(CharmEvents):
+class MaasRegionRequirerEvents(CharmEvents):
     """MAAS events."""
 
     config_received = EventSource(MaasConfigReceivedEvent)
@@ -109,41 +112,41 @@ class MaasRegionRequiresEvents(CharmEvents):
     removed = EventSource(MaasAgentRemovedEvent)
 
 
-class MaasRegionRequires(Object):
+class MaasRegionRequirer(Object):
     """Requires-side of the MAAS relation."""
 
-    on = MaasRegionRequiresEvents()
+    on = MaasRegionRequirerEvents()
 
     def __init__(
         self,
         charm: ops.CharmBase,
-        key: str | None,
+        key: str | None = None,
         endpoint: str = DEFAULT_ENDPOINT_NAME,
     ):
         super().__init__(charm, key or endpoint)
-        self.charm = charm
+        self._charm = charm
 
         # filter out common unhappy relation states
         relation = self.model.get_relation(endpoint)
-        self.relation: ops.Relation | None = (
+        self._relation: ops.Relation | None = (
             relation if relation and relation.app and relation.data else None
         )
 
         self.framework.observe(
-            self.charm.on[endpoint].relation_changed,
+            self._charm.on[endpoint].relation_changed,
             self._on_relation_changed,
         )
         self.framework.observe(
-            self.charm.on[endpoint].relation_created,
+            self._charm.on[endpoint].relation_created,
             self._on_relation_created,
         )
         self.framework.observe(
-            self.charm.on[endpoint].relation_broken,
+            self._charm.on[endpoint].relation_broken,
             self._on_relation_broken,
         )
 
     def _on_relation_changed(self, event: ops.RelationChangedEvent) -> None:
-        if self.relation:
+        if self._relation:
             if new_config := self.get_enroll_data():
                 self.on.config_received.emit(new_config)
             elif self.is_published():
@@ -157,7 +160,7 @@ class MaasRegionRequires(Object):
 
     def get_enroll_data(self) -> MaasProviderAppData | None:
         """Get enrollment data from databag."""
-        relation = self.relation
+        relation = self._relation
         if relation:
             assert relation.app is not None
             try:
@@ -169,11 +172,11 @@ class MaasRegionRequires(Object):
 
     def is_published(self) -> bool:
         """Verify that the local side has done all they need to do."""
-        relation = self.relation
+        relation = self._relation
         if not relation:
             return False
 
-        unit_data = relation.data[self.charm.unit]
+        unit_data = relation.data[self._charm.unit]
         try:
             MaasRequirerUnitData.load(unit_data)
             return True
@@ -182,56 +185,57 @@ class MaasRegionRequires(Object):
 
     def publish_unit_system_id(self, id: str | None) -> None:
         """Publish unit system_id in the databag."""
-        databag_model = MaasRequirerUnitData(system_id=id)
-        if relation := self.relation:
+        databag_model = MaasRequirerUnitData(
+            model=self._charm.model.name,
+            unit=self._charm.unit.name,
+            system_id=id,
+        )
+        if relation := self._relation:
             unit_databag = relation.data[self.model.unit]
             databag_model.dump(unit_databag)
 
 
-class MaasAgentEnrollEvent(ops.RelationEvent):
-    """Event emitted when an Agent request enrollment."""
-
-
-class MaasRegionProvidesEvents(CharmEvents):
-    """MAAS events."""
-
-    agent_enroll = EventSource(MaasAgentEnrollEvent)
-
-
-class MaasRegionProvides(Object):
+class MaasRegionProvider(Object):
     """Provides-side of the MAAS relation."""
 
-    on = MaasRegionProvidesEvents()
+    def __init__(
+        self,
+        charm: ops.CharmBase,
+        key: str | None = None,
+        endpoint: str = DEFAULT_ENDPOINT_NAME,
+    ):
+        super().__init__(charm, key or endpoint)
+        self._charm = charm
+        self._relations = self.model.relations[endpoint]
 
-    def __init__(self, charm: ops.CharmBase, relation_name: str):
-        super().__init__(charm, relation_name)
-        self.charm = charm
-        self.local_app = charm.model.app
-        self.local_unit = charm.unit
-        self.relation_name = relation_name
-        self.framework.observe(
-            self.charm.on[relation_name].relation_changed, self._on_relation_changed
-        )
-
-    def _on_relation_changed(self, event: ops.RelationChangedEvent) -> None:
-        if not self.local_unit.is_leader():
-            return
-        getattr(self.on, "agent_enroll").emit(event.relation, app=event.app, unit=event.unit)
-
-    def update_relation_data(self, relation_id: int, data: dict[str, str]) -> None:
-        """Update relation databag.
+    def publish_enroll_token(self, maas_api: str, maas_secret: str) -> None:
+        """Publish enrollment data.
 
         Args:
-            relation_id (int): relation ID
-            data (dict[str, str]): new data
+            maas_api (str): MAAS API URL
+            maas_secret (str): Enrollment token
         """
-        relation = self.charm.model.get_relation(self.relation_name, relation_id)
-        if not relation:
-            raise MaasInterfaceError(
-                "Relation %s %s couldn't be retrieved", self.relation_name, relation_id
-            )
+        local_app_databag = MaasProviderAppData(api_url=maas_api, maas_secret=maas_secret)
+        for relation in self._relations:
+            if relation:
+                local_app_databag.dump(relation.data[self.model.app])
 
-        if self.local_app not in relation.data or relation.data[self.local_app] is None:
-            return
+    def gather_rack_units(self) -> dict[str, str]:
+        """Get a map of Rack units.
 
-        relation.data[self.local_app].update(data)
+        Returns:
+            dict[str, str]: map of units
+        """
+        data = defaultdict(str)
+        for relation in self._relations:
+            if not relation.app:
+                continue
+            for worker_unit in relation.units:
+                try:
+                    worker_data = MaasRequirerUnitData.load(relation.data[worker_unit])
+                    sysid = worker_data.system_id
+                except TypeError as e:
+                    log.info(f"invalid databag contents: {e}")
+                    continue
+                data[worker_unit.name] = sysid
+        return data

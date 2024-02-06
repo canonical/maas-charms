@@ -67,7 +67,7 @@ class MaasHelper:
 
     @staticmethod
     def get_maas_id() -> str | None:
-        """Get MAAS system ID
+        """Get MAAS system ID.
 
         Returns:
             str | None: system_id, or None if not present
