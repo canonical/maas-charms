@@ -25,7 +25,6 @@ description: |
   an be scaled-out and highly available given the appropriate postgres
   setup and additional API servers.
 
-
 # (Required for 'charm' type)
 bases:
   - build-on:
@@ -69,3 +68,38 @@ actions:
       - password
       - email
 
+parts:
+  charm:
+    override-build: |
+      echo "Running the build step"
+      craftctl default
+
+  prometheus-alerts:
+    plugin: dump
+    source: https://github.com/canonical/maas-prometheus-alert-rules.git
+    source-depth: 1
+    source-type: git
+    build-packages:
+      - python3-yaml
+    override-build: |
+      ./bin/group.py --rules './rules/*.rule' --tests nop --out group.yml --test_out /dev/null
+      craftctl default
+    organize:
+      "*": src/prometheus/
+    prime:
+      - src/prometheus/group.yml
+
+  loki-alerts:
+    plugin: dump
+    source: https://github.com/canonical/maas-loki-alert-rules
+    source-depth: 1
+    source-type: git
+    build-packages:
+      - python3-yaml
+    override-build: |
+      ./bin/group.py --rules './rules/*.rule' --out loki.yml
+      craftctl default
+    organize:
+      "*": src/loki/
+    prime:
+      - src/loki/loki.yml
