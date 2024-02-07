@@ -40,11 +40,11 @@ requires:
     limit: 1
 
 peers:
-  maas-region:
+  maas-cluster:
     interface: maas_peers
 
 provides:
-  maas-controller:
+  maas-region:
     interface: maas-controller
   cos-agent:
     interface: cos_agent

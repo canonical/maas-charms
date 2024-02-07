@@ -7,11 +7,12 @@ import dataclasses
 import json
 import logging
 from collections import defaultdict
-from typing import Any, Dict, MutableMapping, Self
+from typing import Any, Dict, MutableMapping
 
 import ops
 from ops.charm import CharmEvents
 from ops.framework import EventSource, Handle, Object
+from typing_extensions import Self
 
 # The unique Charmhub library identifier, never change it
 LIBID = "50055f0422414543ba96d10a9fb7d129"
@@ -27,13 +28,14 @@ DEFAULT_ENDPOINT_NAME = "maas-region"
 BUILTIN_JUJU_KEYS = {"ingress-address", "private-address", "egress-subnets"}
 
 
-log = logging.getLogger("maas")
+log = logging.getLogger(__name__)
 
 
 class MaasInterfaceError(Exception):
     """Common ancestor for MAAS interface related exceptions."""
 
 
+@dataclasses.dataclass
 class MaasDatabag:
     """Base class from MAAS databags."""
 
@@ -148,7 +150,9 @@ class MaasRegionRequirer(Object):
     def _on_relation_changed(self, event: ops.RelationChangedEvent) -> None:
         if self._relation:
             if new_config := self.get_enroll_data():
-                self.on.config_received.emit(new_config)
+                cfg: dict[str, str] = {}
+                new_config.dump(cfg)
+                self.on.config_received.emit(cfg)
             elif self.is_published():
                 self.on.removed.emit()
 
@@ -183,7 +187,7 @@ class MaasRegionRequirer(Object):
         except TypeError:
             return False
 
-    def publish_unit_system_id(self, id: str | None) -> None:
+    def publish_unit_system_id(self, id: str) -> None:
         """Publish unit system_id in the databag."""
         databag_model = MaasRequirerUnitData(
             model=self._charm.model.name,

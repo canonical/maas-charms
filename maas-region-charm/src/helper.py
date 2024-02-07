@@ -9,6 +9,7 @@ from pathlib import Path
 from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
 
 MAAS_SNAP_NAME = "maas"
+MAAS_MODE = Path("/var/snap/maas/common/snap_mode")
 MAAS_SECRET = Path("/var/snap/maas/common/maas/secret")
 MAAS_ID = Path("/var/snap/maas/common/maas/maas_id")
 MAAS_SERVICE = "pebble"
@@ -74,6 +75,19 @@ class MaasHelper:
         """
         try:
             with MAAS_ID.open() as file:
+                return file.readline().strip()
+        except OSError:
+            return None
+
+    @staticmethod
+    def get_maas_mode() -> str | None:
+        """Get MAAS operation mode.
+
+        Returns:
+            str | None: mode, or None if not initialised
+        """
+        try:
+            with MAAS_MODE.open() as file:
                 return file.readline().strip()
         except OSError:
             return None

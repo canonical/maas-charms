@@ -14,7 +14,7 @@ from helper import MaasHelper
 
 logger = logging.getLogger(__name__)
 
-MAAS_PEER_NAME = "maas-region"
+MAAS_PEER_NAME = "maas-cluster"
 MAAS_DB_NAME = "maas-db"
 MAAS_HTTP_PORT = 5240
 MAAS_HTTPS_PORT = 5443
@@ -49,6 +49,7 @@ class MaasRegionCharm(ops.CharmBase):
 
         # Charm lifecycle
         self.framework.observe(self.on.install, self._on_install)
+        self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.start, self._on_start)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
 
@@ -112,26 +113,22 @@ class MaasRegionCharm(ops.CharmBase):
         return f"postgres://{username}:{password}@{endpoints}/{self.maasdb_name}"
 
     @property
-    def version(self) -> str:
+    def version(self) -> str | None:
         """Reports the current workload version.
 
         Returns:
-            str: the version, or empty if not installed
+            str: the version, or None if not installed
         """
-        if ver := MaasHelper.get_installed_version():
-            return ver
-        return ""
+        return MaasHelper.get_installed_version()
 
     @property
-    def enrollment_token(self) -> str:
+    def enrollment_token(self) -> str | None:
         """Reports the enrollment token.
 
         Returns:
-            str: the otken, or empty if not available
+            str: the otken, or None if not available
         """
-        if token := MaasHelper.get_maas_secret():
-            return token
-        return ""
+        return MaasHelper.get_maas_secret()
 
     @property
     def maas_api_url(self) -> str:
@@ -146,6 +143,15 @@ class MaasRegionCharm(ops.CharmBase):
             return f"http://{unit_ip}:{MAAS_HTTP_PORT}/MAAS"
         else:
             return ""
+
+    @property
+    def maas_id(self) -> str | None:
+        """Reports the MAAS ID.
+
+        Returns:
+            str: the ID, or None if not initialized
+        """
+        return MaasHelper.get_maas_id()
 
     def _setup_network(self) -> bool:
         """Open the network ports.
@@ -166,12 +172,14 @@ class MaasRegionCharm(ops.CharmBase):
             self.connection_string,
         )
 
-    def _publish_tokens(self) -> None:
+    def _publish_tokens(self) -> bool:
         if self.maas_api_url and self.enrollment_token:
             self.maas_region.publish_enroll_token(
                 self.maas_api_url,
                 self.enrollment_token,
             )
+            return True
+        return False
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
@@ -198,14 +206,26 @@ class MaasRegionCharm(ops.CharmBase):
         except Exception as ex:
             logger.error(str(ex))
 
+    def _on_remove(self, _event: ops.RemoveEvent) -> None:
+        """Remove MAAS from the machine.
+
+        Args:
+            event (ops.RemoveEvent): Event from ops framework
+        """
+        self.unit.status = ops.MaintenanceStatus("removing...")
+        try:
+            MaasHelper.uninstall()
+        except Exception as ex:
+            logger.error(str(ex))
+
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
         if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
             e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
         elif not self.unit.opened_ports().issuperset(MAAS_REGION_PORTS):
-            e.add_status(ops.BlockedStatus("Failed to open service ports"))
+            e.add_status(ops.WaitingStatus("Waiting for service ports"))
         elif not self.connection_string:
             e.add_status(ops.WaitingStatus("Waiting for database DSN"))
-        elif not all([self.maas_api_url, self.enrollment_token]):
+        elif not self.maas_api_url:
             ops.WaitingStatus("Waiting for MAAS initialization")
         else:
             self.unit.status = ops.ActiveStatus()
@@ -218,9 +238,7 @@ class MaasRegionCharm(ops.CharmBase):
         """
         logger.info(f"MAAS database credentials received for user '{event.username}'")
         if conn := self.connection_string:
-            self.unit.status = ops.MaintenanceStatus(
-                "Received database credentials of the MAAS database"
-            )
+            self.unit.status = ops.MaintenanceStatus("Initialising the MAAS database")
             logger.info(f"DSN: {conn}")
             self._initialize_maas()
 
@@ -232,17 +250,19 @@ class MaasRegionCharm(ops.CharmBase):
         """
         logger.info(f"MAAS database endpoints have been changed to: {event.endpoints}")
         if conn := self.connection_string:
-            self.unit.status = ops.MaintenanceStatus("updating database connection...")
+            self.unit.status = ops.MaintenanceStatus("Updating database connection")
             logger.info(f"DSN: {conn}")
             self._initialize_maas()
 
     def _on_maas_region_relation_joined(self, event: ops.RelationJoinedEvent) -> None:
         logger.info(event)
-        self._publish_tokens()
+        if not self._publish_tokens():
+            event.defer()
 
     def _on_maas_region_relation_changed(self, event: ops.RelationChangedEvent) -> None:
         logger.info(event)
-        self._publish_tokens()
+        if not self._publish_tokens():
+            event.defer()
 
     def _on_maas_region_relation_departed(self, event: ops.RelationDepartedEvent) -> None:
         logger.info(event)

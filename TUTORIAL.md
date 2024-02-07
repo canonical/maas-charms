@@ -208,7 +208,7 @@ juju integrate maas-region postgresql
 Create an Admin user
 
 ```shell
-juju run maas-region/0 create-admin username=maas password=maas email=maas@example.com ssh-import=lp:${LP_ID}
+juju run maas-region/leader create-admin username=maas password=maas email=maas@example.com ssh-import=lp:${LP_ID}
 ```
 
 Deploy Rack using the charm
