@@ -46,6 +46,8 @@ peers:
 provides:
   maas-controller:
     interface: maas-controller
+  cos-agent:
+    interface: cos_agent
 
 actions:
   create-admin:

@@ -36,3 +36,7 @@ requires:
     interface: maas-controller
     limit: 1
 
+provides:
+  cos-agent:
+    interface: cos_agent
+

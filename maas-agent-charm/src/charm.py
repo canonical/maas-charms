@@ -7,6 +7,7 @@
 import logging
 
 import ops
+from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region_charm.v0 import maas
 from charms.operator_libs_linux.v2.snap import SnapError
 from helper import MaasHelper
@@ -18,7 +19,7 @@ MAAS_RELATION_NAME = "maas-region"
 
 # FIXME must include external services also (e.g. DHCP)
 MAAS_RACK_PORTS = [ops.Port("tcp", 5248)]
-
+MAAS_RACK_METRICS_PORT = 5249
 MAAS_SNAP_CHANNEL = "3.4/stable"
 
 
@@ -32,6 +33,14 @@ class MaasRackCharm(ops.CharmBase):
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.start, self._on_start)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
+
+        # COS
+        self._grafana_agent = cos_agent.COSAgentProvider(
+            self,
+            metrics_endpoints=[
+                {"path": "/metrics", "port": MAAS_RACK_METRICS_PORT},
+            ],
+        )
 
         # MAAS relation
         self.maas_region = maas.MaasRegionRequirer(self)

@@ -8,6 +8,7 @@ import logging
 
 import ops
 from charms.data_platform_libs.v0 import data_interfaces as db
+from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region_charm.v0 import maas
 from helper import MaasHelper
 
@@ -17,6 +18,8 @@ MAAS_PEER_NAME = "maas-region"
 MAAS_DB_NAME = "maas-db"
 MAAS_HTTP_PORT = 5240
 MAAS_HTTPS_PORT = 5443
+MAAS_REGION_METRICS_PORT = 5239
+MAAS_CLUSTER_METRICS_PORT = 5240
 
 MAAS_SNAP_CHANNEL = "3.4/stable"
 
@@ -70,6 +73,18 @@ class MaasRegionCharm(ops.CharmBase):
         self.maasdb = db.DatabaseRequires(self, MAAS_DB_NAME, self.maasdb_name)
         self.framework.observe(self.maasdb.on.database_created, self._on_maasdb_created)
         self.framework.observe(self.maasdb.on.endpoints_changed, self._on_maasdb_endpoints_changed)
+
+        # COS
+        self._grafana_agent = cos_agent.COSAgentProvider(
+            self,
+            metrics_endpoints=[
+                {"path": "/metrics", "port": MAAS_REGION_METRICS_PORT},
+                {"path": "/MAAS/metrics", "port": MAAS_CLUSTER_METRICS_PORT},
+            ],
+            metrics_rules_dir="./src/prometheus",
+            logs_rules_dir="./src/loki",
+            # dashboard_dirs=["./src/grafana_dashboards"],
+        )
 
         # Charm actions
         self.framework.observe(self.on.create_admin_action, self._on_create_admin_action)
