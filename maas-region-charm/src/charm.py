@@ -4,28 +4,24 @@
 
 """Charm the application."""
 
-import json
 import logging
-from typing import Any
 
 import ops
-from charms.data_platform_libs.v0.data_interfaces import (
-    DatabaseCreatedEvent,
-    DatabaseEndpointsChangedEvent,
-    DatabaseRequires,
-)
-from charms.maas_region_charm.v0.maas import MaasAgentEnrollEvent, MaasRegionProvides
+from charms.data_platform_libs.v0 import data_interfaces as db
+from charms.grafana_agent.v0 import cos_agent
+from charms.maas_region_charm.v0 import maas
 from helper import MaasHelper
 
 logger = logging.getLogger(__name__)
 
-MAAS_RELATION_NAME = "maas-controller"
-MAAS_PEER_NAME = "maas-region"
+MAAS_PEER_NAME = "maas-cluster"
 MAAS_DB_NAME = "maas-db"
 MAAS_HTTP_PORT = 5240
 MAAS_HTTPS_PORT = 5443
+MAAS_REGION_METRICS_PORT = 5239
+MAAS_CLUSTER_METRICS_PORT = 5240
 
-MAAS_SNAP_CHANNEL = "stable"
+MAAS_SNAP_CHANNEL = "3.4/stable"
 
 MAAS_REGION_PORTS = [
     ops.Port("udp", 53),  # named
@@ -53,18 +49,43 @@ class MaasRegionCharm(ops.CharmBase):
 
         # Charm lifecycle
         self.framework.observe(self.on.install, self._on_install)
+        self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.start, self._on_start)
-        self.framework.observe(self.on.config_changed, self._on_config_changed)
+        self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
 
-        # MAAS relation
-        self.maas_region = MaasRegionProvides(self, MAAS_RELATION_NAME)
-        self.framework.observe(self.maas_region.on.agent_enroll, self._on_agent_enroll)
+        # MAAS Region
+        self.maas_region = maas.MaasRegionProvider(self)
+        maas_region_events = self.on[maas.DEFAULT_ENDPOINT_NAME]
+        self.framework.observe(
+            maas_region_events.relation_joined, self._on_maas_region_relation_joined
+        )
+        self.framework.observe(
+            maas_region_events.relation_changed, self._on_maas_region_relation_changed
+        )
+        self.framework.observe(
+            maas_region_events.relation_departed, self._on_maas_region_relation_departed
+        )
+        self.framework.observe(
+            maas_region_events.relation_broken, self._on_maas_region_relation_broken
+        )
 
         # MAAS DB
         self.maasdb_name = f'{self.app.name.replace("-", "_")}_db'
-        self.maasdb = DatabaseRequires(self, MAAS_DB_NAME, self.maasdb_name)
+        self.maasdb = db.DatabaseRequires(self, MAAS_DB_NAME, self.maasdb_name)
         self.framework.observe(self.maasdb.on.database_created, self._on_maasdb_created)
         self.framework.observe(self.maasdb.on.endpoints_changed, self._on_maasdb_endpoints_changed)
+
+        # COS
+        self._grafana_agent = cos_agent.COSAgentProvider(
+            self,
+            metrics_endpoints=[
+                {"path": "/metrics", "port": MAAS_REGION_METRICS_PORT},
+                {"path": "/MAAS/metrics", "port": MAAS_CLUSTER_METRICS_PORT},
+            ],
+            metrics_rules_dir="./src/prometheus",
+            logs_rules_dir="./src/loki",
+            # dashboard_dirs=["./src/grafana_dashboards"],
+        )
 
         # Charm actions
         self.framework.observe(self.on.create_admin_action, self._on_create_admin_action)
@@ -92,26 +113,22 @@ class MaasRegionCharm(ops.CharmBase):
         return f"postgres://{username}:{password}@{endpoints}/{self.maasdb_name}"
 
     @property
-    def version(self) -> str:
+    def version(self) -> str | None:
         """Reports the current workload version.
 
         Returns:
-            str: the version, or empty if not installed
+            str: the version, or None if not installed
         """
-        if ver := MaasHelper.get_installed_version():
-            return ver
-        return ""
+        return MaasHelper.get_installed_version()
 
     @property
-    def enrollment_token(self) -> str:
+    def enrollment_token(self) -> str | None:
         """Reports the enrollment token.
 
         Returns:
-            str: the otken, or empty if not available
+            str: the otken, or None if not available
         """
-        if token := MaasHelper.get_maas_secret():
-            return token
-        return ""
+        return MaasHelper.get_maas_secret()
 
     @property
     def maas_api_url(self) -> str:
@@ -126,6 +143,15 @@ class MaasRegionCharm(ops.CharmBase):
             return f"http://{unit_ip}:{MAAS_HTTP_PORT}/MAAS"
         else:
             return ""
+
+    @property
+    def maas_id(self) -> str | None:
+        """Reports the MAAS ID.
+
+        Returns:
+            str: the ID, or None if not initialized
+        """
+        return MaasHelper.get_maas_id()
 
     def _setup_network(self) -> bool:
         """Open the network ports.
@@ -146,35 +172,28 @@ class MaasRegionCharm(ops.CharmBase):
             self.connection_string,
         )
 
-    def _on_start(self, event: ops.StartEvent) -> None:
+    def _publish_tokens(self) -> bool:
+        if self.maas_api_url and self.enrollment_token:
+            self.maas_region.publish_enroll_token(
+                self.maas_api_url,
+                self.enrollment_token,
+            )
+            return True
+        return False
+
+    def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
 
         Args:
             event (ops.StartEvent): Event from ops framework
         """
-        if not self.connection_string:
-            self.unit.status = ops.WaitingStatus("Waiting for database DSN")
-            return
-
-        if not self._setup_network():
-            self.unit.status = ops.ErrorStatus("Failed to open service ports")
-            return
-
+        self.unit.status = ops.MaintenanceStatus("starting...")
+        self._setup_network()
         MaasHelper.set_running(True)
-
         if workload_version := self.version:
             self.unit.set_workload_version(workload_version)
-        else:
-            self.unit.status = ops.ErrorStatus("MAAS not installed")
-            return
 
-        if not self._initialize_maas():
-            self.unit.status = ops.ErrorStatus("Failed to initialize MAAS")
-            return
-
-        self.unit.status = ops.ActiveStatus()
-
-    def _on_install(self, event: ops.InstallEvent) -> None:
+    def _on_install(self, _event: ops.InstallEvent) -> None:
         """Install MAAS in the machine.
 
         Args:
@@ -186,37 +205,32 @@ class MaasRegionCharm(ops.CharmBase):
             MaasHelper.install(channel)
         except Exception as ex:
             logger.error(str(ex))
-            self.unit.status = ops.ErrorStatus(
-                f"Failed to install MAAS snap from channel '{channel}'"
-            )
-            return
-        self.unit.status = ops.MaintenanceStatus("initializing...")
 
-    def _on_config_changed(self, event: ops.ConfigChangedEvent) -> None:
-        """Update configuration.
-
-        Currently only the snap channel can be configured
+    def _on_remove(self, _event: ops.RemoveEvent) -> None:
+        """Remove MAAS from the machine.
 
         Args:
-            event (ops.ConfigChangedEvent): event from the ops framework
+            event (ops.RemoveEvent): Event from ops framework
         """
-        channel = self.config.get("channel", MAAS_SNAP_CHANNEL)
-        if channel != MaasHelper.get_installed_channel():
-            self.unit.status = ops.MaintenanceStatus("refreshing...")
-            try:
-                MaasHelper.install(channel)
-            except Exception as ex:
-                logger.error(str(ex))
-                self.unit.status = ops.ErrorStatus(
-                    f"Failed to refresh MAAS snap to channel '{channel}'"
-                )
-                return
+        self.unit.status = ops.MaintenanceStatus("removing...")
+        try:
+            MaasHelper.uninstall()
+        except Exception as ex:
+            logger.error(str(ex))
 
-            if ver := MaasHelper.get_installed_version():
-                self.unit.set_workload_version(ver)
+    def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
+        if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
+            e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
+        elif not self.unit.opened_ports().issuperset(MAAS_REGION_PORTS):
+            e.add_status(ops.WaitingStatus("Waiting for service ports"))
+        elif not self.connection_string:
+            e.add_status(ops.WaitingStatus("Waiting for database DSN"))
+        elif not self.maas_api_url:
+            ops.WaitingStatus("Waiting for MAAS initialization")
+        else:
             self.unit.status = ops.ActiveStatus()
 
-    def _on_maasdb_created(self, event: DatabaseCreatedEvent) -> None:
+    def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
         """Database is ready.
 
         Args:
@@ -224,16 +238,11 @@ class MaasRegionCharm(ops.CharmBase):
         """
         logger.info(f"MAAS database credentials received for user '{event.username}'")
         if conn := self.connection_string:
-            self.unit.status = ops.MaintenanceStatus(
-                "Received database credentials of the MAAS database"
-            )
+            self.unit.status = ops.MaintenanceStatus("Initialising the MAAS database")
             logger.info(f"DSN: {conn}")
-            if self._initialize_maas():
-                self.unit.status = ops.ActiveStatus()
-            else:
-                self.unit.status = ops.ErrorStatus("Failed to initialize MAAS")
+            self._initialize_maas()
 
-    def _on_maasdb_endpoints_changed(self, event: DatabaseEndpointsChangedEvent) -> None:
+    def _on_maasdb_endpoints_changed(self, event: db.DatabaseEndpointsChangedEvent) -> None:
         """Update database DSN.
 
         Args:
@@ -241,51 +250,27 @@ class MaasRegionCharm(ops.CharmBase):
         """
         logger.info(f"MAAS database endpoints have been changed to: {event.endpoints}")
         if conn := self.connection_string:
-            self.unit.status = ops.MaintenanceStatus("updating database connection...")
+            self.unit.status = ops.MaintenanceStatus("Updating database connection")
             logger.info(f"DSN: {conn}")
-            MaasHelper.set_running(True)
-            if self._initialize_maas():
-                self.unit.status = ops.ActiveStatus()
-            else:
-                self.unit.status = ops.ErrorStatus("Failed to initialize MAAS")
+            self._initialize_maas()
 
-        else:
-            MaasHelper.set_running(False)
-            self.unit.status = ops.WaitingStatus("Waiting for a database connection")
-
-    def _on_agent_enroll(self, event: MaasAgentEnrollEvent) -> None:
-        logger.info(f"got enrollment request {event.relation.id}")
-        if self.maas_api_url and self.enrollment_token:
-            self.maas_region.update_relation_data(
-                event.relation.id,
-                {"api_url": self.maas_api_url, "maas_secret": self.enrollment_token},
-            )
-        else:
+    def _on_maas_region_relation_joined(self, event: ops.RelationJoinedEvent) -> None:
+        logger.info(event)
+        if not self._publish_tokens():
             event.defer()
 
-    def set_peer_data(self, key: str, data: Any) -> None:
-        """Put information into the peer data bucket.
+    def _on_maas_region_relation_changed(self, event: ops.RelationChangedEvent) -> None:
+        logger.info(event)
+        if not self._publish_tokens():
+            event.defer()
 
-        Args:
-            key (str): data key
-            data (Any): stored value, musts be JSON-serializable
-        """
-        if p := self.peers:
-            p.data[self.app][key] = json.dumps(data)
+    def _on_maas_region_relation_departed(self, event: ops.RelationDepartedEvent) -> None:
+        logger.info(event)
+        self._publish_tokens()
 
-    def get_peer_data(self, key: str) -> Any:
-        """Retrieve information from the peer data bucket.
-
-        Args:
-            key (str): data key
-
-        Returns:
-            Any: stored value, or None if the key is not present
-        """
-        if not self.peers:
-            return None
-        data = self.peers.data[self.app].get(key, "")
-        return json.loads(data) if data else None
+    def _on_maas_region_relation_broken(self, event: ops.RelationBrokenEvent) -> None:
+        logger.info(event)
+        self._publish_tokens()
 
     def _on_create_admin_action(self, event: ops.ActionEvent):
         """Handle the create-admin action.

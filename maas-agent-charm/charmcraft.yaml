@@ -36,10 +36,7 @@ requires:
     interface: maas-controller
     limit: 1
 
-config:
-  options:
-    channel:
-      description: |
-        Channel for the MAAS snap.
-      default: "3.4/stable"
-      type: string
+provides:
+  cos-agent:
+    interface: cos_agent
+
