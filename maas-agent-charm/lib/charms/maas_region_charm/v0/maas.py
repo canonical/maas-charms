@@ -68,7 +68,16 @@ class MaasProviderAppData(MaasDatabag):
     """The schema for the Provider side of this relation."""
 
     api_url: str
-    maas_secret: str
+    maas_secret_id: str
+
+    def get_secret(self, model: ops.Model) -> str:
+        """Retrieve MAAS secret.
+
+        Returns:
+            str: the secret
+        """
+        secret = model.get_secret(id=self.maas_secret_id)
+        return secret.get_content().get("maas-secret", "")
 
 
 class MaasConfigReceivedEvent(ops.EventBase):
@@ -212,6 +221,19 @@ class MaasRegionProvider(Object):
         self._charm = charm
         self._relations = self.model.relations[endpoint]
 
+    def _update_secret(self, relation: ops.Relation, content: dict[str, str]) -> str:
+        label = f"enroll-{relation.name}-{relation.id}.secret"
+        try:
+            secret = self.model.get_secret(label=label)
+            secret.set_content(content)
+        except ops.model.SecretNotFoundError:
+            secret = self._charm.app.add_secret(
+                content=content,
+                label=label,
+            )
+            secret.grant(relation)
+        return secret.get_info().id
+
     def publish_enroll_token(self, maas_api: str, maas_secret: str) -> None:
         """Publish enrollment data.
 
@@ -219,9 +241,13 @@ class MaasRegionProvider(Object):
             maas_api (str): MAAS API URL
             maas_secret (str): Enrollment token
         """
-        local_app_databag = MaasProviderAppData(api_url=maas_api, maas_secret=maas_secret)
         for relation in self._relations:
             if relation:
+                secret_id = self._update_secret(relation, {"maas-secret": maas_secret})
+                local_app_databag = MaasProviderAppData(
+                    api_url=maas_api,
+                    maas_secret_id=secret_id,
+                )
                 local_app_databag.dump(relation.data[self.model.app])
 
     def gather_rack_units(self) -> dict[str, str]:

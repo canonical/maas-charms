@@ -261,16 +261,12 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_maas_region_relation_changed(self, event: ops.RelationChangedEvent) -> None:
         logger.info(event)
-        if not self._publish_tokens():
-            event.defer()
 
     def _on_maas_region_relation_departed(self, event: ops.RelationDepartedEvent) -> None:
         logger.info(event)
-        self._publish_tokens()
 
     def _on_maas_region_relation_broken(self, event: ops.RelationBrokenEvent) -> None:
         logger.info(event)
-        self._publish_tokens()
 
     def _on_create_admin_action(self, event: ops.ActionEvent):
         """Handle the create-admin action.

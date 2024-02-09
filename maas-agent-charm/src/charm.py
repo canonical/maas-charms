@@ -93,7 +93,7 @@ class MaasRackCharm(ops.CharmBase):
         if config := self.maas_region.get_enroll_data():
             MaasHelper.setup_rack(
                 config.api_url,
-                config.maas_secret,
+                config.get_secret(self.model),
             )
         if id := self.maas_id:
             self.maas_region.publish_unit_system_id(id)
