@@ -147,7 +147,7 @@ class MaasHelper:
         return _run_local(cmd) == 0
 
     @staticmethod
-    def setup_region(maas_url: str, dsn: str) -> bool:
+    def setup_region(maas_url: str, dsn: str, mode: str) -> bool:
         """Initialize a Region controller.
 
         TODO add Vault support
@@ -156,6 +156,7 @@ class MaasHelper:
             maas_url (str):  URL that MAAS should use for communicate from the
                 nodes to MAAS and other controllers of MAAS.
             dsn (str): URI for the MAAS Postgres database
+            mode (str): MAAS operational mode
 
         Returns:
             bool: whether the initialisation succeeded
@@ -163,7 +164,7 @@ class MaasHelper:
         cmd = [
             "/snap/bin/maas",
             "init",
-            "region",
+            mode,
             "--maas-url",
             maas_url,
             "--database-uri",

@@ -4,7 +4,10 @@
 
 """Charm the application."""
 
+import json
 import logging
+import socket
+from typing import Any
 
 import ops
 from charms.data_platform_libs.v0 import data_interfaces as db
@@ -16,24 +19,27 @@ logger = logging.getLogger(__name__)
 
 MAAS_PEER_NAME = "maas-cluster"
 MAAS_DB_NAME = "maas-db"
+
+MAAS_SNAP_CHANNEL = "3.4/stable"
+
 MAAS_HTTP_PORT = 5240
 MAAS_HTTPS_PORT = 5443
 MAAS_REGION_METRICS_PORT = 5239
-MAAS_CLUSTER_METRICS_PORT = 5240
-
-MAAS_SNAP_CHANNEL = "3.4/stable"
+MAAS_CLUSTER_METRICS_PORT = MAAS_HTTP_PORT
 
 MAAS_REGION_PORTS = [
     ops.Port("udp", 53),  # named
     ops.Port("udp", 67),  # dhcpd
     ops.Port("udp", 69),  # tftp
     ops.Port("udp", 123),  # chrony
-    ops.Port("udp", 3128),  # squid
+    ops.Port("udp", 323),  # chrony
+    *[ops.Port("udp", p) for p in range(5241, 5247 + 1)],  # Internal services
     ops.Port("tcp", 53),  # named
     ops.Port("tcp", 3128),  # squid
     ops.Port("tcp", 8000),  # squid
     ops.Port("tcp", MAAS_HTTP_PORT),  # API
     ops.Port("tcp", MAAS_HTTPS_PORT),  # API
+    ops.Port("tcp", MAAS_REGION_METRICS_PORT),
     *[ops.Port("tcp", p) for p in range(5241, 5247 + 1)],  # Internal services
     *[ops.Port("tcp", p) for p in range(5250, 5270 + 1)],  # RPC Workers
     *[ops.Port("tcp", p) for p in range(5270, 5274 + 1)],  # Temporal
@@ -56,18 +62,16 @@ class MaasRegionCharm(ops.CharmBase):
         # MAAS Region
         self.maas_region = maas.MaasRegionProvider(self)
         maas_region_events = self.on[maas.DEFAULT_ENDPOINT_NAME]
-        self.framework.observe(
-            maas_region_events.relation_joined, self._on_maas_region_relation_joined
-        )
-        self.framework.observe(
-            maas_region_events.relation_changed, self._on_maas_region_relation_changed
-        )
-        self.framework.observe(
-            maas_region_events.relation_departed, self._on_maas_region_relation_departed
-        )
-        self.framework.observe(
-            maas_region_events.relation_broken, self._on_maas_region_relation_broken
-        )
+        self.framework.observe(maas_region_events.relation_joined, self._on_maas_cluster_changed)
+        self.framework.observe(maas_region_events.relation_changed, self._on_maas_cluster_changed)
+        self.framework.observe(maas_region_events.relation_departed, self._on_maas_cluster_changed)
+        self.framework.observe(maas_region_events.relation_broken, self._on_maas_cluster_changed)
+
+        maas_peer_events = self.on[MAAS_PEER_NAME]
+        self.framework.observe(maas_peer_events.relation_joined, self._on_maas_peer_changed)
+        self.framework.observe(maas_peer_events.relation_changed, self._on_maas_peer_changed)
+        self.framework.observe(maas_peer_events.relation_departed, self._on_maas_peer_changed)
+        self.framework.observe(maas_peer_events.relation_broken, self._on_maas_peer_changed)
 
         # MAAS DB
         self.maasdb_name = f'{self.app.name.replace("-", "_")}_db'
@@ -153,6 +157,28 @@ class MaasRegionCharm(ops.CharmBase):
         """
         return MaasHelper.get_maas_id()
 
+    def get_operational_mode(self) -> str:
+        """Get expected MAAS mode.
+
+        Returns:
+            str: either `region` of `region+rack`
+        """
+        has_agent = self.maas_region.gather_rack_units().get(socket.getfqdn())
+        return "region+rack" if has_agent else "region"
+
+    def set_peer_data(self, app_or_unit: ops.Application | ops.Unit, key: str, data: Any) -> None:
+        """Put information into the peer data bucket."""
+        if not self.peers:
+            return
+        self.peers.data[app_or_unit][key] = json.dumps(data or {})
+
+    def get_peer_data(self, app_or_unit: ops.Application | ops.Unit, key: str) -> Any:
+        """Retrieve information from the peer data bucket."""
+        if not self.peers:
+            return {}
+        data = self.peers.data[app_or_unit].get(key, "")
+        return json.loads(data) if data else {}
+
     def _setup_network(self) -> bool:
         """Open the network ports.
 
@@ -168,18 +194,26 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _initialize_maas(self) -> bool:
         return MaasHelper.setup_region(
-            self.maas_api_url,
-            self.connection_string,
+            self.maas_api_url, self.connection_string, self.get_operational_mode()
         )
 
     def _publish_tokens(self) -> bool:
         if self.maas_api_url and self.enrollment_token:
             self.maas_region.publish_enroll_token(
                 self.maas_api_url,
+                self._get_regions(),
                 self.enrollment_token,
             )
             return True
         return False
+
+    def _get_regions(self) -> list[str]:
+        eps = [socket.getfqdn()]
+        if peers := self.peers:
+            for u in peers.units:
+                if addr := self.get_peer_data(u, "system-name"):
+                    eps += [addr]
+        return list(set(eps))
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
@@ -254,23 +288,20 @@ class MaasRegionCharm(ops.CharmBase):
             logger.info(f"DSN: {conn}")
             self._initialize_maas()
 
-    def _on_maas_region_relation_joined(self, event: ops.RelationJoinedEvent) -> None:
+    def _on_maas_peer_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
-        if not self._publish_tokens():
+        self.set_peer_data(self.unit, "system-name", socket.getfqdn())
+        if self.unit.is_leader():
+            self._publish_tokens()
+
+    def _on_maas_cluster_changed(self, event: ops.RelationEvent) -> None:
+        logger.info(event)
+        if self.unit.is_leader() and not self._publish_tokens():
             event.defer()
-
-    def _on_maas_region_relation_changed(self, event: ops.RelationChangedEvent) -> None:
-        logger.info(event)
-        if not self._publish_tokens():
-            event.defer()
-
-    def _on_maas_region_relation_departed(self, event: ops.RelationDepartedEvent) -> None:
-        logger.info(event)
-        self._publish_tokens()
-
-    def _on_maas_region_relation_broken(self, event: ops.RelationBrokenEvent) -> None:
-        logger.info(event)
-        self._publish_tokens()
+            return
+        if cur_mode := MaasHelper.get_maas_mode():
+            if self.get_operational_mode() != cur_mode:
+                self._initialize_maas()
 
     def _on_create_admin_action(self, event: ops.ActionEvent):
         """Handle the create-admin action.
