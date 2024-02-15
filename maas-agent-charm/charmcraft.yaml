@@ -33,7 +33,7 @@ bases:
 
 requires:
   maas-region:
-    interface: maas-controller
+    interface: maas_controller
     limit: 1
 
 provides:
