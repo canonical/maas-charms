@@ -1,1 +1,4 @@
 ops ~= 2.5
+# for grafana agent
+pydantic < 2
+cosl

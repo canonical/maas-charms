@@ -45,7 +45,7 @@ peers:
 
 provides:
   maas-region:
-    interface: maas-controller
+    interface: maas_controller
   cos-agent:
     interface: cos_agent
 
