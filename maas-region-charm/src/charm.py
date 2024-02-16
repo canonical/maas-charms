@@ -7,6 +7,7 @@
 import json
 import logging
 import socket
+import subprocess
 from typing import Any
 
 import ops
@@ -93,6 +94,9 @@ class MaasRegionCharm(ops.CharmBase):
 
         # Charm actions
         self.framework.observe(self.on.create_admin_action, self._on_create_admin_action)
+        self.framework.observe(self.on.get_api_key_action, self._on_get_api_key_action)
+        self.framework.observe(self.on.list_controllers_action, self._on_list_controllers_action)
+        self.framework.observe(self.on.get_api_endpoint_action, self._on_get_api_endpoint_action)
 
     @property
     def peers(self) -> ops.Relation | None:
@@ -193,9 +197,13 @@ class MaasRegionCharm(ops.CharmBase):
         return True
 
     def _initialize_maas(self) -> bool:
-        return MaasHelper.setup_region(
-            self.maas_api_url, self.connection_string, self.get_operational_mode()
-        )
+        try:
+            MaasHelper.setup_region(
+                self.maas_api_url, self.connection_string, self.get_operational_mode()
+            )
+            return True
+        except subprocess.CalledProcessError:
+            return False
 
     def _publish_tokens(self) -> bool:
         if self.maas_api_url and self.enrollment_token:
@@ -314,10 +322,40 @@ class MaasRegionCharm(ops.CharmBase):
         email = event.params["email"]
         ssh_import = event.params.get("ssh-import")
 
-        if MaasHelper.create_admin_user(username, password, email, ssh_import):
+        try:
+            MaasHelper.create_admin_user(username, password, email, ssh_import)
             event.set_results({"info": f"user {username} successfully created"})
-        else:
+        except subprocess.CalledProcessError:
             event.fail(f"Failed to create user {username}")
+
+    def _on_get_api_key_action(self, event: ops.ActionEvent):
+        """Handle the get-api-key action.
+
+        Args:
+            event (ops.ActionEvent): Event from the framework
+        """
+        username = event.params["username"]
+        try:
+            key = MaasHelper.get_api_key(username)
+            event.set_results({"api-key": key})
+        except subprocess.CalledProcessError:
+            event.fail(f"Failed to get key for user {username}")
+
+    def _on_list_controllers_action(self, event: ops.ActionEvent):
+        """Handle the list-controllers action."""
+        event.set_results(
+            {
+                "regions": json.dumps(self._get_regions()),
+                "agents": json.dumps(list(self.maas_region.gather_rack_units().keys())),
+            }
+        )
+
+    def _on_get_api_endpoint_action(self, event: ops.ActionEvent):
+        """Handle the get-api-endpoint action."""
+        if url := self.maas_api_url:
+            event.set_results({"api-url": url})
+        else:
+            event.fail("MAAS is not initialized yet")
 
 
 if __name__ == "__main__":  # pragma: nocover

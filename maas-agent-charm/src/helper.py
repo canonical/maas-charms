@@ -15,15 +15,6 @@ MAAS_ID = Path("/var/snap/maas/common/maas/maas_id")
 MAAS_SERVICE = "pebble"
 
 
-def _run_local(*args, **kwargs) -> int:
-    """Run process in the unit environment.
-
-    Returns:
-        int: process exit status
-    """
-    return subprocess.Popen(*args, **kwargs).wait()
-
-
 class MaasHelper:
     """MAAS helper."""
 
@@ -117,7 +108,7 @@ class MaasHelper:
             maas.stop()
 
     @staticmethod
-    def setup_rack(maas_url: str, secret: str) -> bool:
+    def setup_rack(maas_url: str, secret: str) -> None:
         """Initialize a Rack/Agent controller.
 
         Args:
@@ -125,8 +116,8 @@ class MaasHelper:
                 nodes to MAAS and other controllers of MAAS.
             secret (str): Enrollement token
 
-        Returns:
-            bool: whether the initialisation succeeded
+        Raises:
+            CalledProcessError: failed to initialize MAAS
         """
         cmd = [
             "/snap/bin/maas",
@@ -138,4 +129,4 @@ class MaasHelper:
             secret,
             "--force",
         ]
-        return _run_local(cmd) == 0
+        subprocess.check_call(cmd)

@@ -3,7 +3,9 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import json
 import socket
+import subprocess
 import unittest
 from unittest.mock import PropertyMock, patch
 
@@ -103,7 +105,7 @@ class TestClusterUpdates(unittest.TestCase):
         rel_id = self.harness.add_relation(
             maas.DEFAULT_ENDPOINT_NAME,
             remote_app,
-            unit_data={"model": "my_model", "unit": f"{remote_app}/0", "url": "some_url"},
+            unit_data={"unit": f"{remote_app}/0", "url": "some_url"},
         )
         mock_helper.setup_region.assert_not_called()
         data = self.harness.get_relation_data(rel_id, "maas-region")
@@ -126,7 +128,7 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.add_relation(
             maas.DEFAULT_ENDPOINT_NAME,
             remote_app,
-            unit_data={"model": "my_model", "unit": f"{remote_app}/0", "url": my_fqdn},
+            unit_data={"unit": f"{remote_app}/0", "url": my_fqdn},
         )
         mock_helper.setup_region.assert_called_once_with(
             f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
@@ -143,7 +145,7 @@ class TestClusterUpdates(unittest.TestCase):
         rel_id = self.harness.add_relation(
             maas.DEFAULT_ENDPOINT_NAME,
             remote_app,
-            unit_data={"model": "my_model", "unit": f"{remote_app}/0", "url": "some_url"},
+            unit_data={"unit": f"{remote_app}/0", "url": "some_url"},
         )
         self.harness.begin()
         self.harness.remove_relation_unit(rel_id, f"{remote_app}/0")
@@ -163,7 +165,7 @@ class TestClusterUpdates(unittest.TestCase):
         rel_id = self.harness.add_relation(
             maas.DEFAULT_ENDPOINT_NAME,
             remote_app,
-            unit_data={"model": "my_model", "unit": f"{remote_app}/0", "url": my_fqdn},
+            unit_data={"unit": f"{remote_app}/0", "url": my_fqdn},
         )
         self.harness.begin()
         self.harness.remove_relation_unit(rel_id, f"{remote_app}/0")
@@ -219,9 +221,43 @@ class TestCharmActions(unittest.TestCase):
     def test_create_admin_action_fail(self, mock_helper):
         self.harness.set_leader(True)
         self.harness.begin()
-        mock_helper.create_admin_user.return_value = False
+        mock_helper.create_admin_user.side_effect = subprocess.CalledProcessError(1, "maas")
         with self.assertRaises(ops.testing.ActionFailed):
             self.harness.run_action(
                 "create-admin",
                 {"username": "my_user", "password": "my_secret", "email": "my_email"},
             )
+
+    def test_get_api_endpoint_action(self):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        output = self.harness.run_action("get-api-endpoint")
+        self.assertEqual(output.results["api-url"], "http://10.0.0.10:5240/MAAS")
+
+    def test_list_controllers_action_solo(self):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        output = self.harness.run_action("list-controllers")
+        self.assertEqual(json.loads(output.results["regions"]), [socket.getfqdn()])
+        self.assertEqual(json.loads(output.results["agents"]), [])
+
+    def test_list_controllers_action_complex(self):
+        self.harness.set_leader(True)
+        rel_id = self.harness.add_relation(
+            MAAS_PEER_NAME, "maas-region", unit_data={"system-name": json.dumps(socket.getfqdn())}
+        )
+        self.harness.add_relation_unit(rel_id, "maas-region/1")
+        self.harness.update_relation_data(
+            rel_id, "maas-region/1", {"system-name": json.dumps("other.host.local")}
+        )
+        self.harness.add_relation(
+            maas.DEFAULT_ENDPOINT_NAME,
+            "maas-agent",
+            unit_data={"unit": "maas-agent/0", "url": "agent.local"},
+        )
+        self.harness.begin()
+        output = self.harness.run_action("list-controllers")
+        self.assertCountEqual(
+            json.loads(output.results["regions"]), [socket.getfqdn(), "other.host.local"]
+        )
+        self.assertCountEqual(json.loads(output.results["agents"]), ["agent.local"])

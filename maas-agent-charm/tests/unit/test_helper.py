@@ -97,7 +97,7 @@ class TestHelperFiles(unittest.TestCase):
 
 
 class TestHelperSetup(unittest.TestCase):
-    @patch("helper.subprocess.Popen")
+    @patch("helper.subprocess.check_call")
     def test_setup_rack(self, mock_run):
         MaasHelper.setup_rack("http://1.1.1.1:5240", "my_secret")
         mock_run.assert_called_once_with(
