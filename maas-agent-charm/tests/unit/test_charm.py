@@ -36,6 +36,7 @@ class TestCharm(unittest.TestCase):
 
     @patch("charm.MaasHelper", autospec=True)
     def test_remove(self, mock_helper):
+        mock_helper.get_maas_mode.return_value = "rack"
         self.harness.begin()
         self.harness.charm.on.remove.emit()
         mock_helper.uninstall.assert_called_once()
