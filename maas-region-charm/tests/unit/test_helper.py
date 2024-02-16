@@ -105,7 +105,7 @@ class TestHelperFiles(unittest.TestCase):
 
 
 class TestHelperSetup(unittest.TestCase):
-    @patch("helper._run_local")
+    @patch("helper.subprocess.check_call")
     def test_setup_region(self, mock_run):
         MaasHelper.setup_region(
             "http://1.1.1.1:5240", "postgresql://user:pass@2.2.2.2:5432/db", "region"
@@ -123,7 +123,7 @@ class TestHelperSetup(unittest.TestCase):
             ]
         )
 
-    @patch("helper.subprocess.Popen")
+    @patch("helper.subprocess.check_call")
     def test_create_admin_user(self, mock_run):
         MaasHelper.create_admin_user("user", "passwd", "email", None)
         mock_run.assert_called_once_with(
@@ -139,7 +139,7 @@ class TestHelperSetup(unittest.TestCase):
             ]
         )
 
-    @patch("helper.subprocess.Popen")
+    @patch("helper.subprocess.check_call")
     def test_create_admin_user_with_sshkey(self, mock_run):
         MaasHelper.create_admin_user("user", "passwd", "email", "lp_user")
         mock_run.assert_called_once_with(
@@ -154,5 +154,19 @@ class TestHelperSetup(unittest.TestCase):
                 "email",
                 "--ssh-import",
                 "lp_user",
+            ]
+        )
+
+    @patch("helper.subprocess.check_output")
+    def test_get_api_key(self, mock_run):
+        mock_run.return_value = b"a-key"
+        key = MaasHelper.get_api_key("user")
+        self.assertEqual(key, "a-key")
+        mock_run.assert_called_once_with(
+            [
+                "/snap/bin/maas",
+                "apikey",
+                "--username",
+                "user",
             ]
         )

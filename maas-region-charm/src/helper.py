@@ -15,15 +15,6 @@ MAAS_ID = Path("/var/snap/maas/common/maas/maas_id")
 MAAS_SERVICE = "pebble"
 
 
-def _run_local(*args, **kwargs) -> int:
-    """Run process in the unit environment.
-
-    Returns:
-        int: process exit status
-    """
-    return subprocess.Popen(*args, **kwargs).wait()
-
-
 class MaasHelper:
     """MAAS helper."""
 
@@ -119,7 +110,7 @@ class MaasHelper:
     @staticmethod
     def create_admin_user(
         username: str, password: str, email: str, ssh_import: str | None
-    ) -> bool:
+    ) -> None:
         """Create an Admin user.
 
         Args:
@@ -128,8 +119,8 @@ class MaasHelper:
             email (str): user e-mail address
             ssh_import (str | None): optional ssh to import
 
-        Returns:
-            bool: whether the user was created
+        Raises:
+            CalledProcessError: failed to create user
         """
         cmd = [
             "/snap/bin/maas",
@@ -144,10 +135,31 @@ class MaasHelper:
         if ssh_import is not None:
             cmd += ["--ssh-import", ssh_import]
 
-        return _run_local(cmd) == 0
+        subprocess.check_call(cmd)
 
     @staticmethod
-    def setup_region(maas_url: str, dsn: str, mode: str) -> bool:
+    def get_api_key(username: str) -> str:
+        """Get API key for a user.
+
+        Args:
+            username (str): username
+
+        Returns:
+            str: the API key
+
+        Raises:
+            CalledProcessError: failed to fetch key
+        """
+        cmd = [
+            "/snap/bin/maas",
+            "apikey",
+            "--username",
+            username,
+        ]
+        return subprocess.check_output(cmd).decode()
+
+    @staticmethod
+    def setup_region(maas_url: str, dsn: str, mode: str) -> None:
         """Initialize a Region controller.
 
         TODO add Vault support
@@ -158,8 +170,8 @@ class MaasHelper:
             dsn (str): URI for the MAAS Postgres database
             mode (str): MAAS operational mode
 
-        Returns:
-            bool: whether the initialisation succeeded
+        Raises:
+            CalledProcessError: failed to fetch key
         """
         cmd = [
             "/snap/bin/maas",
@@ -171,7 +183,7 @@ class MaasHelper:
             dsn,
             "--force",
         ]
-        return _run_local(cmd) == 0
+        subprocess.check_call(cmd)
 
     @staticmethod
     def get_maas_secret() -> str | None:
