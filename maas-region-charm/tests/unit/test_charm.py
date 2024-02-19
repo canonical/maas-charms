@@ -11,7 +11,16 @@ from unittest.mock import PropertyMock, patch
 
 import ops
 import ops.testing
-from charm import MAAS_DB_NAME, MAAS_HTTP_PORT, MAAS_PEER_NAME, MAAS_SNAP_CHANNEL, MaasRegionCharm
+import yaml
+from charm import (
+    MAAS_API_RELATION,
+    MAAS_DB_NAME,
+    MAAS_HTTP_PORT,
+    MAAS_PEER_NAME,
+    MAAS_PROXY_PORT,
+    MAAS_SNAP_CHANNEL,
+    MaasRegionCharm,
+)
 from charms.maas_region_charm.v0 import maas
 
 
@@ -96,6 +105,21 @@ class TestClusterUpdates(unittest.TestCase):
         self.assertEqual(self.harness.get_relation_data(rel_id, app_name)["test_key"], "{}")
 
     @patch("charm.MaasHelper", autospec=True)
+    def test_ha_proxy_data(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        ha = self.harness.add_relation(
+            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
+        )
+
+        ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
+        self.assertEqual(len(ha_data), 1)
+        self.assertIn("service_name", ha_data[0])
+        self.assertIn("service_host", ha_data[0])
+        self.assertEqual(len(ha_data[0]["servers"]), 1)
+        self.assertEqual(ha_data[0]["servers"][0][1], "10.0.0.10")
+
+    @patch("charm.MaasHelper", autospec=True)
     def test_on_maas_cluster_changed_new_agent(self, mock_helper):
         mock_helper.get_maas_mode.return_value = "region"
         mock_helper.get_maas_secret.return_value = "very-secret"
@@ -112,6 +136,25 @@ class TestClusterUpdates(unittest.TestCase):
         self.assertEqual(data["api_url"], "http://10.0.0.10:5240/MAAS")
         self.assertEqual(data["regions"], f'["{socket.getfqdn()}"]')
         self.assertIn("maas_secret_id", data)
+
+    @patch(
+        "charm.MaasRegionCharm.connection_string",
+        new_callable=PropertyMock(return_value="postgres://"),
+    )
+    @patch("charm.MaasHelper", autospec=True)
+    def test_ha_proxy_update_api_url(self, mock_helper, _mock_conn_id):
+        mock_helper.get_maas_mode.return_value = "region"
+        mock_helper.get_maas_secret.return_value = "very-secret"
+        self.harness.set_leader(True)
+        self.harness.begin()
+        self.harness.add_relation(
+            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
+        )
+        mock_helper.setup_region.assert_called_once_with(
+            f"http://proxy.maas:{MAAS_PROXY_PORT}/MAAS",
+            "postgres://",
+            "region",
+        )
 
     @patch(
         "charm.MaasRegionCharm.connection_string",

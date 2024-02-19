@@ -11,6 +11,7 @@ import subprocess
 from typing import Any
 
 import ops
+import yaml
 from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region_charm.v0 import maas
@@ -19,9 +20,12 @@ from helper import MaasHelper
 logger = logging.getLogger(__name__)
 
 MAAS_PEER_NAME = "maas-cluster"
+MAAS_API_RELATION = "api"
 MAAS_DB_NAME = "maas-db"
 
 MAAS_SNAP_CHANNEL = "3.4/stable"
+
+MAAS_PROXY_PORT = 80
 
 MAAS_HTTP_PORT = 5240
 MAAS_HTTPS_PORT = 5443
@@ -79,6 +83,12 @@ class MaasRegionCharm(ops.CharmBase):
         self.maasdb = db.DatabaseRequires(self, MAAS_DB_NAME, self.maasdb_name)
         self.framework.observe(self.maasdb.on.database_created, self._on_maasdb_created)
         self.framework.observe(self.maasdb.on.endpoints_changed, self._on_maasdb_endpoints_changed)
+
+        # HAProxy
+        api_events = self.on[MAAS_API_RELATION]
+        self.framework.observe(api_events.relation_changed, self._on_api_endpoint_changed)
+        self.framework.observe(api_events.relation_departed, self._on_api_endpoint_changed)
+        self.framework.observe(api_events.relation_broken, self._on_api_endpoint_changed)
 
         # COS
         self._grafana_agent = cos_agent.COSAgentProvider(
@@ -139,18 +149,30 @@ class MaasRegionCharm(ops.CharmBase):
         return MaasHelper.get_maas_secret()
 
     @property
+    def bind_address(self) -> str | None:
+        """Get Unit bind address.
+
+        Returns:
+            str: A single address that the charm's application should bind() to.
+        """
+        if bind := self.model.get_binding("juju-info"):
+            return str(bind.network.bind_address)
+        return None
+
+    @property
     def maas_api_url(self) -> str:
         """Get MAAS API URL.
 
         Returns:
             str: The API URL
         """
-        # FIXME use VIP when HAProxy is used
-        if bind := self.model.get_binding("juju-info"):
-            unit_ip = bind.network.bind_address
-            return f"http://{unit_ip}:{MAAS_HTTP_PORT}/MAAS"
-        else:
-            return ""
+        if relation := self.model.get_relation(MAAS_API_RELATION):
+            unit = next(iter(relation.units), None)
+            if unit and (addr := relation.data[unit].get("public-address")):
+                return f"http://{addr}:{MAAS_PROXY_PORT}/MAAS"
+        if bind := self.bind_address:
+            return f"http://{bind}:{MAAS_HTTP_PORT}/MAAS"
+        return ""
 
     @property
     def maas_id(self) -> str | None:
@@ -222,6 +244,27 @@ class MaasRegionCharm(ops.CharmBase):
                 if addr := self.get_peer_data(u, "system-name"):
                     eps += [addr]
         return list(set(eps))
+
+    def _update_ha_proxy(self) -> None:
+        if relation := self.model.get_relation(MAAS_API_RELATION):
+            app_name = f"api-{self.app.name}"
+            data = [
+                {
+                    "service_name": "haproxy_service" if MAAS_PROXY_PORT == 80 else app_name,
+                    "service_host": "0.0.0.0",
+                    "service_port": MAAS_PROXY_PORT,
+                    "service_options": ["mode http", "balance leastconn"],
+                    "servers": [
+                        (
+                            f"{app_name}-{self.unit.name.replace('/', '-')}",
+                            self.bind_address,
+                            MAAS_HTTP_PORT,
+                            [],
+                        )
+                    ],
+                }
+            ]
+            relation.data[self.unit]["services"] = yaml.safe_dump(data)
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
@@ -295,6 +338,13 @@ class MaasRegionCharm(ops.CharmBase):
             self.unit.status = ops.MaintenanceStatus("Updating database connection")
             logger.info(f"DSN: {conn}")
             self._initialize_maas()
+
+    def _on_api_endpoint_changed(self, event: ops.RelationEvent) -> None:
+        logger.info(event)
+        self._update_ha_proxy()
+        self._initialize_maas()
+        if self.unit.is_leader():
+            self._publish_tokens()
 
     def _on_maas_peer_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
