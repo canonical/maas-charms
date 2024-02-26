@@ -7,6 +7,8 @@ Create some environment variables to facilitate this tutorial
 ```bash
 # LaunchPad ID
 export LP_ID="my-lp-id"
+export MAAS_REGION_CHARM=./maas-region-charm/maas-region_ubuntu-22.04-amd64.charm
+export MAAS_AGENT_CHARM=./maas-agent-charm/maas-agent_ubuntu-22.04-amd64.charm
 ```
 
 ## Install required packages
@@ -47,7 +49,14 @@ config:
 EOF
 ```
 
-Integrate the lab network with the system DNS
+Integrate the lab network with the host's DNS service
+
+```shell
+resolvectl dns jujulab 10.70.0.1
+resolvectl domain jujulab '~juju-lab'
+```
+
+Make this integration persistent (optional)
 
 ```shell
 cat <<EOF | sudo tee /etc/systemd/system/lxd-dns-net-juju.service
@@ -91,7 +100,7 @@ EOF
 ### Create project and profiles
 
 Create a Project to isolate our lab.
-> We don't need a *Separate set of images and image aliases for the project*,
+> We don't need a *Separate set of images for the project*,
 > so we disable it to save some disk space and download time.
 
 ```shell
@@ -153,9 +162,12 @@ EOF
 
 ```shell
 for h in $(seq 1 3); do \
-    lxc launch ubuntu:jammy "maas-$h" --vm -p juju-host;\
-    lxc exec "maas-$h" -- cloud-init status --wait;\
-    ssh-keyscan -H "maas-$h.juju-lab" >> ~/.ssh/known_hosts;\
+    lxc launch ubuntu:jammy "m$h" --vm -p juju-host;\
+done;\
+sleep 5;\
+for h in $(seq 1 3); do \
+    lxc exec "m$h" -- cloud-init status --wait;\
+    ssh-keyscan -H "m$h.juju-lab" >> ~/.ssh/known_hosts;\
 done
 ```
 
@@ -168,15 +180,15 @@ cat >| maas-bootstrap.yaml <<EOF
 clouds:
     maas-bootstrap:
         type: manual
-        endpoint: ubuntu@maas-1.juju-lab
+        endpoint: ubuntu@m1.juju-lab
         regions:
             default: {}
 EOF
 
 juju add-cloud maas-bootstrap ./maas-bootstrap.yaml
 juju bootstrap maas-bootstrap maas-controller
-juju add-machine -m controller ssh:ubuntu@maas-2.juju-lab
-juju add-machine -m controller ssh:ubuntu@maas-3.juju-lab
+juju add-machine -m controller ssh:ubuntu@m2.juju-lab
+juju add-machine -m controller ssh:ubuntu@m3.juju-lab
 juju enable-ha -n 3 --to 1,2
 juju controllers --refresh
 ```
@@ -190,31 +202,48 @@ juju deploy -m controller postgresql --channel 14/stable --series jammy --to 0
 juju add-unit -m controller postgresql -n 2 --to 1,2
 ```
 
+## Install HAProxy
+
+Deploy HAProxy using the charm
+
+```shell
+juju deploy -m controller haproxy --series jammy --to 0
+juju add-unit -m controller haproxy -n 2 --to 1,2
+```
+
 ## Install MAAS
 
 Deploy Region using the charm
 
 ```shell
-juju deploy -m controller ./maas-region-charm/maas-region_ubuntu-22.04-amd64.charm --to 0
-juju status --watch 10s
+juju deploy -m controller ${MAAS_REGION_CHARM} --to 0
+juju status --watch 10s  # wait for it to initialize
 ```
 
-Consume DB offer
+Consume offers
 
 ```shell
-juju integrate maas-region postgresql
+juju integrate -m controller maas-region postgresql
+juju integrate -m controller maas-region haproxy
+juju status --watch 10s  # wait for it to settle
 ```
 
 Create an Admin user
 
 ```shell
-juju run maas-region/leader create-admin username=maas password=maas email=maas@example.com ssh-import=lp:${LP_ID}
+juju run -m controller maas-region/leader create-admin username=maas password=maas email=maas@example.com ssh-import=lp:${LP_ID}
 ```
 
-Deploy Rack using the charm
+Deploy Rack/Agent using the charm
 
 ```shell
-juju deploy -m controller ./maas-agent-charm/maas-agent_ubuntu-22.04-amd64.charm --to 1
-juju integrate maas-agent maas-region
+juju deploy -m controller ${MAAS_AGENT_CHARM} --to 1
+juju integrate -m controller maas-agent maas-region
 juju add-unit -m controller maas-agent --to 2
+```
+
+Get the MAAS URL
+
+```shell
+juju run -m controller maas-region/leader get-api-endpoint
 ```
