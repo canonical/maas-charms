@@ -44,6 +44,8 @@ peers:
     interface: maas_peers
 
 provides:
+  api:
+    interface: http
   maas-region:
     interface: maas_controller
   cos-agent:
