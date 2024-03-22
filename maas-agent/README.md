@@ -8,10 +8,10 @@ Avoid using this README file for information that is maintained or published els
 Use links instead.
 -->
 
-# maas-agent-charm
+# maas-agent
 
 Charmhub package name: rack-template
-More information: https://charmhub.io/maas-agent-charm
+More information: <https://charmhub.io/maas-agent>
 
 Describe your charm in one or two sentences.
 

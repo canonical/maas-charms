@@ -21,7 +21,7 @@ from charm import (
     MAAS_SNAP_CHANNEL,
     MaasRegionCharm,
 )
-from charms.maas_region_charm.v0 import maas
+from charms.maas_region.v0 import maas
 
 
 class TestCharm(unittest.TestCase):

@@ -8,10 +8,10 @@ Avoid using this README file for information that is maintained or published els
 Use links instead.
 -->
 
-# maas-region-charm
+# maas-region
 
 Charmhub package name: operator-template
-More information: https://charmhub.io/maas-region-charm
+More information: <https://charmhub.io/maas-region>
 
 Describe your charm in one or two sentences.
 
