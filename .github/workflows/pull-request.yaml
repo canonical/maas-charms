@@ -1,0 +1,21 @@
+name: Pull Requests
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  pull-request-region:
+    name: PR Region
+    uses: canonical/observability/.github/workflows/charm-pull-request.yaml@main
+    secrets: inherit
+    with:
+      charm-path: maas-region
+
+  pull-request-agent:
+    name: PR Agent
+    uses: canonical/observability/.github/workflows/charm-pull-request.yaml@main
+    secrets: inherit
+    with:
+      charm-path: maas-agent
