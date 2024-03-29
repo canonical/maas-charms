@@ -25,6 +25,15 @@ description: |
   an be scaled-out and highly available given the appropriate postgres
   setup and additional API servers.
 
+links:
+  documentation: https://discourse.charmhub.io/t/maas-region-docs-index/13286
+  website:
+    - https://charmhub.io/maas-region
+  source:
+    - https://github.com/canonical/maas-charms/tree/main/maas-region
+  issues:
+    - https://github.com/canonical/maas-charms/issues
+
 # (Required for 'charm' type)
 bases:
   - build-on:
