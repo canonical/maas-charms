@@ -22,6 +22,15 @@ description: |
   for high availability, with secondary agents automatically stepping to
   provide these services if the primary agent fails.
 
+links:
+  documentation: https://discourse.charmhub.io/t/maas-agent-docs-index/13709
+  website:
+    - https://charmhub.io/maas-agent
+  source:
+    - https://github.com/canonical/maas-charms/tree/main/maas-agent
+  issues:
+    - https://github.com/canonical/maas-charms/issues
+
 # (Required for 'charm' type)
 bases:
   - build-on:
@@ -39,4 +48,3 @@ requires:
 provides:
   cos-agent:
     interface: cos_agent
-
