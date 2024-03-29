@@ -6,7 +6,7 @@ Allows MAAS Agents to enroll with Region controllers
 import dataclasses
 import json
 import logging
-from typing import Any, Dict, MutableMapping
+from typing import Any, Dict, List, MutableMapping, Union
 
 import ops
 from ops.charm import CharmEvents
@@ -14,7 +14,7 @@ from ops.framework import EventSource, Handle, Object
 from typing_extensions import Self
 
 # The unique Charmhub library identifier, never change it
-LIBID = "50055f0422414543ba96d10a9fb7d129"
+LIBID = "3e4a25698b094f96a59aa01367416ecb"
 
 # Increment this major API version when introducing breaking changes
 LIBAPI = 0
@@ -22,6 +22,7 @@ LIBAPI = 0
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
 LIBPATCH = 1
+
 
 DEFAULT_ENDPOINT_NAME = "maas-region"
 BUILTIN_JUJU_KEYS = {"ingress-address", "private-address", "egress-subnets"}
@@ -44,10 +45,10 @@ class MaasDatabag:
         init_vals = {}
         for f in dataclasses.fields(cls):
             val = data.get(f.name)
-            init_vals[f.name] = val if f.type == str else json.loads(val)
+            init_vals[f.name] = val if f.type == str else json.loads(val)  # type: ignore
         return cls(**init_vals)
 
-    def dump(self, databag: MutableMapping[str, str] | None = None) -> None:
+    def dump(self, databag: Union[MutableMapping[str, str], None] = None) -> None:
         """Write the contents of this model to Juju databag."""
         if databag is None:
             databag = {}
@@ -71,7 +72,7 @@ class MaasProviderAppData(MaasDatabag):
     """The schema for the Provider side of this relation."""
 
     api_url: str
-    regions: list[str]
+    regions: List[str]
     maas_secret_id: str
 
     def get_secret(self, model: ops.Model) -> str:
@@ -130,12 +131,12 @@ class MaasRegionRequirerEvents(CharmEvents):
 class MaasRegionRequirer(Object):
     """Requires-side of the MAAS relation."""
 
-    on = MaasRegionRequirerEvents()
+    on = MaasRegionRequirerEvents()  # type: ignore
 
     def __init__(
         self,
         charm: ops.CharmBase,
-        key: str | None = None,
+        key: Union[str, None] = None,
         endpoint: str = DEFAULT_ENDPOINT_NAME,
     ):
         super().__init__(charm, key or endpoint)
@@ -156,7 +157,7 @@ class MaasRegionRequirer(Object):
         )
 
     @property
-    def _relation(self) -> ops.Relation | None:
+    def _relation(self) -> Union[ops.Relation, None]:
         # filter out common unhappy relation states
         relation = self.model.get_relation(self._endpoint)
         return relation if relation and relation.app and relation.data else None
@@ -176,16 +177,16 @@ class MaasRegionRequirer(Object):
     def _on_relation_broken(self, _event: ops.RelationBrokenEvent) -> None:
         self.on.removed.emit()
 
-    def get_enroll_data(self) -> MaasProviderAppData | None:
+    def get_enroll_data(self) -> Union[MaasProviderAppData, None]:
         """Get enrollment data from databag."""
         relation = self._relation
         if relation:
             assert relation.app is not None
             try:
                 databag = relation.data[relation.app]
-                return MaasProviderAppData.load(databag)
+                return MaasProviderAppData.load(databag)  # type: ignore
             except TypeError:
-                log.debug(f"invalid databag contents: {databag}")
+                log.debug(f"invalid databag contents: {databag}")  # type: ignore
         return None
 
     def is_published(self) -> bool:
@@ -196,7 +197,7 @@ class MaasRegionRequirer(Object):
 
         unit_data = relation.data[self._charm.unit]
         try:
-            MaasRequirerUnitData.load(unit_data)
+            MaasRequirerUnitData.load(unit_data)  # type: ignore
             return True
         except TypeError:
             return False
@@ -218,7 +219,7 @@ class MaasRegionProvider(Object):
     def __init__(
         self,
         charm: ops.CharmBase,
-        key: str | None = None,
+        key: Union[str, None] = None,
         endpoint: str = DEFAULT_ENDPOINT_NAME,
     ):
         super().__init__(charm, key or endpoint)
@@ -226,10 +227,10 @@ class MaasRegionProvider(Object):
         self._endpoint = endpoint
 
     @property
-    def _relations(self) -> list[ops.Relation]:
+    def _relations(self) -> List[ops.Relation]:
         return self.model.relations[self._endpoint]
 
-    def _update_secret(self, relation: ops.Relation, content: dict[str, str]) -> str:
+    def _update_secret(self, relation: ops.Relation, content: Dict[str, str]) -> str:
         label = f"enroll-{relation.name}-{relation.id}.secret"
         try:
             secret = self.model.get_secret(label=label)
@@ -242,7 +243,7 @@ class MaasRegionProvider(Object):
             secret.grant(relation)
         return secret.get_info().id
 
-    def publish_enroll_token(self, maas_api: str, regions: list[str], maas_secret: str) -> None:
+    def publish_enroll_token(self, maas_api: str, regions: List[str], maas_secret: str) -> None:
         """Publish enrollment data.
 
         Args:
@@ -260,7 +261,7 @@ class MaasRegionProvider(Object):
                 )
                 local_app_databag.dump(relation.data[self.model.app])
 
-    def gather_rack_units(self) -> dict[str, ops.model.Unit]:
+    def gather_rack_units(self) -> Dict[str, ops.model.Unit]:
         """Get a map of Rack units.
 
         Returns:
@@ -272,7 +273,7 @@ class MaasRegionProvider(Object):
                 continue
             for worker_unit in relation.units:
                 try:
-                    worker_data = MaasRequirerUnitData.load(relation.data[worker_unit])
+                    worker_data = MaasRequirerUnitData.load(relation.data[worker_unit])  # type: ignore
                     url = worker_data.url
                 except TypeError as e:
                     log.debug(f"invalid databag contents: {e}")

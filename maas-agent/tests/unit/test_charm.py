@@ -5,6 +5,7 @@
 
 import socket
 import unittest
+from typing import List
 from unittest.mock import patch
 
 import ops
@@ -54,7 +55,7 @@ class TestEnrollment(unittest.TestCase):
         self.harness.begin()
         self.addCleanup(self.harness.cleanup)
 
-    def _enroll(self, rel_id: int, regions: list[str]):
+    def _enroll(self, rel_id: int, regions: List[str]):
         secret_id = self.harness.add_model_secret(
             self.remote_app, {"maas-secret": self.maas_secret}
         )

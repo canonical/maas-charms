@@ -25,7 +25,6 @@ from charms.maas_region.v0 import maas
 
 
 class TestCharm(unittest.TestCase):
-
     def setUp(self):
         self.harness = ops.testing.Harness(MaasRegionCharm)
         self.harness.add_network("10.0.0.10")
