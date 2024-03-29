@@ -78,7 +78,6 @@ class TestHelperSnapCache(unittest.TestCase):
 
 
 class TestHelperFiles(unittest.TestCase):
-
     @patch("pathlib.Path.open", new_callable=lambda: mock_open(read_data="maas-id\n"))
     def test_get_maas_id(self, _):
         self.assertEqual(MaasHelper.get_maas_id(), "maas-id")

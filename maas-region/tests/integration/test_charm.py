@@ -12,7 +12,7 @@ from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 
-METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
+METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 APP_NAME = METADATA["name"]
 
 
@@ -25,9 +25,35 @@ async def test_build_and_deploy(ops_test: OpsTest):
     # Build and deploy charm from local source folder
     charm = await ops_test.build_charm(".")
 
-    # Deploy the charm and wait for active/idle status
+    # Deploy the charm and wait for waiting/idle status
     await asyncio.gather(
         ops_test.model.deploy(charm, application_name=APP_NAME),
+        ops_test.model.wait_for_idle(
+            apps=[APP_NAME], status="waiting", raise_on_blocked=True, timeout=1000
+        ),
+    )
+
+
+@pytest.mark.abort_on_fail
+async def test_database_integration(ops_test: OpsTest):
+    """Verify that the charm integrates with the database.
+
+    Assert that the charm is active if the integration is established.
+    """
+    await asyncio.gather(
+        ops_test.model.deploy(
+            "postgresql",
+            application_name="postgresql",
+            channel="14/stable",
+            trust=True,
+        ),
+        ops_test.model.wait_for_idle(
+            apps=["postgresql"], status="active", raise_on_blocked=True, timeout=1000
+        ),
+    )
+
+    await asyncio.gather(
+        ops_test.model.integrate(f"{APP_NAME}", "postgresql"),
         ops_test.model.wait_for_idle(
             apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=1000
         ),
