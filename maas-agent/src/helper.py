@@ -5,6 +5,7 @@
 
 import subprocess
 from pathlib import Path
+from typing import Union
 
 from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
 
@@ -38,31 +39,31 @@ class MaasHelper:
             maas.ensure(SnapState.Absent)
 
     @staticmethod
-    def get_installed_version() -> str | None:
+    def get_installed_version() -> Union[str, None]:
         """Get installed version.
 
         Returns:
-            str | None: version if installed
+            Union[str, None]: version if installed
         """
         maas = SnapCache()[MAAS_SNAP_NAME]
         return maas.revision if maas.present else None
 
     @staticmethod
-    def get_installed_channel() -> str | None:
+    def get_installed_channel() -> Union[str, None]:
         """Get installed channel.
 
         Returns:
-            str | None: channel if installed
+            Union[str, None]: channel if installed
         """
         maas = SnapCache()[MAAS_SNAP_NAME]
         return maas.channel if maas.present else None
 
     @staticmethod
-    def get_maas_id() -> str | None:
+    def get_maas_id() -> Union[str, None]:
         """Get MAAS system ID.
 
         Returns:
-            str | None: system_id, or None if not present
+            Union[str, None]: system_id, or None if not present
         """
         try:
             with MAAS_ID.open() as file:
@@ -71,11 +72,11 @@ class MaasHelper:
             return None
 
     @staticmethod
-    def get_maas_mode() -> str | None:
+    def get_maas_mode() -> Union[str, None]:
         """Get MAAS operation mode.
 
         Returns:
-            str | None: mode, or None if not initialised
+            Union[str, None]: mode, or None if not initialised
         """
         try:
             with MAAS_MODE.open() as file:

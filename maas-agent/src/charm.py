@@ -6,6 +6,7 @@
 
 import logging
 import socket
+from typing import Union
 
 import ops
 from charms.grafana_agent.v0 import cos_agent
@@ -61,7 +62,7 @@ class MaasRackCharm(ops.CharmBase):
         # self.framework.observe(self.maas_region.on.removed, self._on_maas_removed)
 
     @property
-    def version(self) -> str | None:
+    def version(self) -> Union[str, None]:
         """Reports the current workload version.
 
         Returns:
@@ -70,7 +71,7 @@ class MaasRackCharm(ops.CharmBase):
         return MaasHelper.get_installed_version()
 
     @property
-    def maas_id(self) -> str | None:
+    def maas_id(self) -> Union[str, None]:
         """Reports the MAAS ID.
 
         Returns:
