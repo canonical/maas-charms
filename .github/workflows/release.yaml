@@ -1,0 +1,21 @@
+name: Release Charms to Edge and Publish Libraries
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release-region:
+    uses: canonical/observability/.github/workflows/charm-release.yaml@main
+    secrets: inherit
+    with:
+      charm-path: maas-region
+      provider: lxd
+
+  release-agent:
+    uses: canonical/observability/.github/workflows/charm-release.yaml@main
+    secrets: inherit
+    with:
+      charm-path: maas-agent
+      provider: lxd
