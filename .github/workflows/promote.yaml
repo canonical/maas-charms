@@ -1,0 +1,27 @@
+name: Promote Charm
+
+on:
+  workflow_dispatch:
+    inputs:
+      charm:
+        type: choice
+        description: Charm to promote
+        options:
+          - maas-region
+          - maas-agent
+      promotion:
+        type: choice
+        description: Channel to promote from
+        options:
+          - edge -> beta
+          - beta -> candidate
+          - candidate -> stable
+
+jobs:
+  promote:
+    name: Promote
+    uses: canonical/observability/.github/workflows/charm-promote.yaml@main
+    with:
+      charm-path: ${{ github.event.inputs.charm }}
+      promotion: ${{ github.event.inputs.promotion }}
+    secrets: inherit
