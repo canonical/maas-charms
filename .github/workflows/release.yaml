@@ -15,6 +15,7 @@ jobs:
 
   release-agent:
     uses: canonical/observability/.github/workflows/charm-release.yaml@main
+    needs: release-region
     secrets: inherit
     with:
       charm-path: maas-agent
