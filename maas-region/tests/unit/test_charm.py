@@ -71,12 +71,12 @@ class TestDBRelation(unittest.TestCase):
                 "endpoints": "30.0.0.1:5432",
                 "read-only-endpoints": "30.0.0.2:5432",
                 "username": "test_maas_db",
-                "password": "my_password",
+                "password": "my_secret",
             },
         )
         mock_helper.setup_region.assert_called_once_with(
             f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
-            "postgres://test_maas_db:my_password@30.0.0.1:5432/maas_region_db",
+            "postgres://test_maas_db:my_secret@30.0.0.1:5432/maas_region_db",
             "region",
         )
 
