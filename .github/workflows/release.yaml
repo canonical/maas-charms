@@ -37,6 +37,7 @@ jobs:
     secrets: inherit
     with:
       charm-path: maas-region
+      release-tag-prefix: maas-region
       provider: lxd
 
   detect-agent-changes:
@@ -72,4 +73,5 @@ jobs:
     secrets: inherit
     with:
       charm-path: maas-agent
+      release-tag-prefix: maas-agent
       provider: lxd
