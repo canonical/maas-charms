@@ -113,8 +113,8 @@ class TestClusterUpdates(unittest.TestCase):
 
         ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
         self.assertEqual(len(ha_data), 1)
-        self.assertIn("service_name", ha_data[0])
-        self.assertIn("service_host", ha_data[0])
+        self.assertIn("service_name", ha_data[0])  # codespell:ignore
+        self.assertIn("service_host", ha_data[0])  # codespell:ignore
         self.assertEqual(len(ha_data[0]["servers"]), 1)
         self.assertEqual(ha_data[0]["servers"][0][1], "10.0.0.10")
 
@@ -134,7 +134,7 @@ class TestClusterUpdates(unittest.TestCase):
         data = self.harness.get_relation_data(rel_id, "maas-region")
         self.assertEqual(data["api_url"], "http://10.0.0.10:5240/MAAS")
         self.assertEqual(data["regions"], f'["{socket.getfqdn()}"]')
-        self.assertIn("maas_secret_id", data)
+        self.assertIn("maas_secret_id", data)  # codespell:ignore
 
     @patch(
         "charm.MaasRegionCharm.connection_string",

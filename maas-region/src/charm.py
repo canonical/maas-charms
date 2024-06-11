@@ -287,7 +287,7 @@ class MaasRegionCharm(ops.CharmBase):
             event (ops.InstallEvent): Event from ops framework
         """
         self.unit.status = ops.MaintenanceStatus("installing...")
-        channel = self.config.get("channel", MAAS_SNAP_CHANNEL)
+        channel = str(self.config.get("channel", MAAS_SNAP_CHANNEL))
         try:
             MaasHelper.install(channel)
         except Exception as ex:
