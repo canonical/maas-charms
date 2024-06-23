@@ -43,9 +43,17 @@ bases:
       - name: ubuntu
         channel: "22.04"
 
+storage:
+  certs:
+    type: filesystem
+    minimum-size: 5M
+
 requires:
   maas-db:
     interface: postgresql_client
+    limit: 1
+  vault-kv:
+    interface: vault-kv
     limit: 1
 
 peers:
