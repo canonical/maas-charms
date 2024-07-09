@@ -27,7 +27,7 @@ MAAS_RACK_PORTS = [
     ops.Port("udp", 123),  # chrony
     ops.Port("udp", 323),  # chrony
     ops.Port("tcp", 53),  # named
-    ops.Port("tcp", 5240),  # nginx master
+    ops.Port("tcp", 5240),  # nginx primary
     *[ops.Port("tcp", p) for p in range(5241, 5247 + 1)],  # Internal services
     ops.Port("tcp", 5248),
     ops.Port("tcp", MAAS_RACK_METRICS_PORT),
