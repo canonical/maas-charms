@@ -21,7 +21,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 1
+LIBPATCH = 2
 
 
 DEFAULT_ENDPOINT_NAME = "maas-region"
@@ -45,7 +45,7 @@ class MaasDatabag:
         init_vals = {}
         for f in dataclasses.fields(cls):
             val = data.get(f.name)
-            init_vals[f.name] = val if f.type == str else json.loads(val)  # type: ignore
+            init_vals[f.name] = val if f.type == str else json.loads(val)  # type: ignore  # noqa: E721
         return cls(**init_vals)
 
     def dump(self, databag: Union[MutableMapping[str, str], None] = None) -> None:
@@ -56,7 +56,7 @@ class MaasDatabag:
             databag.clear()
         for f in dataclasses.fields(self):
             val = getattr(self, f.name)
-            databag[f.name] = val if f.type == str else json.dumps(val)
+            databag[f.name] = val if f.type == str else json.dumps(val)  # noqa: E721
 
 
 @dataclasses.dataclass
