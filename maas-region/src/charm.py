@@ -324,9 +324,8 @@ class MaasRegionCharm(ops.CharmBase):
             event (DatabaseCreatedEvent): event from DatabaseRequires
         """
         logger.info(f"MAAS database credentials received for user '{event.username}'")
-        if conn := self.connection_string:
+        if self.connection_string:
             self.unit.status = ops.MaintenanceStatus("Initialising the MAAS database")
-            logger.info(f"DSN: {conn}")
             self._initialize_maas()
 
     def _on_maasdb_endpoints_changed(self, event: db.DatabaseEndpointsChangedEvent) -> None:
@@ -336,9 +335,8 @@ class MaasRegionCharm(ops.CharmBase):
             event (DatabaseEndpointsChangedEvent): event from DatabaseRequires
         """
         logger.info(f"MAAS database endpoints have been changed to: {event.endpoints}")
-        if conn := self.connection_string:
+        if self.connection_string:
             self.unit.status = ops.MaintenanceStatus("Updating database connection")
-            logger.info(f"DSN: {conn}")
             self._initialize_maas()
 
     def _on_api_endpoint_changed(self, event: ops.RelationEvent) -> None:
