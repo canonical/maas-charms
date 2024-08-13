@@ -264,6 +264,19 @@ class MaasRegionCharm(ops.CharmBase):
                             [],
                         )
                     ],
+                },
+                {
+                    "service_name": "agent-service",
+                    "service_host": "0.0.0.0",
+                    "service_port": MAAS_PROXY_PORT,
+                    "servers": [
+                        (
+                            f"{app_name}-{self.unit.name.replace('/', '-')}",
+                            self.bind_address,
+                            MAAS_HTTP_PORT,
+                            [],
+                        )
+                    ]
                 }
             ]
             relation.data[self.unit]["services"] = yaml.safe_dump(data)
