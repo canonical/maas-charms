@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import MagicMock, PropertyMock, mock_open, patch
 
 from charms.operator_libs_linux.v2.snap import SnapState
+
 from helper import MAAS_SERVICE, MaasHelper
 
 

@@ -10,8 +10,9 @@ from unittest.mock import patch
 
 import ops
 import ops.testing
-from charm import MAAS_RACK_PORTS, MAAS_SNAP_CHANNEL, MaasRackCharm
 from charms.maas_region.v0 import maas
+
+from charm import MAAS_RACK_PORTS, MAAS_SNAP_CHANNEL, MaasRackCharm
 
 
 class TestCharm(unittest.TestCase):

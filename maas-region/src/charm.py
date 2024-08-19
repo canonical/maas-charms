@@ -15,6 +15,7 @@ import yaml
 from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region.v0 import maas
+
 from helper import MaasHelper
 
 logger = logging.getLogger(__name__)
