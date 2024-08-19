@@ -12,6 +12,7 @@ import ops
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region.v0 import maas
 from charms.operator_libs_linux.v2.snap import SnapError
+
 from helper import MaasHelper
 
 logger = logging.getLogger(__name__)

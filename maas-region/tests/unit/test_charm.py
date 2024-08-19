@@ -12,6 +12,8 @@ from unittest.mock import PropertyMock, patch
 import ops
 import ops.testing
 import yaml
+from charms.maas_region.v0 import maas
+
 from charm import (
     MAAS_API_RELATION,
     MAAS_DB_NAME,
@@ -21,7 +23,6 @@ from charm import (
     MAAS_SNAP_CHANNEL,
     MaasRegionCharm,
 )
-from charms.maas_region.v0 import maas
 
 
 class TestCharm(unittest.TestCase):
