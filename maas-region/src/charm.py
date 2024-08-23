@@ -15,6 +15,7 @@ import yaml
 from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region.v0 import maas
+
 from helper import MaasHelper
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,12 @@ MAAS_REGION_PORTS = [
 
 class MaasRegionCharm(ops.CharmBase):
     """Charm the application."""
+
+    _TLS_MODES = [
+        "",
+        "termination",
+        "passthrough",
+    ]  # no TLS, termination at HA Proxy, TLS passthrough
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -107,6 +114,9 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.get_api_key_action, self._on_get_api_key_action)
         self.framework.observe(self.on.list_controllers_action, self._on_list_controllers_action)
         self.framework.observe(self.on.get_api_endpoint_action, self._on_get_api_endpoint_action)
+
+        # Charm configuration
+        self.framework.observe(self.on.config_changed, self._on_config_changed)
 
     @property
     def peers(self) -> Union[ops.Relation, None]:
@@ -247,7 +257,7 @@ class MaasRegionCharm(ops.CharmBase):
                     eps += [addr]
         return list(set(eps))
 
-    def _update_ha_proxy(self) -> None:
+    def _update_ha_proxy(self, tls_mode: str = "") -> None:
         if relation := self.model.get_relation(MAAS_API_RELATION):
             app_name = f"api-{self.app.name}"
             data = [
@@ -265,20 +275,26 @@ class MaasRegionCharm(ops.CharmBase):
                         )
                     ],
                 },
-                {
-                    "service_name": "agent-service",
-                    "service_host": "0.0.0.0",
-                    "service_port": MAAS_PROXY_PORT,
-                    "servers": [
-                        (
-                            f"{app_name}-{self.unit.name.replace('/', '-')}",
-                            self.bind_address,
-                            MAAS_HTTP_PORT,
-                            [],
-                        )
-                    ]
-                }
             ]
+            if tls_mode == "termination":
+                data.append(
+                    {
+                        "service_name": "agent-service",
+                        "service_host": "0.0.0.0",
+                        "service_port": MAAS_PROXY_PORT,
+                        "servers": [
+                            (
+                                f"{app_name}-{self.unit.name.replace('/', '-')}",
+                                self.bind_address,
+                                MAAS_HTTP_PORT,
+                                [],
+                            )
+                        ],
+                    }
+                )
+            elif tls_mode == "passthrough":
+                # TODO: Implement
+                pass
             relation.data[self.unit]["services"] = yaml.safe_dump(data)
 
     def _on_start(self, _event: ops.StartEvent) -> None:
@@ -421,6 +437,15 @@ class MaasRegionCharm(ops.CharmBase):
             event.set_results({"api-url": url})
         else:
             event.fail("MAAS is not initialized yet")
+
+    def _on_config_changed(self, event: ops.ActionEvent):
+        tls_mode = self.config["tls-mode"]
+        if tls_mode not in self._TLS_MODES:
+            self.unit.status = ops.BlockedStatus(
+                f"Invalid tls-mode configuration: '{tls_mode}'. Valid options are: {self._TLS_MODES}"
+            )
+            return
+        self._update_ha_proxy(tls_mode=tls_mode)
 
 
 if __name__ == "__main__":  # pragma: nocover
