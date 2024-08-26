@@ -279,7 +279,7 @@ class MaasRegionCharm(ops.CharmBase):
             if self.config["tls_mode"] == "termination":
                 data.append(
                     {
-                        "service_name": "agent-service",
+                        "service_name": "agent_service",
                         "service_host": "0.0.0.0",
                         "service_port": MAAS_PROXY_PORT,
                         "servers": [
@@ -292,9 +292,7 @@ class MaasRegionCharm(ops.CharmBase):
                         ],
                     }
                 )
-            elif self.config["tls_mode"] == "passthrough":
-                # TODO: Implement
-                pass
+            # TODO: Implement passthrough configuration
             relation.data[self.unit]["services"] = yaml.safe_dump(data)
 
     def _on_start(self, _event: ops.StartEvent) -> None:
@@ -442,9 +440,7 @@ class MaasRegionCharm(ops.CharmBase):
         tls_mode = self.config["tls_mode"]
         if tls_mode not in self._TLS_MODES:
             msg = f"Invalid tls_mode configuration: '{tls_mode}'. Valid options are: {self._TLS_MODES}"
-            self.unit.status = ops.BlockedStatus(
-                msg
-            )
+            self.unit.status = ops.BlockedStatus(msg)
             event.fail(msg)
             return
         self._update_ha_proxy()
