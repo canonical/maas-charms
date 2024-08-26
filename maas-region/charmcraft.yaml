@@ -128,8 +128,8 @@ parts:
       - src/loki/loki.yml
 
 config:
-  tls-mode:
-    name:
+  options:
+    tls_mode:
       default: ""
       description: Whether to enable TLS termination at HA Proxy ('termination'), TLS passthrough ('passthrough'), or no TLS ('')
       type: string
