@@ -96,6 +96,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(api_events.relation_changed, self._on_api_endpoint_changed)
         self.framework.observe(api_events.relation_departed, self._on_api_endpoint_changed)
         self.framework.observe(api_events.relation_broken, self._on_api_endpoint_changed)
+        self.tls_mode = ""
 
         # COS
         self._grafana_agent = cos_agent.COSAgentProvider(
@@ -257,7 +258,7 @@ class MaasRegionCharm(ops.CharmBase):
                     eps += [addr]
         return list(set(eps))
 
-    def _update_ha_proxy(self, tls_mode: str = "") -> None:
+    def _update_ha_proxy(self) -> None:
         if relation := self.model.get_relation(MAAS_API_RELATION):
             app_name = f"api-{self.app.name}"
             data = [
@@ -276,7 +277,7 @@ class MaasRegionCharm(ops.CharmBase):
                     ],
                 },
             ]
-            if tls_mode == "termination":
+            if self.tls_mode == "termination":
                 data.append(
                     {
                         "service_name": "agent-service",
@@ -292,7 +293,7 @@ class MaasRegionCharm(ops.CharmBase):
                         ],
                     }
                 )
-            elif tls_mode == "passthrough":
+            elif self.tls_mode == "passthrough":
                 # TODO: Implement
                 pass
             relation.data[self.unit]["services"] = yaml.safe_dump(data)
@@ -445,7 +446,8 @@ class MaasRegionCharm(ops.CharmBase):
                 f"Invalid tls-mode configuration: '{tls_mode}'. Valid options are: {self._TLS_MODES}"
             )
             return
-        self._update_ha_proxy(tls_mode=tls_mode)
+        self.tls_mode = tls_mode
+        self._update_ha_proxy()
 
 
 if __name__ == "__main__":  # pragma: nocover
