@@ -12,6 +12,8 @@ from unittest.mock import PropertyMock, patch
 import ops
 import ops.testing
 import yaml
+from charms.maas_region.v0 import maas
+
 from charm import (
     MAAS_API_RELATION,
     MAAS_DB_NAME,
@@ -21,7 +23,6 @@ from charm import (
     MAAS_SNAP_CHANNEL,
     MaasRegionCharm,
 )
-from charms.maas_region.v0 import maas
 
 
 class TestCharm(unittest.TestCase):
@@ -117,6 +118,22 @@ class TestClusterUpdates(unittest.TestCase):
         self.assertIn("service_host", ha_data[0])  # codespell:ignore
         self.assertEqual(len(ha_data[0]["servers"]), 1)
         self.assertEqual(ha_data[0]["servers"][0][1], "10.0.0.10")
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_ha_proxy_data_tls(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.update_config({"tls_mode": "termination"})
+        self.harness.begin()
+        ha = self.harness.add_relation(
+            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
+        )
+
+        ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
+        self.assertEqual(len(ha_data), 2)
+        self.assertIn("service_name", ha_data[1])  # codespell:ignore
+        self.assertIn("service_host", ha_data[1])  # codespell:ignore
+        self.assertEqual(len(ha_data[1]["servers"]), 1)
+        self.assertEqual(ha_data[1]["servers"][0][1], "10.0.0.10")
 
     @patch("charm.MaasHelper", autospec=True)
     def test_on_maas_cluster_changed_new_agent(self, mock_helper):
