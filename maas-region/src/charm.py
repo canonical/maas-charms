@@ -439,7 +439,7 @@ class MaasRegionCharm(ops.CharmBase):
             event.fail("MAAS is not initialized yet")
 
     def _on_config_changed(self, event: ops.ActionEvent):
-        tls_mode = self.config["tls-mode"]
+        tls_mode = self.config["tls_mode"]
         if tls_mode not in self._TLS_MODES:
             self.unit.status = ops.BlockedStatus(
                 f"Invalid tls-mode configuration: '{tls_mode}'. Valid options are: {self._TLS_MODES}"
