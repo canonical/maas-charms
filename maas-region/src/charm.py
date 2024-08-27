@@ -56,6 +56,11 @@ MAAS_REGION_PORTS = [
 class MaasRegionCharm(ops.CharmBase):
     """Charm the application."""
 
+    _TLS_MODES = [
+        "",
+        "termination",
+    ]  # no TLS, termination at HA Proxy
+
     def __init__(self, *args):
         super().__init__(*args)
 
@@ -108,6 +113,9 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.get_api_key_action, self._on_get_api_key_action)
         self.framework.observe(self.on.list_controllers_action, self._on_list_controllers_action)
         self.framework.observe(self.on.get_api_endpoint_action, self._on_get_api_endpoint_action)
+
+        # Charm configuration
+        self.framework.observe(self.on.config_changed, self._on_config_changed)
 
     @property
     def peers(self) -> Union[ops.Relation, None]:
@@ -265,8 +273,25 @@ class MaasRegionCharm(ops.CharmBase):
                             [],
                         )
                     ],
-                }
+                },
             ]
+            if self.config["tls_mode"] == "termination":
+                data.append(
+                    {
+                        "service_name": "agent_service",
+                        "service_host": "0.0.0.0",
+                        "service_port": MAAS_PROXY_PORT,
+                        "servers": [
+                            (
+                                f"{app_name}-{self.unit.name.replace('/', '-')}",
+                                self.bind_address,
+                                MAAS_HTTP_PORT,
+                                [],
+                            )
+                        ],
+                    }
+                )
+            # TODO: Implement passthrough configuration
             relation.data[self.unit]["services"] = yaml.safe_dump(data)
 
     def _on_start(self, _event: ops.StartEvent) -> None:
@@ -407,6 +432,14 @@ class MaasRegionCharm(ops.CharmBase):
             event.set_results({"api-url": url})
         else:
             event.fail("MAAS is not initialized yet")
+
+    def _on_config_changed(self, event: ops.ConfigChangedEvent):
+        tls_mode = self.config["tls_mode"]
+        if tls_mode not in self._TLS_MODES:
+            msg = f"Invalid tls_mode configuration: '{tls_mode}'. Valid options are: {self._TLS_MODES}"
+            self.unit.status = ops.BlockedStatus(msg)
+            raise ValueError(msg)
+        self._update_ha_proxy()
 
 
 if __name__ == "__main__":  # pragma: nocover
