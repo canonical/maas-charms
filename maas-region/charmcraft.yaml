@@ -126,3 +126,10 @@ parts:
       "*": src/loki/
     prime:
       - src/loki/loki.yml
+
+config:
+  options:
+    tls_mode:
+      default: ""
+      description: Whether to enable TLS termination at HA Proxy ('termination'), or no TLS ('')
+      type: string
