@@ -59,8 +59,7 @@ class MaasRegionCharm(ops.CharmBase):
     _TLS_MODES = [
         "",
         "termination",
-        "passthrough",
-    ]  # no TLS, termination at HA Proxy, TLS passthrough
+    ]  # no TLS, termination at HA Proxy
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -436,13 +435,12 @@ class MaasRegionCharm(ops.CharmBase):
         else:
             event.fail("MAAS is not initialized yet")
 
-    def _on_config_changed(self, event: ops.ActionEvent):
+    def _on_config_changed(self, event: ops.ConfigChangedEvent):
         tls_mode = self.config["tls_mode"]
         if tls_mode not in self._TLS_MODES:
             msg = f"Invalid tls_mode configuration: '{tls_mode}'. Valid options are: {self._TLS_MODES}"
             self.unit.status = ops.BlockedStatus(msg)
-            event.fail(msg)
-            return
+            raise ValueError(msg)
         self._update_ha_proxy()
 
 
