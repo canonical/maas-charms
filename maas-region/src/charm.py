@@ -24,7 +24,7 @@ MAAS_PEER_NAME = "maas-cluster"
 MAAS_API_RELATION = "api"
 MAAS_DB_NAME = "maas-db"
 
-MAAS_SNAP_CHANNEL = "3.5/stable"
+MAAS_SNAP_CHANNEL = "3.4/stable"
 
 MAAS_PROXY_PORT = 80
 
