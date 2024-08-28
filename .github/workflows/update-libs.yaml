@@ -9,14 +9,19 @@ on:
 jobs:
   update-lib-region:
     name: Check libraries
-    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@5b3d2836bb45cb435e78e8d7d041f643d440ece5
+    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@main
     secrets: inherit
     with:
       charm-path: maas-region
+      commit-username: maas-lander
+      commit-email: 115650013+maas-lander@users.noreply.github.com
 
   update-lib-agent:
     name: Check libraries
-    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@5b3d2836bb45cb435e78e8d7d041f643d440ece5
+    needs: update-lib-region
+    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@main
     secrets: inherit
     with:
       charm-path: maas-agent
+      commit-username: maas-lander
+      commit-email: 115650013+maas-lander@users.noreply.github.com
