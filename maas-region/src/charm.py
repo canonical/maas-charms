@@ -15,6 +15,7 @@ import yaml
 from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region.v0 import maas
+from charms.operator_libs_linux.v2.snap import SnapError
 from charms.tempo_k8s.v1.charm_tracing import trace_charm
 from charms.tempo_k8s.v2.tracing import TracingEndpointRequirer, charm_tracing_config
 
@@ -80,6 +81,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.start, self._on_start)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
+        self.framework.observe(self.on.upgrade_charm, self._on_upgrade_charm)
 
         # MAAS Region
         self.maas_region = maas.MaasRegionProvider(self)
@@ -341,6 +343,21 @@ class MaasRegionCharm(ops.CharmBase):
         self.unit.status = ops.MaintenanceStatus("removing...")
         try:
             MaasHelper.uninstall()
+        except Exception as ex:
+            logger.error(str(ex))
+
+    def _on_upgrade_charm(self, _event: ops.UpgradeCharmEvent) -> None:
+        """Upgrade MAAS installation on the machine.
+
+        Args:
+            event (ops.UpgradeCharmEvent): Event from ops framework
+        """
+        self.unit.status = ops.MaintenanceStatus("upgrading...")
+        channel = str(self.config.get("channel", MAAS_SNAP_CHANNEL))
+        try:
+            MaasHelper.install(channel)
+        except SnapError:
+            logger.exception(f"failed to upgrade MAAS snap to channel '{MAAS_SNAP_CHANNEL}'")
         except Exception as ex:
             logger.error(str(ex))
 

@@ -52,6 +52,7 @@ class MaasRackCharm(ops.CharmBase):
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.start, self._on_start)
+        self.framework.observe(self.on.upgrade_charm, self._on_upgrade)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
 
         # COS
@@ -144,6 +145,21 @@ class MaasRackCharm(ops.CharmBase):
         try:
             if MaasHelper.get_maas_mode() == "rack":
                 MaasHelper.uninstall()
+        except Exception as ex:
+            logger.error(str(ex))
+
+    def _on_upgrade(self, _event: ops.UpgradeCharmEvent) -> None:
+        """Upgrade MAAS install on the machine.
+
+        Args:
+            event (ops.UpgradeCharmEvent): Event from ops framework
+        """
+        self.unit.status = ops.MaintenanceStatus("upgrading...")
+        channel = str(self.config.get("channel", MAAS_SNAP_CHANNEL))
+        try:
+            MaasHelper.install(channel)
+        except SnapError:
+            logger.exception(f"failed to upgrade MAAS snap to channel '{MAAS_SNAP_CHANNEL}'")
         except Exception as ex:
             logger.error(str(ex))
 
