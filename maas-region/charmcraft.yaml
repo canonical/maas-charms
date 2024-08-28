@@ -133,3 +133,11 @@ config:
       default: ""
       description: Whether to enable TLS termination at HA Proxy ('termination'), or no TLS ('')
       type: string
+    ssl_cert:
+      default: ""
+      description: SSL certificate filepath for tls_mode="passthrough"
+      type: string
+    ssl_key:
+      default: ""
+      description: SSL private key filepath for tls_mode="passthrough"
+      type: string

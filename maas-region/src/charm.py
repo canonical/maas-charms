@@ -6,6 +6,7 @@
 
 import json
 import logging
+import os.path
 import socket
 import subprocess
 from typing import Any, List, Union
@@ -59,7 +60,8 @@ class MaasRegionCharm(ops.CharmBase):
     _TLS_MODES = [
         "",
         "termination",
-    ]  # no TLS, termination at HA Proxy
+        "passthrough",
+    ]  # no TLS, termination at HA Proxy, passthrough to MAAS
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -234,6 +236,8 @@ class MaasRegionCharm(ops.CharmBase):
             MaasHelper.setup_region(
                 self.maas_api_url, self.connection_string, self.get_operational_mode()
             )
+            if self.config["tls_mode"] == "passthrough":
+                MaasHelper.config_tls(self.config["ssl_cert"], self.config["ssl_key"])
             return True
         except subprocess.CalledProcessError:
             return False
@@ -257,6 +261,9 @@ class MaasRegionCharm(ops.CharmBase):
         return list(set(eps))
 
     def _update_ha_proxy(self) -> None:
+        region_port = (
+            MAAS_HTTPS_PORT if self.config["tls_mode"] == "passthrough" else MAAS_HTTP_PORT
+        )
         if relation := self.model.get_relation(MAAS_API_RELATION):
             app_name = f"api-{self.app.name}"
             data = [
@@ -269,13 +276,13 @@ class MaasRegionCharm(ops.CharmBase):
                         (
                             f"{app_name}-{self.unit.name.replace('/', '-')}",
                             self.bind_address,
-                            MAAS_HTTP_PORT,
+                            region_port,
                             [],
                         )
                     ],
                 },
             ]
-            if self.config["tls_mode"] == "termination":
+            if self.config["tls_mode"]:
                 data.append(
                     {
                         "service_name": "agent_service",
@@ -285,13 +292,12 @@ class MaasRegionCharm(ops.CharmBase):
                             (
                                 f"{app_name}-{self.unit.name.replace('/', '-')}",
                                 self.bind_address,
-                                MAAS_HTTP_PORT,
+                                region_port,
                                 [],
                             )
                         ],
                     }
                 )
-            # TODO: Implement passthrough configuration
             relation.data[self.unit]["services"] = yaml.safe_dump(data)
 
     def _on_start(self, _event: ops.StartEvent) -> None:
@@ -434,11 +440,39 @@ class MaasRegionCharm(ops.CharmBase):
             event.fail("MAAS is not initialized yet")
 
     def _on_config_changed(self, event: ops.ConfigChangedEvent):
+        # validate tls_mode
         tls_mode = self.config["tls_mode"]
         if tls_mode not in self._TLS_MODES:
             msg = f"Invalid tls_mode configuration: '{tls_mode}'. Valid options are: {self._TLS_MODES}"
             self.unit.status = ops.BlockedStatus(msg)
             raise ValueError(msg)
+        # validate certificate and key
+        if tls_mode == "passthrough":
+            cert = self.config["ssl_cert"]
+            key = self.config["ssl_key"]
+            if not cert or not key:
+                raise ValueError(
+                    "Both ssl_cert and ssl_key must be defined when using tls_mode=passthrough"
+                )
+
+            if not os.path.exists(cert):
+                raise ValueError(f"SSL certificate file {cert} does not exist")
+            try:
+                with open(cert) as f:
+                    if "BEGIN CERTIFICATE" not in f.read():
+                        raise ValueError("Invalid SSL certificate file")
+            except PermissionError:
+                raise ValueError(f"Permission denied when trying to read {cert}")
+
+            if not os.path.exists(key):
+                raise ValueError(f"SSL private key file {key} does not exist")
+            try:
+                with open(key) as f:
+                    if "BEGIN PRIVATE KEY" not in f.read():
+                        raise ValueError("Invalid SSL private key file")
+            except PermissionError:
+                raise ValueError(f"Permission denied when trying to read {key}")
+            MaasHelper.config_tls(cert, key)
         self._update_ha_proxy()
 
 

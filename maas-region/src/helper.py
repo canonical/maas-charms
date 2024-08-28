@@ -187,6 +187,25 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
+    def config_tls(ssl_certificate: str, ssl_key: str) -> None:
+        """Set up TLS for the Region controller.
+
+        Args:
+            ssl_certificate (str): filepath for SSL certificate.
+            ssl_key (str): filepath for SSL key
+        Raises:
+            CalledProcessError: if "maas config-tls enable" command failed for any reason
+        """
+        cmd = [
+            "/snap/bin/maas",
+            "config-tls",
+            "enable",
+            ssl_key,
+            ssl_certificate,
+        ]
+        subprocess.check_call(cmd)
+
+    @staticmethod
     def get_maas_secret() -> Union[str, None]:
         """Get MAAS enrollment secret token.
 
