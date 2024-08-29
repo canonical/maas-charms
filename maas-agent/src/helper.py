@@ -39,6 +39,16 @@ class MaasHelper:
             maas.ensure(SnapState.Absent)
 
     @staticmethod
+    def refresh(channel: str) -> None:
+        """Refresh snap."""
+        maas = SnapCache()[MAAS_SNAP_NAME]
+        if not maas.present:
+            maas.ensure(SnapState.Latest, channel=channel)
+        else:
+            maas.ensure(SnapState.Present, channel=channel)
+        maas.hold()
+
+    @staticmethod
     def get_installed_version() -> Union[str, None]:
         """Get installed version.
 

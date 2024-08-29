@@ -355,7 +355,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.unit.status = ops.MaintenanceStatus("upgrading...")
         channel = str(self.config.get("channel", MAAS_SNAP_CHANNEL))
         try:
-            MaasHelper.install(channel)
+            MaasHelper.refresh(channel)
         except SnapError:
             logger.exception(f"failed to upgrade MAAS snap to channel '{MAAS_SNAP_CHANNEL}'")
         except Exception as ex:
