@@ -69,6 +69,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.start, self._on_start)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
+        self.framework.observe(self.on.leader_elected, self._on_leader_elected)
 
         # MAAS Region
         self.maas_region = maas.MaasRegionProvider(self)
@@ -175,13 +176,16 @@ class MaasRegionCharm(ops.CharmBase):
         Returns:
             str: The API URL
         """
-        if relation := self.model.get_relation(MAAS_API_RELATION):
-            unit = next(iter(relation.units), None)
-            if unit and (addr := relation.data[unit].get("public-address")):
-                return f"http://{addr}:{MAAS_PROXY_PORT}/MAAS"
-        if bind := self.bind_address:
-            return f"http://{bind}:{MAAS_HTTP_PORT}/MAAS"
-        return ""
+        if maas_url := self.config["maas_url"]:
+            return str(maas_url)
+        if self.model.unit.is_leader() and (bind := self.bind_address):
+            if self.model.get_relation(MAAS_API_RELATION):
+                port = MAAS_PROXY_PORT
+            else:
+                port = MAAS_HTTP_PORT
+            return f"http://{bind}:{port}/MAAS"
+        else:
+            return self.get_peer_data(self.app, "maas_url")
 
     @property
     def maas_id(self) -> Union[str, None]:
@@ -230,9 +234,25 @@ class MaasRegionCharm(ops.CharmBase):
         return True
 
     def _initialize_maas(self) -> bool:
+        if (
+            maas_details := MaasHelper.get_maas_details()
+        ) and self.get_operational_mode() == MaasHelper.get_maas_mode():
+            u, p, h, d = (
+                maas_details["database_user"],
+                maas_details["database_pass"],
+                maas_details["database_host"],
+                maas_details["database_name"],
+            )
+            if (
+                self.get_peer_data(self.app, "maas_url") == maas_details["maas_url"]
+                and f"postgres://{u}:{p}@{h}/{d}" == self.connection_string
+            ):
+                return True
         try:
             MaasHelper.setup_region(
-                self.maas_api_url, self.connection_string, self.get_operational_mode()
+                self.get_peer_data(self.app, "maas_url"),
+                self.connection_string,
+                self.get_operational_mode(),
             )
             return True
         except subprocess.CalledProcessError:
@@ -313,9 +333,10 @@ class MaasRegionCharm(ops.CharmBase):
             event (ops.InstallEvent): Event from ops framework
         """
         self.unit.status = ops.MaintenanceStatus("installing...")
-        channel = str(self.config.get("channel", MAAS_SNAP_CHANNEL))
+        if self.unit.is_leader():
+            self.set_peer_data(self.app, "maas_url", "")
         try:
-            MaasHelper.install(channel)
+            MaasHelper.install(MAAS_SNAP_CHANNEL)
         except Exception as ex:
             logger.error(str(ex))
 
@@ -342,6 +363,12 @@ class MaasRegionCharm(ops.CharmBase):
             ops.WaitingStatus("Waiting for MAAS initialization")
         else:
             self.unit.status = ops.ActiveStatus()
+
+    def _on_leader_elected(self, e: ops.LeaderElectedEvent) -> None:
+        maas_url = self.maas_api_url
+        if self.get_peer_data(self.app, "maas_url") != maas_url:
+            self.set_peer_data(self.app, "maas_url", maas_url)
+            self._initialize_maas()
 
     def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
         """Database is ready.
@@ -377,6 +404,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.set_peer_data(self.unit, "system-name", socket.getfqdn())
         if self.unit.is_leader():
             self._publish_tokens()
+        self._initialize_maas()
 
     def _on_maas_cluster_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
@@ -439,6 +467,14 @@ class MaasRegionCharm(ops.CharmBase):
             msg = f"Invalid tls_mode configuration: '{tls_mode}'. Valid options are: {self._TLS_MODES}"
             self.unit.status = ops.BlockedStatus(msg)
             raise ValueError(msg)
+
+        if maas_url := self.config["maas_url"]:
+            if self.unit.is_leader():
+                maas_url = self.maas_api_url
+                if self.get_peer_data(self.app, "maas_url") != maas_url:
+                    self.set_peer_data(self.app, "maas_url", maas_url)
+                    self._initialize_maas()
+
         self._update_ha_proxy()
 
 
