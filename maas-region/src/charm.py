@@ -91,6 +91,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.start, self._on_start)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
+        self.framework.observe(self.on.leader_elected, self._on_leader_elected)
 
         # MAAS Region
         self.maas_region = maas.MaasRegionProvider(self)
@@ -107,7 +108,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(maas_peer_events.relation_broken, self._on_maas_peer_changed)
 
         # MAAS DB
-        self.maasdb_name = f'{self.app.name.replace("-", "_")}_db'
+        self.maasdb_name = f"{self.app.name.replace('-', '_')}_db"
         self.maasdb = db.DatabaseRequires(self, MAAS_DB_NAME, self.maasdb_name)
         self.framework.observe(self.maasdb.on.database_created, self._on_maasdb_created)
         self.framework.observe(self.maasdb.on.endpoints_changed, self._on_maasdb_endpoints_changed)
@@ -199,13 +200,15 @@ class MaasRegionCharm(ops.CharmBase):
         else:
             raise ops.model.ModelError("Bind address not set in the model")
 
-    @property
-    def maas_api_url(self) -> str:
-        """Get MAAS API URL.
+    def calculate_maas_api_url(self) -> str:
+        """Calculate MAAS API URL.
 
         Returns:
             str: The API URL
         """
+        if maas_url := self.config["maas_url"]:
+            return str(maas_url)
+
         if relation := self.model.get_relation(MAAS_API_RELATION):
             unit = next(iter(relation.units), None)
             if unit and (addr := relation.data[unit].get("public-address")):
@@ -286,12 +289,39 @@ class MaasRegionCharm(ops.CharmBase):
             return content
 
     def _initialize_maas(self) -> bool:
+        if not self.connection_string:
+            return False
+
+        maas_api_url = self.get_peer_data(self.app, "maas_url")
+        is_bootstrapped = self.get_peer_data(self.app, "is_bootstrapped")
+
+        if not self.unit.is_leader() and not is_bootstrapped:
+            return False
+
+        if (
+            maas_details := MaasHelper.get_maas_details()
+        ) and self.get_operational_mode() == MaasHelper.get_maas_mode():
+            u, p, h, d = (
+                maas_details["database_user"],
+                maas_details["database_pass"],
+                maas_details["database_host"],
+                maas_details["database_name"],
+            )
+            if (
+                maas_api_url == maas_details["maas_url"]
+                and f"postgres://{u}:{p}@{h}/{d}" == self.connection_string
+            ):
+                return True
+
         try:
             MaasHelper.setup_region(
-                self.maas_api_url, self.connection_string, self.get_operational_mode()
+                maas_api_url, self.connection_string, self.get_operational_mode()
             )
+            if self.unit.is_leader() and not is_bootstrapped:
+                self.set_peer_data(self.app, "is_bootstrapped", True)
+
             # check maas_api_url existence in case MAAS isn't ready yet
-            if self.maas_api_url and self.unit.is_leader():
+            if maas_api_url and self.unit.is_leader():
                 self._update_tls_config()
                 credentials = self._create_or_get_internal_admin()
                 MaasHelper.set_prometheus_metrics(
@@ -304,9 +334,10 @@ class MaasRegionCharm(ops.CharmBase):
             return False
 
     def _publish_tokens(self) -> bool:
-        if self.maas_api_url and self.enrollment_token:
+        maas_api_url = self.get_peer_data(self.app, "maas_url")
+        if maas_api_url and self.enrollment_token:
             self.maas_region.publish_enroll_token(
-                self.maas_api_url,
+                maas_api_url,
                 self._get_regions(),
                 self.enrollment_token,
             )
@@ -400,9 +431,8 @@ class MaasRegionCharm(ops.CharmBase):
             event (ops.InstallEvent): Event from ops framework
         """
         self.unit.status = ops.MaintenanceStatus("installing...")
-        channel = str(self.config.get("channel", MAAS_SNAP_CHANNEL))
         try:
-            MaasHelper.install(channel)
+            MaasHelper.install(MAAS_SNAP_CHANNEL)
         except Exception as ex:
             logger.error(str(ex))
 
@@ -425,10 +455,18 @@ class MaasRegionCharm(ops.CharmBase):
             e.add_status(ops.WaitingStatus("Waiting for service ports"))
         elif not self.connection_string:
             e.add_status(ops.WaitingStatus("Waiting for database DSN"))
-        elif not self.maas_api_url:
+        elif not self.get_peer_data(self.app, "maas_url"):
             ops.WaitingStatus("Waiting for MAAS initialization")
         else:
             self.unit.status = ops.ActiveStatus()
+
+    def _on_leader_elected(self, e: ops.LeaderElectedEvent) -> None:
+        maas_url = self.calculate_maas_api_url()
+        maas_api_url = self.get_peer_data(self.app, "maas_url")
+        if maas_api_url != maas_url:
+            self.set_peer_data(self.app, "maas_url", maas_url)
+            logger.error(self.get_peer_data(self.app, "maas_url"))
+            self._initialize_maas()
 
     def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
         """Database is ready.
@@ -454,6 +492,11 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_api_endpoint_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
+        if self.unit.is_leader():
+            maas_url = self.calculate_maas_api_url()
+            maas_api_url = self.get_peer_data(self.app, "maas_url")
+            if maas_api_url != maas_url:
+                self.set_peer_data(self.app, "maas_url", maas_url)
         self._update_ha_proxy()
         self._initialize_maas()
         if self.unit.is_leader():
@@ -464,6 +507,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.set_peer_data(self.unit, "system-name", socket.getfqdn())
         if self.unit.is_leader():
             self._publish_tokens()
+        self._initialize_maas()
 
     def _on_maas_cluster_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
@@ -526,7 +570,7 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_get_api_endpoint_action(self, event: ops.ActionEvent):
         """Handle the get-api-endpoint action."""
-        if url := self.maas_api_url:
+        if url := self.get_peer_data(self.app, "maas_url"):
             event.set_results({"api-url": url})
         else:
             event.fail("MAAS is not initialized yet")
@@ -546,6 +590,15 @@ class MaasRegionCharm(ops.CharmBase):
                 raise ValueError(
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
+
+        if maas_url := self.config["maas_url"]:
+            if self.unit.is_leader():
+                maas_url = self.calculate_maas_api_url()
+                maas_api_url = self.get_peer_data(self.app, "maas_url")
+                if maas_api_url != maas_url:
+                    self.set_peer_data(self.app, "maas_url", maas_url)
+                    self._initialize_maas()
+
         self._update_ha_proxy()
         if self.unit.is_leader():
             self._update_tls_config()
