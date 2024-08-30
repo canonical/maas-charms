@@ -200,6 +200,7 @@ class MaasHelper:
             "/snap/bin/maas",
             "config-tls",
             "enable",
+            "--yes",
             ssl_key,
             ssl_certificate,
         ]
