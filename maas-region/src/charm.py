@@ -328,9 +328,8 @@ class MaasRegionCharm(ops.CharmBase):
             event (ops.InstallEvent): Event from ops framework
         """
         self.unit.status = ops.MaintenanceStatus("installing...")
-        channel = str(self.config.get("channel", MAAS_SNAP_CHANNEL))
         try:
-            MaasHelper.install(channel)
+            MaasHelper.install(MAAS_SNAP_CHANNEL)
         except Exception as ex:
             logger.error(str(ex))
 
@@ -353,9 +352,12 @@ class MaasRegionCharm(ops.CharmBase):
             event (ops.UpgradeCharmEvent): Event from ops framework
         """
         self.unit.status = ops.MaintenanceStatus("upgrading...")
-        channel = str(self.config.get("channel", MAAS_SNAP_CHANNEL))
+        if (current := MaasHelper.get_installed_version()) and current >= MAAS_SNAP_CHANNEL:
+            logger.exception(
+                f"Cannot upgrade from {current} to {MAAS_SNAP_CHANNEL}. Versions must be strictly greater."
+            )
         try:
-            MaasHelper.refresh(channel)
+            MaasHelper.refresh(MAAS_SNAP_CHANNEL)
         except SnapError:
             logger.exception(f"failed to upgrade MAAS snap to channel '{MAAS_SNAP_CHANNEL}'")
         except Exception as ex:
