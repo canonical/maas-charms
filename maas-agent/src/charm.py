@@ -157,8 +157,9 @@ class MaasRackCharm(ops.CharmBase):
         self.unit.status = ops.MaintenanceStatus("upgrading...")
         if (current := MaasHelper.get_installed_version()) and current >= MAAS_SNAP_CHANNEL:
             logger.exception(
-                f"Cannot upgrade from {current} to {MAAS_SNAP_CHANNEL}. Versions must be strictly greater."
+                f"Cannot upgrade from {current} to {MAAS_SNAP_CHANNEL}. Upgrade versions must be strictly greater."
             )
+            return
         try:
             MaasHelper.refresh(MAAS_SNAP_CHANNEL)
         except SnapError:
