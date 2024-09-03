@@ -155,11 +155,16 @@ class MaasRackCharm(ops.CharmBase):
             event (ops.UpgradeCharmEvent): Event from ops framework
         """
         self.unit.status = ops.MaintenanceStatus("upgrading...")
-        if (current := MaasHelper.get_installed_version()) and current >= MAAS_SNAP_CHANNEL:
-            logger.exception(
-                f"Cannot upgrade from {current} to {MAAS_SNAP_CHANNEL}. Upgrade versions must be strictly greater."
-            )
-            return
+        if current := MaasHelper.get_installed_version():
+            msg = f"Cannot upgrade from {current} to {MAAS_SNAP_CHANNEL}."
+            if current > MAAS_SNAP_CHANNEL:
+                msg += "Cannot downgrade MAAS versions"
+                logger.exception(msg)
+                return
+            elif current == MAAS_SNAP_CHANNEL:
+                msg += "Cannot upgrade snap revisions."
+                logger.warning(msg)
+                return
         try:
             MaasHelper.refresh(MAAS_SNAP_CHANNEL)
         except SnapError:
