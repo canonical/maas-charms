@@ -352,14 +352,14 @@ class MaasRegionCharm(ops.CharmBase):
             event (ops.UpgradeCharmEvent): Event from ops framework
         """
         self.unit.status = ops.MaintenanceStatus("upgrading...")
-        if current := MaasHelper.get_installed_version():
-            msg = f"Cannot upgrade from {current} to {MAAS_SNAP_CHANNEL}."
+        if current := MaasHelper.get_installed_channel():
             if current > MAAS_SNAP_CHANNEL:
-                msg += "Cannot downgrade MAAS versions"
+                msg = f"Cannot downgrade {current} to {MAAS_SNAP_CHANNEL}"
                 logger.exception(msg)
+                self.unit.status = ops.ErrorStatus(msg)
                 return
             elif current == MAAS_SNAP_CHANNEL:
-                msg += "Cannot upgrade snap revisions."
+                msg = "Cannot upgrade across revisions"
                 logger.warning(msg)
                 return
         try:
