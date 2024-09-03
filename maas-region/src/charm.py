@@ -479,7 +479,6 @@ class MaasRegionCharm(ops.CharmBase):
                         raise ValueError("Invalid SSL private key file")
             except PermissionError:
                 raise ValueError(f"Permission denied when trying to read {key}")
-            MaasHelper.config_tls(cert, key)
 
 
 if __name__ == "__main__":  # pragma: nocover
