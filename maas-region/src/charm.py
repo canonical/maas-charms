@@ -298,7 +298,7 @@ class MaasRegionCharm(ops.CharmBase):
                             (
                                 f"{app_name}-{self.unit.name.replace('/', '-')}",
                                 self.bind_address,
-                                region_port,
+                                MAAS_HTTP_PORT,
                                 [],
                             )
                         ],

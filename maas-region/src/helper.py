@@ -6,7 +6,7 @@
 import subprocess
 from pathlib import Path
 from typing import Union
-
+import logging
 from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
 
 MAAS_SNAP_NAME = "maas"
@@ -15,6 +15,7 @@ MAAS_SECRET = Path("/var/snap/maas/common/maas/secret")
 MAAS_ID = Path("/var/snap/maas/common/maas/maas_id")
 MAAS_SERVICE = "pebble"
 
+logger = logging.getLogger(__name__)
 
 class MaasHelper:
     """MAAS helper."""
@@ -204,7 +205,9 @@ class MaasHelper:
             ssl_key,
             ssl_certificate,
         ]
-        subprocess.check_call(cmd)
+        res = subprocess.check_output(cmd)
+        logger.info("ENABLETLS")
+        logger.info(res.decode(errors="ignore"))
 
     @staticmethod
     def get_maas_secret() -> Union[str, None]:
