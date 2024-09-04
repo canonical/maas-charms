@@ -351,16 +351,15 @@ class MaasRegionCharm(ops.CharmBase):
         Args:
             event (ops.UpgradeCharmEvent): Event from ops framework
         """
-        self.unit.status = ops.MaintenanceStatus("upgrading...")
+        self.unit.status = ops.MaintenanceStatus(f"upgrading to {MAAS_SNAP_CHANNEL}...")
         if current := MaasHelper.get_installed_channel():
             if current > MAAS_SNAP_CHANNEL:
                 msg = f"Cannot downgrade {current} to {MAAS_SNAP_CHANNEL}"
-                logger.exception(msg)
                 self.unit.status = ops.ErrorStatus(msg)
+                logger.exception(msg)
                 return
             elif current == MAAS_SNAP_CHANNEL:
-                msg = "Cannot upgrade across revisions"
-                logger.warning(msg)
+                logger.info("Cannot upgrade across revisions")
                 return
         try:
             MaasHelper.refresh(MAAS_SNAP_CHANNEL)
@@ -370,9 +369,9 @@ class MaasRegionCharm(ops.CharmBase):
             logger.error(str(ex))
 
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
-        if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
-            e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
-        elif not self.unit.opened_ports().issuperset(MAAS_REGION_PORTS):
+        # if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
+            # e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
+        if not self.unit.opened_ports().issuperset(MAAS_REGION_PORTS):
             e.add_status(ops.WaitingStatus("Waiting for service ports"))
         elif not self.connection_string:
             e.add_status(ops.WaitingStatus("Waiting for database DSN"))

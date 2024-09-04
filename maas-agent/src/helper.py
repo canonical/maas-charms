@@ -42,10 +42,7 @@ class MaasHelper:
     def refresh(channel: str) -> None:
         """Refresh snap."""
         maas = SnapCache()[MAAS_SNAP_NAME]
-        if not maas.present:
-            maas.ensure(SnapState.Latest, channel=channel)
-        else:
-            maas.ensure(SnapState.Present, channel=channel)
+        maas.ensure(SnapState.Present, channel=channel)
         maas.hold()
 
     @staticmethod
