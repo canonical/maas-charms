@@ -3,11 +3,12 @@
 
 """Helper functions for MAAS management."""
 
+import logging
 import subprocess
 from os.path import exists
 from pathlib import Path
 from typing import Union
-import logging
+
 from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
 
 MAAS_SNAP_NAME = "maas"
@@ -19,6 +20,7 @@ MAAS_SSL_CERT_FILEPATH = "/var/snap/maas/common/cert.pem"
 MAAS_SSL_KEY_FILEPATH = "/var/snap/maas/common/key.pem"
 
 logger = logging.getLogger(__name__)
+
 
 class MaasHelper:
     """MAAS helper."""
@@ -191,9 +193,9 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
-    def create_tls_files(ssl_certificate: str, ssl_key: str, overwrite: bool=False) -> None:
+    def create_tls_files(ssl_certificate: str, ssl_key: str, overwrite: bool = False) -> None:
         """Ensure that the SSL certificate and private key exist.
-        
+
         Args:
             ssl_certificate (str): contents of the certificate file
             ssl_key (str): contents of the private key file

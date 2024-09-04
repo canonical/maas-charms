@@ -6,7 +6,6 @@
 
 import json
 import logging
-import os.path
 import socket
 import subprocess
 from typing import Any, List, Union
@@ -25,7 +24,7 @@ MAAS_PEER_NAME = "maas-cluster"
 MAAS_API_RELATION = "api"
 MAAS_DB_NAME = "maas-db"
 
-MAAS_SNAP_CHANNEL = "3.4/stable"
+MAAS_SNAP_CHANNEL = "3.5/stable"
 
 MAAS_PROXY_PORT = 80
 
@@ -237,7 +236,9 @@ class MaasRegionCharm(ops.CharmBase):
                 self.maas_api_url, self.connection_string, self.get_operational_mode()
             )
             if self.config["tls_mode"] == "passthrough":
-                MaasHelper.create_tls_files(self.config["ssl_cert_content"], self.config["ssl_key_content"])
+                MaasHelper.create_tls_files(
+                    self.config["ssl_cert_content"], self.config["ssl_key_content"]
+                )
                 MaasHelper.config_tls()
             return True
         except subprocess.CalledProcessError:
@@ -447,7 +448,6 @@ class MaasRegionCharm(ops.CharmBase):
             msg = f"Invalid tls_mode configuration: '{tls_mode}'. Valid options are: {self._TLS_MODES}"
             self.unit.status = ops.BlockedStatus(msg)
             raise ValueError(msg)
-        self._update_ha_proxy()
         # validate certificate and key
         if tls_mode == "passthrough":
             cert = self.config["ssl_cert_content"]
@@ -460,6 +460,7 @@ class MaasRegionCharm(ops.CharmBase):
                 raise ValueError("Invalid SSL certificate")
             if "BEGIN PRIVATE KEY" not in self.config["ssl_key_content"]:
                 raise ValueError("Invalid SSL private key file")
+        self._update_ha_proxy()
 
 
 if __name__ == "__main__":  # pragma: nocover
