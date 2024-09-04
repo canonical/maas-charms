@@ -237,7 +237,8 @@ class MaasRegionCharm(ops.CharmBase):
                 self.maas_api_url, self.connection_string, self.get_operational_mode()
             )
             if self.config["tls_mode"] == "passthrough":
-                MaasHelper.config_tls(self.config["ssl_cert"], self.config["ssl_key"])
+                MaasHelper.create_tls_files(self.config["ssl_cert_content"], self.config["ssl_key_content"])
+                MaasHelper.config_tls()
             return True
         except subprocess.CalledProcessError:
             return False
@@ -264,12 +265,6 @@ class MaasRegionCharm(ops.CharmBase):
         region_port = (
             MAAS_HTTPS_PORT if self.config["tls_mode"] == "passthrough" else MAAS_HTTP_PORT
         )
-        logger.info(f"region port: {region_port}")
-        if self.config["tls_mode"] == "passthrough":
-            region_port = MAAS_HTTPS_PORT
-        else:
-            region_port = MAAS_HTTP_PORT
-        logger.info(f"region port: {region_port}")
         if relation := self.model.get_relation(MAAS_API_RELATION):
             app_name = f"api-{self.app.name}"
             data = [
@@ -455,30 +450,16 @@ class MaasRegionCharm(ops.CharmBase):
         self._update_ha_proxy()
         # validate certificate and key
         if tls_mode == "passthrough":
-            cert = self.config["ssl_cert"]
-            key = self.config["ssl_key"]
+            cert = self.config["ssl_cert_content"]
+            key = self.config["ssl_key_content"]
             if not cert or not key:
                 raise ValueError(
-                    "Both ssl_cert and ssl_key must be defined when using tls_mode=passthrough"
+                    "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
-
-            if not os.path.exists(cert):
-                raise ValueError(f"SSL certificate file {cert} does not exist")
-            try:
-                with open(cert) as f:
-                    if "BEGIN CERTIFICATE" not in f.read():
-                        raise ValueError("Invalid SSL certificate file")
-            except PermissionError:
-                raise ValueError(f"Permission denied when trying to read {cert}")
-
-            if not os.path.exists(key):
-                raise ValueError(f"SSL private key file {key} does not exist")
-            try:
-                with open(key) as f:
-                    if "BEGIN PRIVATE KEY" not in f.read():
-                        raise ValueError("Invalid SSL private key file")
-            except PermissionError:
-                raise ValueError(f"Permission denied when trying to read {key}")
+            if "BEGIN CERTIFICATE" not in self.config["ssl_cert_content"]:
+                raise ValueError("Invalid SSL certificate")
+            if "BEGIN PRIVATE KEY" not in self.config["ssl_key_content"]:
+                raise ValueError("Invalid SSL private key file")
 
 
 if __name__ == "__main__":  # pragma: nocover

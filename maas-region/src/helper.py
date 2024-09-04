@@ -4,6 +4,7 @@
 """Helper functions for MAAS management."""
 
 import subprocess
+from os.path import exists
 from pathlib import Path
 from typing import Union
 import logging
@@ -14,6 +15,8 @@ MAAS_MODE = Path("/var/snap/maas/common/snap_mode")
 MAAS_SECRET = Path("/var/snap/maas/common/maas/secret")
 MAAS_ID = Path("/var/snap/maas/common/maas/maas_id")
 MAAS_SERVICE = "pebble"
+MAAS_SSL_CERT_FILEPATH = "/var/snap/maas/common/cert.pem"
+MAAS_SSL_KEY_FILEPATH = "/var/snap/maas/common/key.pem"
 
 logger = logging.getLogger(__name__)
 
@@ -188,12 +191,25 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
-    def config_tls(ssl_certificate: str, ssl_key: str) -> None:
+    def create_tls_files(ssl_certificate: str, ssl_key: str, overwrite: bool=False) -> None:
+        """Ensure that the SSL certificate and private key exist.
+        
+        Args:
+            ssl_certificate (str): contents of the certificate file
+            ssl_key (str): contents of the private key file
+            overwrite (bool): Whether to overwrite the files if they exist already
+        """
+        if not exists(MAAS_SSL_CERT_FILEPATH) or overwrite:
+            with open(MAAS_SSL_CERT_FILEPATH, "w") as cert_file:
+                cert_file.write(ssl_certificate)
+        if not exists(MAAS_SSL_KEY_FILEPATH) or overwrite:
+            with open(MAAS_SSL_KEY_FILEPATH, "w") as key_file:
+                key_file.write(ssl_key)
+
+    @staticmethod
+    def config_tls() -> None:
         """Set up TLS for the Region controller.
 
-        Args:
-            ssl_certificate (str): filepath for SSL certificate.
-            ssl_key (str): filepath for SSL key
         Raises:
             CalledProcessError: if "maas config-tls enable" command failed for any reason
         """
@@ -202,12 +218,10 @@ class MaasHelper:
             "config-tls",
             "enable",
             "--yes",
-            ssl_key,
-            ssl_certificate,
+            MAAS_SSL_KEY_FILEPATH,
+            MAAS_SSL_CERT_FILEPATH,
         ]
-        res = subprocess.check_output(cmd)
-        logger.info("ENABLETLS")
-        logger.info(res.decode(errors="ignore"))
+        subprocess.check_call(cmd)
 
     @staticmethod
     def get_maas_secret() -> Union[str, None]:
