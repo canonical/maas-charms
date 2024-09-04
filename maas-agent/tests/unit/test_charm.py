@@ -43,6 +43,30 @@ class TestCharm(unittest.TestCase):
         self.harness.charm.on.remove.emit()
         mock_helper.uninstall.assert_called_once()
 
+    @patch("charm.MaasHelper", autospec=True)
+    def test_refresh(self, mock_helper):
+        mock_helper.get_maas_mode.return_value = "rack"
+        mock_helper.get_installed_channel.return_value = "3.4/edge"
+        self.harness.begin()
+        self.harness.charm.on.upgrade_charm.emit()
+        mock_helper.refresh.assert_called_once_with(MAAS_SNAP_CHANNEL)
+        self.assertEqual(
+            self.harness.model.unit.status,
+            ops.MaintenanceStatus(f"upgrading to {MAAS_SNAP_CHANNEL}..."),
+        )
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_refresh_invalid_channel(self, mock_helper):
+        mock_helper.get_maas_mode.return_value = "rack"
+        mock_helper.get_installed_channel.return_value = "invalid/channel"
+        self.harness.begin()
+        self.harness.charm.on.upgrade_charm.emit()
+        mock_helper.refresh.assert_not_called()
+        self.assertEqual(
+            self.harness.model.unit.status,
+            ops.BlockedStatus(f"Cannot downgrade invalid/channel to {MAAS_SNAP_CHANNEL}"),
+        )
+
 
 class TestEnrollment(unittest.TestCase):
     def setUp(self):
