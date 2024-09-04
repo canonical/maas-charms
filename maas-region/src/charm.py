@@ -369,8 +369,8 @@ class MaasRegionCharm(ops.CharmBase):
             logger.error(str(ex))
 
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
-        # if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
-            # e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
+        if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
+            e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
         if not self.unit.opened_ports().issuperset(MAAS_REGION_PORTS):
             e.add_status(ops.WaitingStatus("Waiting for service ports"))
         elif not self.connection_string:
