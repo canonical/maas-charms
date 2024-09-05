@@ -130,8 +130,8 @@ parts:
 config:
   options:
     tls_mode:
-      default: ""
-      description: Whether to enable TLS termination at HA Proxy ('termination'), at MAAS ('passthrough'), or no TLS ('')
+      default: "disabled"
+      description: Whether to enable TLS termination at HA Proxy ('termination'), at MAAS ('passthrough'), or no TLS ('disabled')
       type: string
     ssl_cert_content:
       default: ""

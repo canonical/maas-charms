@@ -57,7 +57,7 @@ class MaasRegionCharm(ops.CharmBase):
     """Charm the application."""
 
     _TLS_MODES = [
-        "",
+        "disabled",
         "termination",
         "passthrough",
     ]  # no TLS, termination at HA Proxy, passthrough to MAAS
@@ -284,7 +284,7 @@ class MaasRegionCharm(ops.CharmBase):
                     ],
                 },
             ]
-            if self.config["tls_mode"]:
+            if self.config["tls_mode"] != "disabled":
                 data.append(
                     {
                         "service_name": "agent_service",
