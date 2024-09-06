@@ -5,7 +5,6 @@
 
 import logging
 import subprocess
-from os.path import exists
 from pathlib import Path
 from typing import Union
 
@@ -193,36 +192,13 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
-    def create_tls_files(ssl_certificate: str, ssl_key: str, overwrite: bool = False) -> None:
-        """Ensure that the SSL certificate and private key exist.
-
-        Args:
-            ssl_certificate (str): contents of the certificate file
-            ssl_key (str): contents of the private key file
-            overwrite (bool): Whether to overwrite the files if they exist already
-        """
-        if not exists(MAAS_SSL_CERT_FILEPATH) or overwrite:
-            with open(MAAS_SSL_CERT_FILEPATH, "w") as cert_file:
-                cert_file.write(ssl_certificate)
-        if not exists(MAAS_SSL_KEY_FILEPATH) or overwrite:
-            with open(MAAS_SSL_KEY_FILEPATH, "w") as key_file:
-                key_file.write(ssl_key)
-
-    @staticmethod
-    def config_tls() -> None:
+    def config_tls(ssl_cert_content: str, ssl_key_content: str) -> None:
         """Set up TLS for the Region controller.
 
         Raises:
             CalledProcessError: if "maas config-tls enable" command failed for any reason
         """
-        cmd = [
-            "/snap/bin/maas",
-            "config-tls",
-            "enable",
-            "--yes",
-            MAAS_SSL_KEY_FILEPATH,
-            MAAS_SSL_CERT_FILEPATH,
-        ]
+        cmd = f'bash -c \'/snap/bin/maas config-tls enable --yes <(echo "{ssl_key_content}") <(echo "{ssl_cert_content}")\''
         subprocess.check_call(cmd)
 
     @staticmethod
