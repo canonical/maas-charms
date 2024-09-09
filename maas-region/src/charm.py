@@ -236,9 +236,10 @@ class MaasRegionCharm(ops.CharmBase):
                 self.maas_api_url, self.connection_string, self.get_operational_mode()
             )
             if self.config["tls_mode"] == "passthrough":
-                MaasHelper.config_tls(
+                MaasHelper.create_tls_files(
                     self.config["ssl_cert_content"], self.config["ssl_key_content"]
                 )
+                MaasHelper.config_tls()
             return True
         except subprocess.CalledProcessError:
             return False
