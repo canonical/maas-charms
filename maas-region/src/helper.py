@@ -18,6 +18,7 @@ MAAS_ID = Path("/var/snap/maas/common/maas/maas_id")
 MAAS_SERVICE = "pebble"
 MAAS_SSL_CERT_FILEPATH = "/var/snap/maas/common/cert.pem"
 MAAS_SSL_KEY_FILEPATH = "/var/snap/maas/common/key.pem"
+MAAS_CACERT_FILEPATH = "/var/snap/maas/common/cacert.pem"
 
 logger = logging.getLogger(__name__)
 
@@ -193,12 +194,15 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
-    def create_tls_files(ssl_certificate: str, ssl_key: str, overwrite: bool = False) -> None:
+    def create_tls_files(
+        ssl_certificate: str, ssl_key: str, cacert: str = "", overwrite: bool = False
+    ) -> None:
         """Ensure that the SSL certificate and private key exist.
 
         Args:
             ssl_certificate (str): contents of the certificate file
             ssl_key (str): contents of the private key file
+            cacert (str): optionally, contents of cacert chain for a self-signed ssl_certificate
             overwrite (bool): Whether to overwrite the files if they exist already
         """
         if not exists(MAAS_SSL_CERT_FILEPATH) or overwrite:
@@ -207,9 +211,12 @@ class MaasHelper:
         if not exists(MAAS_SSL_KEY_FILEPATH) or overwrite:
             with open(MAAS_SSL_KEY_FILEPATH, "w") as key_file:
                 key_file.write(ssl_key)
+        if cacert and (not exists(MAAS_CACERT_FILEPATH) or overwrite):
+            with open(MAAS_CACERT_FILEPATH, "w") as cacert_file:
+                cacert_file.write(cacert)
 
     @staticmethod
-    def config_tls() -> None:
+    def config_tls(cacert: bool = False) -> None:
         """Set up TLS for the Region controller.
 
         Raises:
@@ -220,9 +227,10 @@ class MaasHelper:
             "config-tls",
             "enable",
             "--yes",
-            MAAS_SSL_KEY_FILEPATH,
-            MAAS_SSL_CERT_FILEPATH,
         ]
+        if cacert:
+            cmd.extend(["--cacert", MAAS_CACERT_FILEPATH])
+        cmd.extend([MAAS_SSL_KEY_FILEPATH, MAAS_SSL_CERT_FILEPATH])
         subprocess.check_call(cmd)
 
     @staticmethod

@@ -237,7 +237,9 @@ class MaasRegionCharm(ops.CharmBase):
             )
             if self.config["tls_mode"] == "passthrough":
                 MaasHelper.create_tls_files(
-                    self.config["ssl_cert_content"], self.config["ssl_key_content"]
+                    self.config["ssl_cert_content"],
+                    self.config["ssl_key_content"],
+                    self.config["ssl_cacert_content"],
                 )
                 MaasHelper.config_tls()
             return True
@@ -456,10 +458,6 @@ class MaasRegionCharm(ops.CharmBase):
                 raise ValueError(
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
-            if "BEGIN CERTIFICATE" not in self.config["ssl_cert_content"]:
-                raise ValueError("Invalid SSL certificate")
-            if "BEGIN PRIVATE KEY" not in self.config["ssl_key_content"]:
-                raise ValueError("Invalid SSL private key file")
         self._update_ha_proxy()
 
 

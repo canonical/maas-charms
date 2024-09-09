@@ -141,3 +141,7 @@ config:
       default: ""
       description: SSL private key for tls_mode='passthrough'
       type: string
+    ssl_cacert_content:
+      default: ""
+      description: CA Certificates chain in PEM format
+      type: string
