@@ -42,7 +42,14 @@ class MaasHelper:
     def refresh(channel: str) -> None:
         """Refresh snap."""
         maas = SnapCache()[MAAS_SNAP_NAME]
+        service = maas.services.get(MAAS_SERVICE, {})
+        maas.stop()
+        while service.get("activate", False):
+            pass
         maas.ensure(SnapState.Present, channel=channel)
+        maas.start()
+        while not service.get("activate", True):
+            pass
         maas.hold()
 
     @staticmethod
