@@ -5,6 +5,7 @@
 
 import subprocess
 from pathlib import Path
+from time import sleep
 from typing import Union
 
 from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
@@ -28,7 +29,7 @@ class MaasHelper:
         """
         maas = SnapCache()[MAAS_SNAP_NAME]
         if not maas.present:
-            maas.ensure(SnapState.Latest, channel=channel)
+            maas.ensure(SnapState.Latest, channel=channel, cohort="maas-region")
             maas.hold()
 
     @staticmethod
@@ -45,11 +46,11 @@ class MaasHelper:
         service = maas.services.get(MAAS_SERVICE, {})
         maas.stop()
         while service.get("activate", False):
-            pass
-        maas.ensure(SnapState.Present, channel=channel)
+            sleep(1)
+        maas.ensure(SnapState.Present, channel=channel, cohort="maas-region")
         maas.start()
         while not service.get("activate", True):
-            pass
+            sleep(1)
         maas.hold()
 
     @staticmethod

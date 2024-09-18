@@ -13,11 +13,19 @@ from helper import MAAS_SERVICE, MaasHelper
 
 class TestHelperSnapCache(unittest.TestCase):
 
-    def _setup_snap(self, mock_snap, present=False, revision="1234", channel="latest/stable"):
+    def _setup_snap(
+        self,
+        mock_snap,
+        present=False,
+        revision="1234",
+        channel="latest/stable",
+        cohort="maas-region",
+    ):
         maas = MagicMock()
         type(maas).present = PropertyMock(return_value=present)
         type(maas).revision = PropertyMock(return_value=revision)
         type(maas).channel = PropertyMock(return_value=channel)
+        type(maas).cohort = PropertyMock(return_value=cohort)
         instance = mock_snap.return_value
         instance.__getitem__.return_value = maas
         return maas
@@ -26,7 +34,9 @@ class TestHelperSnapCache(unittest.TestCase):
     def test_install(self, mock_snap):
         mock_maas = self._setup_snap(mock_snap)
         MaasHelper.install("test/channel")
-        mock_maas.ensure.assert_called_once_with(SnapState.Latest, channel="test/channel")
+        mock_maas.ensure.assert_called_once_with(
+            SnapState.Latest, channel="test/channel", cohort="maas-region"
+        )
         mock_maas.hold.assert_called_once()
 
     @patch("helper.SnapCache", autospec=True)
@@ -49,9 +59,27 @@ class TestHelperSnapCache(unittest.TestCase):
 
     @patch("helper.SnapCache", autospec=True)
     def test_refresh(self, mock_snap):
+        mock_service = MagicMock()
+
+        # return False the first time, then True every subsequent time
+        def side_effect(key, default=None):
+            if side_effect.call_count == 0:
+                side_effect.call_count += 1
+                return False
+            return True
+
+        side_effect.call_count = 0
+        mock_service.get.side_effect = side_effect
+
         mock_maas = self._setup_snap(mock_snap, present=True)
+        mock_maas.services.get.return_value = mock_service
+
         MaasHelper.refresh("test/upgrade")
-        mock_maas.ensure.assert_called_once_with(SnapState.Present, channel="test/upgrade")
+        mock_maas.stop.assert_called_once()
+        mock_maas.ensure.assert_called_once_with(
+            SnapState.Present, channel="test/upgrade", cohort="maas-region"
+        )
+        mock_maas.start.assert_called_once()
 
     @patch("helper.SnapCache", autospec=True)
     def test_get_installed_version(self, mock_snap):
