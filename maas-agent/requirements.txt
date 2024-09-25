@@ -2,3 +2,4 @@ ops ~= 2.5
 # for grafana agent
 pydantic < 2
 cosl
+opentelemetry-exporter-otlp-proto-http>=1.21.0
