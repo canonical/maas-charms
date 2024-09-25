@@ -237,9 +237,9 @@ class MaasRegionCharm(ops.CharmBase):
             )
             if self.config["tls_mode"] == "passthrough":
                 MaasHelper.create_tls_files(
-                    self.config["ssl_cert_content"],
-                    self.config["ssl_key_content"],
-                    self.config["ssl_cacert_content"],
+                    self.config["ssl_cert_content"],  # type: ignore
+                    self.config["ssl_key_content"],  # type: ignore
+                    self.config["ssl_cacert_content"],  # type: ignore
                 )
                 MaasHelper.config_tls()
             return True
