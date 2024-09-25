@@ -181,7 +181,7 @@ class TestClusterUpdates(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             self.harness.update_config(
-                {"tls_mode": "passthrough", "ssl_cert_content": "blah", "ssl_key_content": "bleh"}
+                {"tls_mode": "passthrough", "ssl_cert_content": "test_cert"}
             )
 
     @patch("charm.MaasHelper", autospec=True)
