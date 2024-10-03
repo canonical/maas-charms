@@ -5,6 +5,7 @@
 
 import logging
 import subprocess
+from os import remove
 from os.path import exists
 from pathlib import Path
 from typing import Union
@@ -194,6 +195,16 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
+    def delete_tls_files() -> None:
+        """Delete the TLS files used for setting configuring tls."""
+        if exists(MAAS_SSL_CERT_FILEPATH):
+            remove(MAAS_SSL_CERT_FILEPATH)
+        if exists(MAAS_SSL_KEY_FILEPATH):
+            remove(MAAS_SSL_KEY_FILEPATH)
+        if exists(MAAS_CACERT_FILEPATH):
+            remove(MAAS_CACERT_FILEPATH)
+
+    @staticmethod
     def create_tls_files(
         ssl_certificate: str, ssl_key: str, cacert: str = "", overwrite: bool = False
     ) -> None:
@@ -216,7 +227,7 @@ class MaasHelper:
                 cacert_file.write(cacert)
 
     @staticmethod
-    def config_tls(cacert: bool = False) -> None:
+    def enable_tls(cacert: bool = False) -> None:
         """Set up TLS for the Region controller.
 
         Raises:
@@ -231,6 +242,20 @@ class MaasHelper:
         if cacert:
             cmd.extend(["--cacert", MAAS_CACERT_FILEPATH])
         cmd.extend([MAAS_SSL_KEY_FILEPATH, MAAS_SSL_CERT_FILEPATH])
+        subprocess.check_call(cmd)
+
+    @staticmethod
+    def disable_tls() -> None:
+        """Disable TLS for the Region controller.
+
+        Raises:
+            CalledProcessError: if "maas config-tls disable" command failed for any reason
+        """
+        cmd = [
+            "/snap/bin/maas",
+            "config-tls",
+            "disable",
+        ]
         subprocess.check_call(cmd)
 
     @staticmethod

@@ -241,7 +241,10 @@ class MaasRegionCharm(ops.CharmBase):
                     self.config["ssl_key_content"],  # type: ignore
                     self.config["ssl_cacert_content"],  # type: ignore
                 )
-                MaasHelper.config_tls()
+                MaasHelper.enable_tls()
+                MaasHelper.delete_tls_files()
+            elif self.config["tls_mode"] == "disabled":
+                MaasHelper.disable_tls()
             return True
         except subprocess.CalledProcessError:
             return False
