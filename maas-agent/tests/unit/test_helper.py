@@ -4,7 +4,7 @@
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
 import unittest
-from unittest.mock import MagicMock, PropertyMock, mock_open, patch
+from unittest.mock import MagicMock, PropertyMock, call, mock_open, patch
 
 from charms.operator_libs_linux.v2.snap import SnapState
 
@@ -34,8 +34,11 @@ class TestHelperSnapCache(unittest.TestCase):
     def test_install(self, mock_snap):
         mock_maas = self._setup_snap(mock_snap)
         MaasHelper.install("test/channel")
-        mock_maas.ensure.assert_called_once_with(
-            SnapState.Latest, channel="test/channel", cohort="maas-agent"
+        mock_maas.ensure.assert_has_calls(
+            [
+                call(SnapState.Latest, channel="test/channel"),
+                call(SnapState.Present, cohort="maas"),
+            ]
         )
         mock_maas.hold.assert_called_once()
 
@@ -43,7 +46,7 @@ class TestHelperSnapCache(unittest.TestCase):
     def test_install_already_present(self, mock_snap):
         mock_maas = self._setup_snap(mock_snap, present=True)
         MaasHelper.install("test/channel")
-        mock_maas.ensure.assert_not_called()
+        mock_maas.ensure.assert_called_once_with(SnapState.Present, cohort="maas")
 
     @patch("helper.SnapCache", autospec=True)
     def test_uninstall(self, mock_snap):
@@ -77,7 +80,7 @@ class TestHelperSnapCache(unittest.TestCase):
         MaasHelper.refresh("test/upgrade")
         mock_maas.stop.assert_called_once()
         mock_maas.ensure.assert_called_once_with(
-            SnapState.Present, channel="test/upgrade", cohort="maas-agent"
+            SnapState.Present, channel="test/upgrade", cohort="maas"
         )
         mock_maas.start.assert_called_once()
 

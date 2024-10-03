@@ -29,8 +29,9 @@ class MaasHelper:
         """
         maas = SnapCache()[MAAS_SNAP_NAME]
         if not maas.present:
-            maas.ensure(SnapState.Latest, channel=channel, cohort="maas-agent")
+            maas.ensure(SnapState.Latest, channel=channel)
             maas.hold()
+        maas.ensure(SnapState.Present, cohort="maas")
 
     @staticmethod
     def uninstall() -> None:
@@ -47,7 +48,7 @@ class MaasHelper:
         maas.stop()
         while service.get("activate", False):
             sleep(1)
-        maas.ensure(SnapState.Present, channel=channel, cohort="maas-agent")
+        maas.ensure(SnapState.Present, channel=channel, cohort="maas")
         maas.start()
         while not service.get("activate", True):
             sleep(1)
