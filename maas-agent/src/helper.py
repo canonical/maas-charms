@@ -3,18 +3,38 @@
 
 """Helper functions for MAAS management."""
 
+import re
 import subprocess
 from pathlib import Path
 from time import sleep
 from typing import Union
 
-from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
+from charms.operator_libs_linux.v2.snap import Snap, SnapCache, SnapState
 
 MAAS_SNAP_NAME = "maas"
 MAAS_MODE = Path("/var/snap/maas/common/snap_mode")
 MAAS_SECRET = Path("/var/snap/maas/common/maas/secret")
 MAAS_ID = Path("/var/snap/maas/common/maas/maas_id")
 MAAS_SERVICE = "pebble"
+
+
+def _join_cohort_(maas: Snap) -> str:
+    """Join the maas snap cohort if not part of it already.
+
+    Args:
+    maas (Snap): Instance of maas snap.
+    """
+    if _cohort := re.match(r"cohort:\s*([^\n]+)", maas._snap("info", ["--verbose"])):
+        cohort = _cohort.group(1)
+        maas._cohort = cohort
+        return cohort
+
+    if _cohort := re.match(r"cohort-key:\s+([^\n]+)", maas._snap("create-cohort")):
+        cohort = _cohort.group(1)
+        maas.ensure(SnapState.Present, cohort=cohort)
+        maas._cohort = cohort
+
+    return maas._cohort or ""
 
 
 class MaasHelper:
@@ -31,7 +51,7 @@ class MaasHelper:
         if not maas.present:
             maas.ensure(SnapState.Latest, channel=channel)
             maas.hold()
-        maas.ensure(SnapState.Present, cohort="maas")
+        _join_cohort_(maas)
 
     @staticmethod
     def uninstall() -> None:
@@ -48,7 +68,8 @@ class MaasHelper:
         maas.stop()
         while service.get("activate", False):
             sleep(1)
-        maas.ensure(SnapState.Present, channel=channel, cohort="maas")
+        maas.ensure(SnapState.Present, channel=channel)
+        _join_cohort_(maas)
         maas.start()
         while not service.get("activate", True):
             sleep(1)

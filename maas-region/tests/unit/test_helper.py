@@ -4,7 +4,7 @@
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
 import unittest
-from unittest.mock import MagicMock, PropertyMock, call, mock_open, patch
+from unittest.mock import MagicMock, Mock, PropertyMock, call, mock_open, patch
 
 from charms.operator_libs_linux.v2.snap import SnapState
 
@@ -26,6 +26,7 @@ class TestHelperSnapCache(unittest.TestCase):
         type(maas).revision = PropertyMock(return_value=revision)
         type(maas).channel = PropertyMock(return_value=channel)
         type(maas).cohort = PropertyMock(return_value=cohort)
+        type(maas)._snap = Mock(return_value="cohort-key: maas")
         instance = mock_snap.return_value
         instance.__getitem__.return_value = maas
         return maas
@@ -79,8 +80,11 @@ class TestHelperSnapCache(unittest.TestCase):
 
         MaasHelper.refresh("test/upgrade")
         mock_maas.stop.assert_called_once()
-        mock_maas.ensure.assert_called_once_with(
-            SnapState.Present, channel="test/upgrade", cohort="maas"
+        mock_maas.ensure.assert_has_calls(
+            [
+                call(SnapState.Present, channel="test/upgrade"),
+                call(SnapState.Present, cohort="maas"),
+            ]
         )
         mock_maas.start.assert_called_once()
 
