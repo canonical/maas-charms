@@ -118,6 +118,8 @@ class MaasRegionCharm(ops.CharmBase):
         # Charm configuration
         self.framework.observe(self.on.config_changed, self._on_config_changed)
 
+        self.maas_initialized = False
+
     @property
     def peers(self) -> Union[ops.Relation, None]:
         """Fetch the peer relation."""
@@ -235,16 +237,9 @@ class MaasRegionCharm(ops.CharmBase):
             MaasHelper.setup_region(
                 self.maas_api_url, self.connection_string, self.get_operational_mode()
             )
-            if self.config["tls_mode"] == "passthrough":
-                MaasHelper.create_tls_files(
-                    self.config["ssl_cert_content"],  # type: ignore
-                    self.config["ssl_key_content"],  # type: ignore
-                    self.config["ssl_cacert_content"],  # type: ignore
-                )
-                MaasHelper.enable_tls()
-                MaasHelper.delete_tls_files()
-            elif self.config["tls_mode"] == "disabled":
-                MaasHelper.disable_tls()
+            self._update_tls_config()
+            if not self.maas_initialized:
+                self.maas_initialized = True
             return True
         except subprocess.CalledProcessError:
             return False
@@ -306,6 +301,19 @@ class MaasRegionCharm(ops.CharmBase):
                     }
                 )
             relation.data[self.unit]["services"] = yaml.safe_dump(data)
+
+    def _update_tls_config(self) -> None:
+        """Enable or disable TLS in MAAS."""
+        if self.config["tls_mode"] == "passthrough":
+            MaasHelper.create_tls_files(
+                self.config["ssl_cert_content"],  # type: ignore
+                self.config["ssl_key_content"],  # type: ignore
+                self.config["ssl_cacert_content"],  # type: ignore
+            )
+            MaasHelper.enable_tls()
+            MaasHelper.delete_tls_files()
+        elif self.config["tls_mode"] == "disabled":
+            MaasHelper.disable_tls()
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
@@ -462,6 +470,8 @@ class MaasRegionCharm(ops.CharmBase):
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
         self._update_ha_proxy()
+        if self.maas_initialized:
+            self._update_tls_config()
 
 
 if __name__ == "__main__":  # pragma: nocover
