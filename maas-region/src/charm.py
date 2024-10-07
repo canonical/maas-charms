@@ -15,6 +15,8 @@ import yaml
 from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region.v0 import maas
+from charms.tempo_k8s.v1.charm_tracing import trace_charm
+from charms.tempo_k8s.v2.tracing import TracingEndpointRequirer, charm_tracing_config
 
 from helper import MaasHelper
 
@@ -53,6 +55,15 @@ MAAS_REGION_PORTS = [
 ]
 
 
+@trace_charm(
+    tracing_endpoint="charm_tracing_endpoint",
+    extra_types=[
+        cos_agent.COSAgentProvider,
+        maas.MaasRegionProvider,
+        db.DatabaseRequires,
+        MaasHelper,
+    ],
+)
 class MaasRegionCharm(ops.CharmBase):
     """Charm the application."""
 
@@ -107,6 +118,8 @@ class MaasRegionCharm(ops.CharmBase):
             logs_rules_dir="./src/loki",
             # dashboard_dirs=["./src/grafana_dashboards"],
         )
+        self.tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
+        self.charm_tracing_endpoint, _ = charm_tracing_config(self.tracing, None)
 
         # Charm actions
         self.framework.observe(self.on.create_admin_action, self._on_create_admin_action)

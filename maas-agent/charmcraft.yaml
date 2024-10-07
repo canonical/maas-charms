@@ -44,6 +44,9 @@ requires:
   maas-region:
     interface: maas_controller
     limit: 1
+  tracing:
+    interface: tracing
+    limit: 1
 
 provides:
   cos-agent:

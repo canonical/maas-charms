@@ -12,6 +12,8 @@ import ops
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region.v0 import maas
 from charms.operator_libs_linux.v2.snap import SnapError
+from charms.tempo_k8s.v1.charm_tracing import trace_charm
+from charms.tempo_k8s.v2.tracing import TracingEndpointRequirer, charm_tracing_config
 
 from helper import MaasHelper
 
@@ -36,6 +38,10 @@ MAAS_RACK_PORTS = [
 MAAS_SNAP_CHANNEL = "3.5/stable"
 
 
+@trace_charm(
+    tracing_endpoint="charm_tracing_endpoint",
+    extra_types=[cos_agent.COSAgentProvider, maas.MaasRegionRequirer, MaasHelper],
+)
 class MaasRackCharm(ops.CharmBase):
     """Charm the application."""
 
@@ -55,6 +61,8 @@ class MaasRackCharm(ops.CharmBase):
                 {"path": "/metrics", "port": MAAS_RACK_METRICS_PORT},
             ],
         )
+        self.tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
+        self.charm_tracing_endpoint, _ = charm_tracing_config(self.tracing, None)
 
         # MAAS relation
         self.maas_region = maas.MaasRegionRequirer(self)

@@ -47,6 +47,9 @@ requires:
   maas-db:
     interface: postgresql_client
     limit: 1
+  tracing:
+    interface: tracing
+    limit: 1
 
 peers:
   maas-cluster:
