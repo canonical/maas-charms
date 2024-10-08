@@ -158,7 +158,6 @@ class MaasRackCharm(ops.CharmBase):
         if current := MaasHelper.get_installed_channel():
             if current > MAAS_SNAP_CHANNEL:
                 msg = f"Cannot downgrade {current} to {MAAS_SNAP_CHANNEL}"
-                # XXX: It looks like ErrorStatus is not valid in the version of Juju used by maas-charms
                 self.unit.status = ops.BlockedStatus(msg)
                 logger.exception(msg)
                 return

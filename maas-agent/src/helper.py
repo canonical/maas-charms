@@ -19,10 +19,10 @@ MAAS_SERVICE = "pebble"
 
 
 def _join_cohort_(maas: Snap) -> str:
-    """Join the maas snap cohort if not part of it already.
+    """Join the MAAS snap cohort if not part of it already.
 
     Args:
-    maas (Snap): Instance of maas snap.
+    maas (Snap): Instance of MAAS snap.
     """
     if _cohort := re.match(r"cohort:\s*([^\n]+)", maas._snap("info", ["--verbose"])):
         cohort = _cohort.group(1)
