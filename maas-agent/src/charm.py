@@ -52,6 +52,7 @@ class MaasRackCharm(ops.CharmBase):
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.start, self._on_start)
+        self.framework.observe(self.on.upgrade_charm, self._on_upgrade)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
 
         # COS
@@ -147,9 +148,34 @@ class MaasRackCharm(ops.CharmBase):
         except Exception as ex:
             logger.error(str(ex))
 
+    def _on_upgrade(self, _event: ops.UpgradeCharmEvent) -> None:
+        """Upgrade MAAS install on the machine.
+
+        Args:
+            event (ops.UpgradeCharmEvent): Event from ops framework
+        """
+        self.unit.status = ops.MaintenanceStatus(f"upgrading to {MAAS_SNAP_CHANNEL}...")
+        if current := MaasHelper.get_installed_channel():
+            if current > MAAS_SNAP_CHANNEL:
+                msg = f"Cannot downgrade {current} to {MAAS_SNAP_CHANNEL}"
+                self.unit.status = ops.BlockedStatus(msg)
+                logger.exception(msg)
+                return
+            elif current == MAAS_SNAP_CHANNEL:
+                logger.info("Cannot upgrade across revisions")
+                return
+        try:
+            MaasHelper.refresh(MAAS_SNAP_CHANNEL)
+        except SnapError:
+            logger.exception(f"failed to upgrade MAAS snap to channel '{MAAS_SNAP_CHANNEL}'")
+        except Exception as ex:
+            logger.error(str(ex))
+
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
         if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
-            e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
+            # skip if we've already set blocked due to attempting a downgrade
+            if not isinstance(self.unit.status, ops.BlockedStatus):
+                e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
         elif not self.maas_region.get_enroll_data():
             e.add_status(ops.WaitingStatus("Waiting for enrollment token"))
         elif MaasHelper.get_maas_mode() == "rack" and not self.unit.opened_ports().issuperset(
