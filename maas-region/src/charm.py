@@ -237,8 +237,8 @@ class MaasRegionCharm(ops.CharmBase):
             MaasHelper.setup_region(
                 self.maas_api_url, self.connection_string, self.get_operational_mode()
             )
-            self._update_tls_config()
             if not self.maas_initialized:
+                self._update_tls_config()
                 self.maas_initialized = True
             return True
         except subprocess.CalledProcessError:
