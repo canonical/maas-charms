@@ -118,7 +118,7 @@ class MaasRegionCharm(ops.CharmBase):
         # Charm configuration
         self.framework.observe(self.on.config_changed, self._on_config_changed)
 
-        self.maas_initialized = False
+        self.maas_initialized_once = False
 
     @property
     def peers(self) -> Union[ops.Relation, None]:
@@ -237,9 +237,9 @@ class MaasRegionCharm(ops.CharmBase):
             MaasHelper.setup_region(
                 self.maas_api_url, self.connection_string, self.get_operational_mode()
             )
-            if not self.maas_initialized:
+            if not self.maas_initialized_once:
                 self._update_tls_config()
-                self.maas_initialized = True
+                self.maas_initialized_once = True
             return True
         except subprocess.CalledProcessError:
             return False
@@ -470,7 +470,7 @@ class MaasRegionCharm(ops.CharmBase):
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
         self._update_ha_proxy()
-        if self.maas_initialized:
+        if self.maas_initialized_once:
             self._update_tls_config()
 
 
