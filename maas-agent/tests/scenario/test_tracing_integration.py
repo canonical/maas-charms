@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import opentelemetry
 import pytest
-from charms.tempo_k8s.v2.tracing import ProtocolType, Receiver, TracingProviderAppData
+from charms.tempo_coordinator_k8s.v0.tracing import ProtocolType, Receiver, TracingProviderAppData
 from scenario import Context, Relation, State
 
 from charm import MaasRackCharm
