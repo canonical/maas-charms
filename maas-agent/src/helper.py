@@ -3,13 +3,12 @@
 
 """Helper functions for MAAS management."""
 
-import re
 import subprocess
 from pathlib import Path
 from time import sleep
-from typing import Union
+from typing import Optional, Union
 
-from charms.operator_libs_linux.v2.snap import Snap, SnapCache, SnapState
+from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
 
 MAAS_SNAP_NAME = "maas"
 MAAS_MODE = Path("/var/snap/maas/common/snap_mode")
@@ -18,40 +17,24 @@ MAAS_ID = Path("/var/snap/maas/common/maas/maas_id")
 MAAS_SERVICE = "pebble"
 
 
-def _join_cohort_(maas: Snap) -> str:
-    """Join the MAAS snap cohort if not part of it already.
-
-    Args:
-    maas (Snap): Instance of MAAS snap.
-    """
-    if _cohort := re.match(r"cohort:\s*([^\n]+)", maas._snap("info", ["--verbose"])):
-        cohort = _cohort.group(1)
-        maas._cohort = cohort
-        return cohort
-
-    if _cohort := re.match(r"cohort-key:\s+([^\n]+)", maas._snap("create-cohort")):
-        cohort = _cohort.group(1)
-        maas.ensure(SnapState.Present, cohort=cohort)
-        maas._cohort = cohort
-
-    return maas._cohort or ""
-
-
 class MaasHelper:
     """MAAS helper."""
 
     @staticmethod
-    def install(channel: str) -> None:
+    def install(channel: str, cohort_key: Optional[str] = None) -> None:
         """Install snap.
 
         Args:
             channel (str): snapstore channel
+            cohort_key (str): cohort to join when installing snap
         """
         maas = SnapCache()[MAAS_SNAP_NAME]
         if not maas.present:
             maas.ensure(SnapState.Latest, channel=channel)
             maas.hold()
-        _join_cohort_(maas)
+        if cohort_key:
+            maas.ensure(SnapState.Present, cohort=cohort_key)
+            maas._cohort = cohort_key
 
     @staticmethod
     def uninstall() -> None:
@@ -61,7 +44,7 @@ class MaasHelper:
             maas.ensure(SnapState.Absent)
 
     @staticmethod
-    def refresh(channel: str) -> None:
+    def refresh(channel: str, cohort_key: Optional[str] = None) -> None:
         """Refresh snap."""
         maas = SnapCache()[MAAS_SNAP_NAME]
         service = maas.services.get(MAAS_SERVICE, {})
@@ -69,7 +52,9 @@ class MaasHelper:
         while service.get("activate", False):
             sleep(1)
         maas.ensure(SnapState.Present, channel=channel)
-        _join_cohort_(maas)
+        if cohort_key:
+            maas.ensure(SnapState.Present, cohort=cohort_key)
+            maas._cohort = cohort_key
         maas.start()
         while not service.get("activate", True):
             sleep(1)

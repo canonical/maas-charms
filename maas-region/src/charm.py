@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 MAAS_PEER_NAME = "maas-cluster"
 MAAS_API_RELATION = "api"
 MAAS_DB_NAME = "maas-db"
+MAAS_COHORT_PEER_NAME = "maas-cohort"
 
 MAAS_SNAP_CHANNEL = "3.5/stable"
 
@@ -138,6 +139,11 @@ class MaasRegionCharm(ops.CharmBase):
         return self.model.get_relation(MAAS_PEER_NAME)
 
     @property
+    def cohort_peers(self) -> Union[ops.Relation, None]:
+        """Fetch the cohort peer relation."""
+        return self.model.get_relation(MAAS_COHORT_PEER_NAME)
+
+    @property
     def connection_string(self) -> str:
         """Returns the database connection string.
 
@@ -230,6 +236,21 @@ class MaasRegionCharm(ops.CharmBase):
             return {}
         data = self.peers.data[app_or_unit].get(key, "")
         return json.loads(data) if data else {}
+
+    def set_cohort(self, app_or_unit: Union[ops.Application, ops.Unit], cohort_key: str) -> None:
+        """Set the cohort on the peer relation databag."""
+        if not self.cohort_peers:
+            return
+        self.cohort_peers.data[app_or_unit]["cohort-key"] = cohort_key
+
+    def get_cohort(
+        self,
+        app_or_unit: Union[ops.Application, ops.Unit],
+    ) -> Any:
+        """Return the cohort from the peer relation databag."""
+        if not self.cohort_peers:
+            return None
+        return self.cohort_peers.data[app_or_unit].get("cohort-key", "")
 
     def _setup_network(self) -> bool:
         """Open the network ports.
@@ -328,8 +349,9 @@ class MaasRegionCharm(ops.CharmBase):
             event (ops.InstallEvent): Event from ops framework
         """
         self.unit.status = ops.MaintenanceStatus("installing...")
+        self._get_maas_cohort(_event)
         try:
-            MaasHelper.install(MAAS_SNAP_CHANNEL)
+            MaasHelper.install(MAAS_SNAP_CHANNEL, cohort_key=self.get_cohort(self.app))
         except Exception as ex:
             logger.error(str(ex))
 
@@ -362,7 +384,7 @@ class MaasRegionCharm(ops.CharmBase):
                 logger.info("Cannot upgrade across revisions")
                 return
         try:
-            MaasHelper.refresh(MAAS_SNAP_CHANNEL)
+            MaasHelper.refresh(MAAS_SNAP_CHANNEL, cohort_key=self.get_cohort(self.app))
         except SnapError:
             logger.exception(f"failed to upgrade MAAS snap to channel '{MAAS_SNAP_CHANNEL}'")
         except Exception as ex:
@@ -416,6 +438,27 @@ class MaasRegionCharm(ops.CharmBase):
         self.set_peer_data(self.unit, "system-name", socket.getfqdn())
         if self.unit.is_leader():
             self._publish_tokens()
+
+    def _get_maas_cohort(self, event: ops.InstallEvent) -> None:
+        logger.info(event)
+        if self.unit.is_leader():
+            if not self.get_cohort(self.app) and (
+                _cohort := MaasHelper.get_or_create_snap_cohort()
+            ):
+                self.set_cohort(self.app, _cohort)
+
+            cohort = self.get_cohort(self.app)
+            if not cohort:
+                msg = "Cannot find MAAS snap cohort"
+                self.unit.status = ops.BlockedStatus(msg)
+                raise ValueError(msg)
+            if peers := self.cohort_peers:
+                for u in peers.units:
+                    self.set_cohort(u, cohort)
+            return
+        if not self.get_cohort(self.app):
+            event.defer()
+            return
 
     def _on_maas_cluster_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)

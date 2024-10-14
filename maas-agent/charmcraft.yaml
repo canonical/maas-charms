@@ -31,6 +31,10 @@ links:
   issues:
     - https://github.com/canonical/maas-charms/issues
 
+peers:
+  maas-cohort:
+    interface: maas_cohort_peers
+
 # (Required for 'charm' type)
 bases:
   - build-on:

@@ -6,7 +6,7 @@
 
 import logging
 import socket
-from typing import Union
+from typing import Any, Union
 
 import ops
 from charms.grafana_agent.v0 import cos_agent
@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 MAAS_SNAP_NAME = "maas"
 MAAS_RELATION_NAME = "maas-region"
+MAAS_COHORT_PEER_NAME = "maas-cohort"
 
 MAAS_RACK_METRICS_PORT = 5249
 MAAS_RACK_PORTS = [
@@ -131,7 +132,7 @@ class MaasRackCharm(ops.CharmBase):
         """
         self.unit.status = ops.MaintenanceStatus("installing...")
         try:
-            MaasHelper.install(MAAS_SNAP_CHANNEL)
+            MaasHelper.install(MAAS_SNAP_CHANNEL, cohort_key=self.get_cohort(self.app))
         except SnapError:
             logger.exception(f"failed to install MAAS snap from channel '{MAAS_SNAP_CHANNEL}'")
 
@@ -165,7 +166,7 @@ class MaasRackCharm(ops.CharmBase):
                 logger.info("Cannot upgrade across revisions")
                 return
         try:
-            MaasHelper.refresh(MAAS_SNAP_CHANNEL)
+            MaasHelper.refresh(MAAS_SNAP_CHANNEL, cohort_key=self.get_cohort(self.app))
         except SnapError:
             logger.exception(f"failed to upgrade MAAS snap to channel '{MAAS_SNAP_CHANNEL}'")
         except Exception as ex:
@@ -195,6 +196,20 @@ class MaasRackCharm(ops.CharmBase):
 
     def _on_maas_created(self, event: ops.RelationCreatedEvent):
         self.maas_region.publish_unit_url(socket.getfqdn())
+
+    @property
+    def cohort_peers(self) -> Union[ops.Relation, None]:
+        """Fetch the cohort peer relation."""
+        return self.model.get_relation(MAAS_COHORT_PEER_NAME)
+
+    def get_cohort(
+        self,
+        app_or_unit: Union[ops.Application, ops.Unit],
+    ) -> Any:
+        """Return the cohort from the peer relation databag."""
+        if not self.cohort_peers:
+            return None
+        return self.cohort_peers.data[app_or_unit].get("cohort-key", "")
 
 
 if __name__ == "__main__":  # pragma: nocover

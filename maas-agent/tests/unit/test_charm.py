@@ -27,7 +27,7 @@ class TestCharm(unittest.TestCase):
         mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
         self.harness.begin_with_initial_hooks()
         self.harness.evaluate_status()
-        mock_helper.install.assert_called_once_with(MAAS_SNAP_CHANNEL)
+        mock_helper.install.assert_called_once_with(MAAS_SNAP_CHANNEL, cohort_key=None)
         mock_helper.set_running.assert_called_once_with(True)
         mock_helper.get_installed_version.assert_called_once()
         mock_helper.get_installed_channel.assert_called_once()
@@ -49,7 +49,7 @@ class TestCharm(unittest.TestCase):
         mock_helper.get_installed_channel.return_value = "3.4/edge"
         self.harness.begin()
         self.harness.charm.on.upgrade_charm.emit()
-        mock_helper.refresh.assert_called_once_with(MAAS_SNAP_CHANNEL)
+        mock_helper.refresh.assert_called_once_with(MAAS_SNAP_CHANNEL, cohort_key=None)
         self.assertEqual(
             self.harness.model.unit.status,
             ops.MaintenanceStatus(f"upgrading to {MAAS_SNAP_CHANNEL}..."),
