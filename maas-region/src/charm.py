@@ -442,9 +442,12 @@ class MaasRegionCharm(ops.CharmBase):
     def _get_maas_cohort(self, event: ops.InstallEvent) -> None:
         logger.info(event)
         if self.unit.is_leader():
-            if not self.get_cohort(self.app) and (
-                _cohort := MaasHelper.get_or_create_snap_cohort()
-            ):
+            if not self.get_cohort(self.app):
+                _cohort = MaasHelper.get_or_create_snap_cohort()
+                if not _cohort:
+                    msg = "Could not create MAAS snap cohort"
+                    self.unit.status = ops.BlockedStatus(msg)
+                    raise ValueError(msg)
                 self.set_cohort(self.app, _cohort)
 
             cohort = self.get_cohort(self.app)
