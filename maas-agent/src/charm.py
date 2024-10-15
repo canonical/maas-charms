@@ -209,7 +209,7 @@ class MaasRackCharm(ops.CharmBase):
         """Return the cohort from the peer relation databag."""
         if not self.cohort_peers:
             return None
-        return self.cohort_peers.data[app_or_unit].get("cohort-key", "")
+        return self.cohort_peers.data[app_or_unit].get("cohort-key")
 
 
 if __name__ == "__main__":  # pragma: nocover

@@ -250,7 +250,7 @@ class MaasRegionCharm(ops.CharmBase):
         """Return the cohort from the peer relation databag."""
         if not self.cohort_peers:
             return None
-        return self.cohort_peers.data[app_or_unit].get("cohort-key", "")
+        return self.cohort_peers.data[app_or_unit].get("cohort-key")
 
     def _setup_network(self) -> bool:
         """Open the network ports.
@@ -447,14 +447,14 @@ class MaasRegionCharm(ops.CharmBase):
                 if not _cohort:
                     msg = "Could not create MAAS snap cohort"
                     self.unit.status = ops.BlockedStatus(msg)
-                    raise ValueError(msg)
+                    return
                 self.set_cohort(self.app, _cohort)
 
             cohort = self.get_cohort(self.app)
             if not cohort:
                 msg = "Cannot find MAAS snap cohort"
                 self.unit.status = ops.BlockedStatus(msg)
-                raise ValueError(msg)
+                return
             if peers := self.cohort_peers:
                 for u in peers.units:
                     self.set_cohort(u, cohort)
