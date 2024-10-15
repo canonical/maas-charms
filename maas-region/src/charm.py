@@ -443,6 +443,7 @@ class MaasRegionCharm(ops.CharmBase):
         logger.info(event)
         if self.unit.is_leader():
             if not self.get_cohort(self.app):
+                logger.debug("Cohort not found in databag")
                 _cohort = MaasHelper.get_or_create_snap_cohort()
                 if not _cohort:
                     msg = "Could not create MAAS snap cohort"
