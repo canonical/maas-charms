@@ -130,6 +130,16 @@ parts:
     prime:
       - src/loki/loki.yml
 
+  grafana-dashboards:
+    plugin: dump
+    source: https://github.com/canonical/maas-grafana-dashboards
+    source-depth: 1
+    source-type: git
+    organize:
+      "*": src/grafana_dashboards/
+    prime:
+      - src/grafana_dashboards/maas_stats.json
+
 config:
   options:
     tls_mode:
