@@ -116,7 +116,7 @@ class MaasRegionCharm(ops.CharmBase):
             ],
             metrics_rules_dir="./src/prometheus",
             logs_rules_dir="./src/loki",
-            # dashboard_dirs=["./src/grafana_dashboards"],
+            dashboard_dirs=["./src/grafana_dashboards"],
         )
         self.tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
         self.charm_tracing_endpoint, _ = charm_tracing_config(self.tracing, None)
