@@ -5,11 +5,11 @@
 import asyncio
 import logging
 from pathlib import Path
-from subprocess import check_output
 
 import pytest
 import yaml
 from pytest_operator.plugin import OpsTest
+from subprocess import check_output
 
 logger = logging.getLogger(__name__)
 
@@ -23,14 +23,11 @@ async def test_build_and_deploy(ops_test: OpsTest):
 
     Assert on the unit status before any relations/configurations take place.
     """
-    # create the maas snap cohort we need
-    cohort_creation = check_output(
-        ["sudo", "snap", "create-cohort", "maas"], universal_newlines=True
-    )
-    logger.info(f"Created cohort: {cohort_creation}")
-
     # Build and deploy charm from local source folder
     charm = await ops_test.build_charm(".")
+
+    # create a snap cohort
+    await ops_test.run(["sudo", "snap", "create-cohort", "maas"], check=True)
 
     # Deploy the charm and wait for waiting/idle status
     await asyncio.gather(
