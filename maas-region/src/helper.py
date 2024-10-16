@@ -235,7 +235,7 @@ class MaasHelper:
         logger.debug("Could not find cohort key in snap info")
 
         cohort_creation = subprocess.check_output(
-            ["snap", "create-cohort", "maas"], universal_newlines=True
+            ["sudo", "snap", "create-cohort", "maas"], universal_newlines=True
         )
         if _created_cohort := re.match(r"cohort-key:\s+([^\n]+)", cohort_creation):
             return str(_created_cohort.group(1))
