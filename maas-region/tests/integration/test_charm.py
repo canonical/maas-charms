@@ -24,6 +24,9 @@ async def test_build_and_deploy(ops_test: OpsTest):
 
     Assert on the unit status before any relations/configurations take place.
     """
+    # create the maas snap cohort we need
+    check_output(["snap", "create-cohort", "maas"])
+
     # Build and deploy charm from local source folder
     charm = await ops_test.build_charm(".")
 

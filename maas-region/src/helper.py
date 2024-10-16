@@ -232,7 +232,7 @@ class MaasHelper:
         )
         if _found_cohort := re.match(r"cohort:\s*([^\n]+)", verbose_info):
             return str(_found_cohort.group(1))
-        logger.debug(f"Could not find cohort key in snap info: {verbose_info}")
+        logger.debug("Could not find cohort key in snap info")
 
         cohort_creation = subprocess.check_output(
             ["snap", "create-cohort", "maas"], universal_newlines=True
