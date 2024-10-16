@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 import yaml
 from pytest_operator.plugin import OpsTest
-from subprocess import check_output
 
 logger = logging.getLogger(__name__)
 

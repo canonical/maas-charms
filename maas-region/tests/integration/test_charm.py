@@ -24,7 +24,6 @@ async def test_build_and_deploy(ops_test: OpsTest):
 
     Assert on the unit status before any relations/configurations take place.
     """
-
     # Build and deploy charm from local source folder
     charm = await ops_test.build_charm(".")
 
