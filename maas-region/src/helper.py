@@ -227,16 +227,14 @@ class MaasHelper:
     def get_or_create_snap_cohort() -> Union[str, None]:
         """Return the maas snap cohort, or create a new one."""
         logger = getLogger(__name__)
-        verbose_info = subprocess.check_output(
-            ["snap", "info", "maas", "--verbose"], universal_newlines=True
-        )
+        maas = SnapCache()[MAAS_SNAP_NAME]
+
+        verbose_info = maas._snap("info", ["--verbose"])
         if _found_cohort := re.match(r"cohort:\s*([^\n]+)", verbose_info):
             return str(_found_cohort.group(1))
         logger.debug("Could not find cohort key in snap info")
 
-        cohort_creation = subprocess.check_output(
-            ["sudo", "snap", "create-cohort", "maas"], universal_newlines=True
-        )
+        cohort_creation = maas._snap("create-cohort")
         if _created_cohort := re.match(r"cohort-key:\s+([^\n]+)", cohort_creation):
             return str(_created_cohort.group(1))
 
