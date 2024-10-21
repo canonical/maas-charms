@@ -5,14 +5,16 @@
 
 import subprocess
 from pathlib import Path
-from typing import Union
+from typing import Dict, Union
 
+import yaml
 from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
 
 MAAS_SNAP_NAME = "maas"
 MAAS_MODE = Path("/var/snap/maas/common/snap_mode")
 MAAS_SECRET = Path("/var/snap/maas/common/maas/secret")
 MAAS_ID = Path("/var/snap/maas/common/maas/maas_id")
+MAAS_CONF = Path("/var/snap/maas/current/regiond.conf")
 MAAS_SERVICE = "pebble"
 
 
@@ -83,6 +85,19 @@ class MaasHelper:
                 return file.readline().strip()
         except OSError:
             return None
+
+    @staticmethod
+    def get_maas_details() -> Dict[str, str]:
+        """Get MAAS operation mode.
+
+        Returns:
+            Dict[str, str]: MAAS details
+        """
+        try:
+            with MAAS_CONF.open() as file:
+                return yaml.safe_load(file)
+        except (OSError, yaml.YAMLError):
+            return {}
 
     @staticmethod
     def is_running() -> bool:
