@@ -19,7 +19,7 @@ jobs:
   detect-open-prs:
     name: Check open library updates PRs
     needs: update-lib-region
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       open_prs: ${{ steps.open-prs.outputs.open_prs }}
     steps:
