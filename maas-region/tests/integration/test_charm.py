@@ -28,8 +28,12 @@ async def test_build_and_deploy(ops_test: OpsTest):
     charm = await ops_test.build_charm(".")
 
     # create a snap cohort
-    # cohort = await ops_test.run("sudo", "snap", "create-cohort", "maas", check=True)
-    # logger.info(f"Created snap cohort: {cohort}")
+    logger.info("Creating cohort")
+    command = ["sudo", "snap", "create-cohort", "maas"]
+    _, cohort, _ = await ops_test.run(*command, check=True)
+
+    # _, cohort, _ = await ops_test.juju(*command, check=True)
+    logger.info(f"Created snap cohort: {cohort}")
 
     # Deploy the charm and wait for waiting/idle status
     await asyncio.gather(
