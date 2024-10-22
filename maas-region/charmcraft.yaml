@@ -135,10 +135,11 @@ parts:
     source: https://github.com/canonical/maas-grafana-dashboards
     source-depth: 1
     source-type: git
+    source-subdir: maas
     organize:
       "*": src/grafana_dashboards/
     prime:
-      - src/grafana_dashboards/maas_stats.json
+      - src/grafana_dashboards/*
 
 config:
   options:
