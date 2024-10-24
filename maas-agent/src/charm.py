@@ -6,7 +6,7 @@
 
 import logging
 import socket
-from typing import Union
+from typing import Any, Union
 
 import ops
 from charms.grafana_agent.v0 import cos_agent
@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 MAAS_SNAP_NAME = "maas"
 MAAS_RELATION_NAME = "maas-region"
+MAAS_COHORT_PEER_NAME = "maas-cohort"
 
 MAAS_RACK_METRICS_PORT = 5249
 MAAS_RACK_PORTS = [
@@ -52,6 +53,7 @@ class MaasRackCharm(ops.CharmBase):
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.start, self._on_start)
+        self.framework.observe(self.on.upgrade_charm, self._on_upgrade)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
 
         # COS
@@ -130,7 +132,7 @@ class MaasRackCharm(ops.CharmBase):
         """
         self.unit.status = ops.MaintenanceStatus("installing...")
         try:
-            MaasHelper.install(MAAS_SNAP_CHANNEL)
+            MaasHelper.install(MAAS_SNAP_CHANNEL, cohort_key=self.get_cohort(self.app))
         except SnapError:
             logger.exception(f"failed to install MAAS snap from channel '{MAAS_SNAP_CHANNEL}'")
 
@@ -147,9 +149,34 @@ class MaasRackCharm(ops.CharmBase):
         except Exception as ex:
             logger.error(str(ex))
 
+    def _on_upgrade(self, _event: ops.UpgradeCharmEvent) -> None:
+        """Upgrade MAAS install on the machine.
+
+        Args:
+            event (ops.UpgradeCharmEvent): Event from ops framework
+        """
+        self.unit.status = ops.MaintenanceStatus(f"upgrading to {MAAS_SNAP_CHANNEL}...")
+        if current := MaasHelper.get_installed_channel():
+            if current > MAAS_SNAP_CHANNEL:
+                msg = f"Cannot downgrade {current} to {MAAS_SNAP_CHANNEL}"
+                self.unit.status = ops.BlockedStatus(msg)
+                logger.exception(msg)
+                return
+            elif current == MAAS_SNAP_CHANNEL:
+                logger.info("Cannot upgrade across revisions")
+                return
+        try:
+            MaasHelper.refresh(MAAS_SNAP_CHANNEL, cohort_key=self.get_cohort(self.app))
+        except SnapError:
+            logger.exception(f"failed to upgrade MAAS snap to channel '{MAAS_SNAP_CHANNEL}'")
+        except Exception as ex:
+            logger.error(str(ex))
+
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
         if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
-            e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
+            # skip if we've already set blocked due to attempting a downgrade
+            if not isinstance(self.unit.status, ops.BlockedStatus):
+                e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
         elif not self.maas_region.get_enroll_data():
             e.add_status(ops.WaitingStatus("Waiting for enrollment token"))
         elif MaasHelper.get_maas_mode() == "rack" and not self.unit.opened_ports().issuperset(
@@ -169,6 +196,20 @@ class MaasRackCharm(ops.CharmBase):
 
     def _on_maas_created(self, event: ops.RelationCreatedEvent):
         self.maas_region.publish_unit_url(socket.getfqdn())
+
+    @property
+    def cohort_peers(self) -> Union[ops.Relation, None]:
+        """Fetch the cohort peer relation."""
+        return self.model.get_relation(MAAS_COHORT_PEER_NAME)
+
+    def get_cohort(
+        self,
+        app_or_unit: Union[ops.Application, ops.Unit],
+    ) -> Any:
+        """Return the cohort from the peer relation databag."""
+        if not self.cohort_peers:
+            return None
+        return self.cohort_peers.data[app_or_unit].get("cohort-key")
 
 
 if __name__ == "__main__":  # pragma: nocover
