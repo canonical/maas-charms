@@ -61,6 +61,7 @@ class MaasRegionCharm(ops.CharmBase):
         "termination",
         "passthrough",
     ]  # no TLS, termination at HA Proxy, passthrough to MAAS
+    _stored = ops.StoredState()
 
     def __init__(self, *args):
         super().__init__(*args)
