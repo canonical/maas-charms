@@ -61,7 +61,6 @@ class MaasRegionCharm(ops.CharmBase):
         "termination",
         "passthrough",
     ]  # no TLS, termination at HA Proxy, passthrough to MAAS
-    _stored = ops.StoredState()
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -118,8 +117,6 @@ class MaasRegionCharm(ops.CharmBase):
 
         # Charm configuration
         self.framework.observe(self.on.config_changed, self._on_config_changed)
-
-        self._stored.set_default(maas_initialized_once=False)
 
     @property
     def peers(self) -> Union[ops.Relation, None]:
@@ -238,9 +235,9 @@ class MaasRegionCharm(ops.CharmBase):
             MaasHelper.setup_region(
                 self.maas_api_url, self.connection_string, self.get_operational_mode()
             )
-            if not self._stored.maas_initialized_once:
+            if not self.get_peer_data(self.app, "maas-initialized-once") and self.unit.is_leader():
                 self._update_tls_config()
-                self._stored.maas_initialized_once = True
+                self.set_peer_data(self.app, "maas-initialized-once", True)
             return True
         except subprocess.CalledProcessError:
             return False
@@ -471,7 +468,7 @@ class MaasRegionCharm(ops.CharmBase):
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
         self._update_ha_proxy()
-        if self._stored.maas_initialized_once:
+        if self.get_peer_data(self.app, "maas-initialized-once") and self.unit.is_leader():
             self._update_tls_config()
 
 
