@@ -302,17 +302,17 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _update_tls_config(self) -> None:
         """Enable or disable TLS in MAAS."""
-        tls_enabled = MaasHelper.is_tls_enabled()
-        if not tls_enabled and self.config["tls_mode"] == "passthrough":
-            MaasHelper.create_tls_files(
-                self.config["ssl_cert_content"],  # type: ignore
-                self.config["ssl_key_content"],  # type: ignore
-                self.config["ssl_cacert_content"],  # type: ignore
-            )
-            MaasHelper.enable_tls()
-            MaasHelper.delete_tls_files()
-        elif tls_enabled and self.config["tls_mode"] in ["disabled", "termination"]:
-            MaasHelper.disable_tls()
+        if (tls_enabled := MaasHelper.is_tls_enabled()) is not None:
+            if not tls_enabled and self.config["tls_mode"] == "passthrough":
+                MaasHelper.create_tls_files(
+                    self.config["ssl_cert_content"],  # type: ignore
+                    self.config["ssl_key_content"],  # type: ignore
+                    self.config["ssl_cacert_content"],  # type: ignore
+                )
+                MaasHelper.enable_tls()
+                MaasHelper.delete_tls_files()
+            elif tls_enabled and self.config["tls_mode"] in ["disabled", "termination"]:
+                MaasHelper.disable_tls()
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.

@@ -195,15 +195,20 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
-    def is_tls_enabled() -> bool:
-        """Check whether MAAS currently has TLS enabled."""
+    def is_tls_enabled() -> bool | None:
+        """Check whether MAAS currently has TLS enabled.
+
+        Returns:
+            bool | None: True if MAAS has TLS enabled, False if not, None if MAAS is not initialized
+        """
         maas = SnapCache()[MAAS_SNAP_NAME]
         nginx_cfg_filename = f"/var/snap/maas/{maas.revision}/http/regiond.nginx.conf"
         try:
             with open(nginx_cfg_filename, "r") as f:
                 return "listen 5443" in f.read()
         except FileNotFoundError:
-            return False
+            # MAAS is not initalized yet, don't give false hope
+            return None
 
     @staticmethod
     def delete_tls_files() -> None:
