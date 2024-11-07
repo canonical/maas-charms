@@ -235,9 +235,9 @@ class MaasRegionCharm(ops.CharmBase):
             MaasHelper.setup_region(
                 self.maas_api_url, self.connection_string, self.get_operational_mode()
             )
-            if not self.get_peer_data(self.app, "maas-initialized-once") and self.unit.is_leader():
+            # check maas_api_url existence in case MAAS isn't ready yet
+            if self.maas_api_url and self.unit.is_leader():
                 self._update_tls_config()
-                self.set_peer_data(self.app, "maas-initialized-once", True)
             return True
         except subprocess.CalledProcessError:
             return False
@@ -302,7 +302,8 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _update_tls_config(self) -> None:
         """Enable or disable TLS in MAAS."""
-        if self.config["tls_mode"] == "passthrough":
+        tls_enabled = MaasHelper.is_tls_enabled()
+        if not tls_enabled and self.config["tls_mode"] == "passthrough":
             MaasHelper.create_tls_files(
                 self.config["ssl_cert_content"],  # type: ignore
                 self.config["ssl_key_content"],  # type: ignore
@@ -310,7 +311,7 @@ class MaasRegionCharm(ops.CharmBase):
             )
             MaasHelper.enable_tls()
             MaasHelper.delete_tls_files()
-        elif self.config["tls_mode"] == "disabled":
+        elif tls_enabled and self.config["tls_mode"] in ["disabled", "termination"]:
             MaasHelper.disable_tls()
 
     def _on_start(self, _event: ops.StartEvent) -> None:
@@ -468,7 +469,7 @@ class MaasRegionCharm(ops.CharmBase):
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
         self._update_ha_proxy()
-        if self.get_peer_data(self.app, "maas-initialized-once") and self.unit.is_leader():
+        if self.maas_api_url and self.unit.is_leader():
             self._update_tls_config()
 
 
