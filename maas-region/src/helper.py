@@ -199,8 +199,11 @@ class MaasHelper:
         """Check whether MAAS currently has TLS enabled."""
         maas = SnapCache()[MAAS_SNAP_NAME]
         nginx_cfg_filename = f"/var/snap/maas/{maas.revision}/http/regiond.nginx.conf"
-        with open(nginx_cfg_filename, "r") as f:
-            return "listen 5443" in f.read()
+        try:
+            with open(nginx_cfg_filename, "r") as f:
+                return "listen 5443" in f.read()
+        except FileNotFoundError:
+            return False
 
     @staticmethod
     def delete_tls_files() -> None:
