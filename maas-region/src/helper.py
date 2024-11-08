@@ -196,7 +196,7 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
-    def is_tls_enabled() -> bool | None:
+    def is_tls_enabled() -> Union[bool, None]:
         """Check whether MAAS currently has TLS enabled.
 
         Returns:
