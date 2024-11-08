@@ -6,7 +6,6 @@
 import logging
 import subprocess
 from os import remove
-from os.path import exists
 from pathlib import Path
 from typing import Union
 
@@ -17,9 +16,11 @@ MAAS_MODE = Path("/var/snap/maas/common/snap_mode")
 MAAS_SECRET = Path("/var/snap/maas/common/maas/secret")
 MAAS_ID = Path("/var/snap/maas/common/maas/maas_id")
 MAAS_SERVICE = "pebble"
-MAAS_SSL_CERT_FILEPATH = "/var/snap/maas/common/cert.pem"
-MAAS_SSL_KEY_FILEPATH = "/var/snap/maas/common/key.pem"
-MAAS_CACERT_FILEPATH = "/var/snap/maas/common/cacert.pem"
+MAAS_SSL_CERT_FILEPATH = Path("/var/snap/maas/common/cert.pem")
+MAAS_SSL_KEY_FILEPATH = Path("/var/snap/maas/common/key.pem")
+MAAS_CACERT_FILEPATH = Path("/var/snap/maas/common/cacert.pem")
+NGINX_CFG_FILEPATH = Path("/var/snap/maas/current/http/regiond.nginx.conf")
+MAAS_HTTPS_PORT = 5443
 
 logger = logging.getLogger(__name__)
 
@@ -201,23 +202,20 @@ class MaasHelper:
         Returns:
             bool | None: True if MAAS has TLS enabled, False if not, None if MAAS is not initialized
         """
-        maas = SnapCache()[MAAS_SNAP_NAME]
-        nginx_cfg_filename = f"/var/snap/maas/{maas.revision}/http/regiond.nginx.conf"
         try:
-            with open(nginx_cfg_filename, "r") as f:
-                return "listen 5443" in f.read()
+            return f"listen {MAAS_HTTPS_PORT}" in NGINX_CFG_FILEPATH.read_text()
         except FileNotFoundError:
-            # MAAS is not initalized yet, don't give false hope
+            # MAAS is not initialized yet, don't give false hope
             return None
 
     @staticmethod
     def delete_tls_files() -> None:
         """Delete the TLS files used for setting configuring tls."""
-        if exists(MAAS_SSL_CERT_FILEPATH):
+        if MAAS_SSL_CERT_FILEPATH.exists():
             remove(MAAS_SSL_CERT_FILEPATH)
-        if exists(MAAS_SSL_KEY_FILEPATH):
+        if MAAS_SSL_KEY_FILEPATH.exists():
             remove(MAAS_SSL_KEY_FILEPATH)
-        if exists(MAAS_CACERT_FILEPATH):
+        if MAAS_CACERT_FILEPATH.exists():
             remove(MAAS_CACERT_FILEPATH)
 
     @staticmethod
@@ -232,15 +230,12 @@ class MaasHelper:
             cacert (str): optionally, contents of cacert chain for a self-signed ssl_certificate
             overwrite (bool): Whether to overwrite the files if they exist already
         """
-        if not exists(MAAS_SSL_CERT_FILEPATH) or overwrite:
-            with open(MAAS_SSL_CERT_FILEPATH, "w") as cert_file:
-                cert_file.write(ssl_certificate)
-        if not exists(MAAS_SSL_KEY_FILEPATH) or overwrite:
-            with open(MAAS_SSL_KEY_FILEPATH, "w") as key_file:
-                key_file.write(ssl_key)
-        if cacert and (not exists(MAAS_CACERT_FILEPATH) or overwrite):
-            with open(MAAS_CACERT_FILEPATH, "w") as cacert_file:
-                cacert_file.write(cacert)
+        if not MAAS_SSL_CERT_FILEPATH.exists() or overwrite:
+            MAAS_SSL_CERT_FILEPATH.write_text(ssl_certificate)
+        if not MAAS_SSL_KEY_FILEPATH.exists() or overwrite:
+            MAAS_SSL_KEY_FILEPATH.write_text(ssl_key)
+        if cacert and (not MAAS_CACERT_FILEPATH.exists() or overwrite):
+            MAAS_CACERT_FILEPATH.write_text(cacert)
 
     @staticmethod
     def enable_tls(cacert: bool = False) -> None:
@@ -256,8 +251,8 @@ class MaasHelper:
             "--yes",
         ]
         if cacert:
-            cmd.extend(["--cacert", MAAS_CACERT_FILEPATH])
-        cmd.extend([MAAS_SSL_KEY_FILEPATH, MAAS_SSL_CERT_FILEPATH])
+            cmd.extend(["--cacert", str(MAAS_CACERT_FILEPATH)])
+        cmd.extend([str(MAAS_SSL_KEY_FILEPATH), str(MAAS_SSL_CERT_FILEPATH)])
         subprocess.check_call(cmd)
 
     @staticmethod

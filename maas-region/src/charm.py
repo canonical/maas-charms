@@ -469,7 +469,7 @@ class MaasRegionCharm(ops.CharmBase):
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
         self._update_ha_proxy()
-        if self.maas_api_url and self.unit.is_leader():
+        if self.unit.is_leader():
             self._update_tls_config()
 
 
