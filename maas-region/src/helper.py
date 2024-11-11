@@ -46,17 +46,15 @@ class MaasHelper:
             maas.ensure(SnapState.Absent)
 
     @staticmethod
-    def refresh(channel: str, cohort_key: Optional[str] = None) -> None:
+    def refresh(channel: str, cohort_key: str) -> None:
         """Refresh snap."""
         maas = SnapCache()[MAAS_SNAP_NAME]
         service = maas.services.get(MAAS_SERVICE, {})
         maas.stop()
         while service.get("activate", False):
             sleep(1)
-        maas.ensure(SnapState.Present, channel=channel)
-        if cohort_key:
-            maas.ensure(SnapState.Present, cohort=cohort_key)
-            maas._cohort = cohort_key
+        maas.ensure(SnapState.Present, channel=channel, cohort=cohort_key)
+        maas._cohort = cohort_key
         maas.start()
         while not service.get("activate", True):
             sleep(1)
@@ -230,16 +228,14 @@ class MaasHelper:
         maas = SnapCache()[MAAS_SNAP_NAME]
 
         verbose_info = maas._snap("info", ["--verbose"])
-        if _found_cohort := re.match(r"cohort:\s*([^\n]+)", verbose_info):
+        if _found_cohort := re.search(r"cohort:\s*([^\n]+)", verbose_info):
             return str(_found_cohort.group(1))
         logger.debug("Could not find cohort key in snap info")
-
-        logger.info(subprocess.call(["sudo", "snap", "create-cohort", maas._name]))
 
         cohort_creation = subprocess.check_output(
             ["sudo", "snap", "create-cohort", maas._name], universal_newlines=True
         )
-        if _created_cohort := re.match(r"cohort-key:\s+([^\n]+)", cohort_creation):
+        if _created_cohort := re.search(r"cohort-key:\s+([^\n]+)", cohort_creation):
             return str(_created_cohort.group(1))
 
         logger.debug(f"Could not find cohort key in snap create-cohort: {_created_cohort}")
