@@ -16,7 +16,6 @@ from charms.maas_region.v0 import maas
 
 from charm import (
     MAAS_API_RELATION,
-    MAAS_COHORT_PEER_NAME,
     MAAS_DB_NAME,
     MAAS_HTTP_PORT,
     MAAS_PEER_NAME,
@@ -36,26 +35,11 @@ class TestCharm(unittest.TestCase):
     def test_start(self, mock_helper):
         mock_helper.get_installed_version.return_value = "mock-ver"
         mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
-        self.harness.begin_with_initial_hooks()
-        self.harness.evaluate_status()
-        mock_helper.install.assert_called_once_with(MAAS_SNAP_CHANNEL, cohort_key=None)
-        mock_helper.set_running.assert_called_once_with(True)
-        mock_helper.get_installed_version.assert_called_once()
-        mock_helper.get_installed_channel.assert_called_once()
-        self.assertEqual(
-            self.harness.model.unit.status, ops.WaitingStatus("Waiting for database DSN")
-        )
-        self.assertEqual(self.harness.get_workload_version(), "mock-ver")
-
-    @patch("charm.MaasHelper", autospec=True)
-    def test_start_cohort(self, mock_helper):
-        mock_helper.get_installed_version.return_value = "mock-ver"
-        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
         mock_helper.get_or_create_snap_cohort.return_value = "test_cohort"
 
         self.harness.set_leader(True)
         self.harness.begin()
-        self.harness.add_relation(MAAS_COHORT_PEER_NAME, self.harness.charm.app.name)
+        self.harness.add_relation(maas.DEFAULT_ENDPOINT_NAME, self.harness.charm.app.name)
         self.harness.charm.on.install.emit()
         self.harness.charm.on.start.emit()
         self.harness.evaluate_status()
@@ -79,23 +63,11 @@ class TestCharm(unittest.TestCase):
     def test_refresh(self, mock_helper):
         mock_helper.get_maas_mode.return_value = "rack"
         mock_helper.get_installed_channel.return_value = "3.4/edge"
-        self.harness.begin()
-        self.harness.charm.on.upgrade_charm.emit()
-        mock_helper.refresh.assert_called_once_with(MAAS_SNAP_CHANNEL, cohort_key=None)
-        self.assertEqual(
-            self.harness.model.unit.status,
-            ops.MaintenanceStatus(f"upgrading to {MAAS_SNAP_CHANNEL}..."),
-        )
-
-    @patch("charm.MaasHelper", autospec=True)
-    def test_refresh_cohort(self, mock_helper):
-        mock_helper.get_maas_mode.return_value = "rack"
-        mock_helper.get_installed_channel.return_value = "3.4/edge"
 
         self.harness.set_leader(True)
         self.harness.begin()
-        self.harness.add_relation(MAAS_COHORT_PEER_NAME, self.harness.charm.app.name)
-        self.harness.charm.set_cohort(self.harness.charm.app, "test_cohort")
+        self.harness.add_relation(maas.DEFAULT_ENDPOINT_NAME, self.harness.charm.app.name)
+        self.harness.charm.set_cohort("test_cohort")
 
         self.harness.charm.on.upgrade_charm.emit()
         mock_helper.refresh.assert_called_once_with(MAAS_SNAP_CHANNEL, cohort_key="test_cohort")

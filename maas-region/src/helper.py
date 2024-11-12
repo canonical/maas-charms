@@ -8,7 +8,7 @@ import subprocess
 from logging import getLogger
 from pathlib import Path
 from time import sleep
-from typing import Optional, Union
+from typing import Union
 
 from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
 
@@ -23,7 +23,7 @@ class MaasHelper:
     """MAAS helper."""
 
     @staticmethod
-    def install(channel: str, cohort_key: Optional[str] = None) -> None:
+    def install(channel: str, cohort_key: str) -> None:
         """Install snap.
 
         Args:
@@ -32,11 +32,7 @@ class MaasHelper:
         """
         maas = SnapCache()[MAAS_SNAP_NAME]
         if not maas.present:
-            maas.ensure(SnapState.Latest, channel=channel)
-            maas.hold()
-        if cohort_key:
-            maas.ensure(SnapState.Present, cohort=cohort_key)
-            maas._cohort = cohort_key
+            maas.ensure(SnapState.Latest, channel=channel, cohort=cohort_key)
 
     @staticmethod
     def uninstall() -> None:
@@ -54,7 +50,6 @@ class MaasHelper:
         while service.get("activate", False):
             sleep(1)
         maas.ensure(SnapState.Present, channel=channel, cohort=cohort_key)
-        maas._cohort = cohort_key
         maas.start()
         while not service.get("activate", True):
             sleep(1)
