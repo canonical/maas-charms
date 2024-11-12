@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 MAAS_SNAP_NAME = "maas"
 MAAS_RELATION_NAME = "maas-region"
-MAAS_COHORT_PEER_NAME = "maas-cohort"
 
 MAAS_RACK_METRICS_PORT = 5249
 MAAS_RACK_PORTS = [
@@ -71,6 +70,7 @@ class MaasRackCharm(ops.CharmBase):
         self.framework.observe(self.maas_region.on.config_received, self._on_maas_config_received)
         self.framework.observe(self.maas_region.on.created, self._on_maas_created)
         # self.framework.observe(self.maas_region.on.removed, self._on_maas_removed)
+        self.framework.observe(self.maas_region.on.relation_changed, self._on_maas_cluster_data_changed)
 
     @property
     def version(self) -> Union[str, None]:
@@ -131,8 +131,17 @@ class MaasRackCharm(ops.CharmBase):
             event (ops.InstallEvent): Event from ops framework
         """
         self.unit.status = ops.MaintenanceStatus("installing...")
+        
+        self._write_snap_version_()
+        self.set_region_agent_data(self.unit, "app", "agent")
+
+        _cohort = self._cohort_
+        if not _cohort:
+            logger.exception("Snap cohort not found")
+            return
+
         try:
-            MaasHelper.install(MAAS_SNAP_CHANNEL, cohort_key=self.get_cohort(self.app))
+            MaasHelper.install(MAAS_SNAP_CHANNEL, cohort_key=_cohort)
         except SnapError:
             logger.exception(f"failed to install MAAS snap from channel '{MAAS_SNAP_CHANNEL}'")
 
@@ -165,8 +174,15 @@ class MaasRackCharm(ops.CharmBase):
             elif current == MAAS_SNAP_CHANNEL:
                 logger.info("Cannot upgrade across revisions")
                 return
+
+        _cohort = self._cohort_
+        if not _cohort:
+            logger.exception("Snap cohort not found")
+            return
+        
         try:
-            MaasHelper.refresh(MAAS_SNAP_CHANNEL, cohort_key=self.get_cohort(self.app))
+            MaasHelper.refresh(MAAS_SNAP_CHANNEL, cohort_key=_cohort)
+            self._write_snap_version_()
         except SnapError:
             logger.exception(f"failed to upgrade MAAS snap to channel '{MAAS_SNAP_CHANNEL}'")
         except Exception as ex:
@@ -198,18 +214,45 @@ class MaasRackCharm(ops.CharmBase):
         self.maas_region.publish_unit_url(socket.getfqdn())
 
     @property
-    def cohort_peers(self) -> Union[ops.Relation, None]:
-        """Fetch the cohort peer relation."""
-        return self.model.get_relation(MAAS_COHORT_PEER_NAME)
+    def maas_units(self) -> Union[ops.Relation, None]:
+        """Fetch the provides/requires relation between region/agent."""
+        return self.model.get_relation(maas.DEFAULT_ENDPOINT_NAME)
 
-    def get_cohort(
-        self,
-        app_or_unit: Union[ops.Application, ops.Unit],
+    def set_region_agent_data(
+        self, app_or_unit: Union[ops.Application, ops.Unit], key: str, data: Any
+    ) -> None:
+        """Put information into the region/agent relation."""
+        if not self.maas_units:
+            return
+        self.maas_units.data[app_or_unit][key] = data
+
+    def get_region_agent_data(
+        self, app_or_unit: Union[ops.Application, ops.Unit], key: str
     ) -> Any:
-        """Return the cohort from the peer relation databag."""
-        if not self.cohort_peers:
-            return None
-        return self.cohort_peers.data[app_or_unit].get("cohort-key")
+        """Retrieve information from the region/agent relation."""
+        if not self.maas_units:
+            return {}
+        return self.maas_units.data[app_or_unit].get(key, "")
+
+    @property
+    def _cohort_(self) -> Union[str, None]:
+        if data := self.get_region_agent_data(self.app, "cohort"):
+            return str(data)
+        return None
+
+    def _write_snap_version_(self) -> None:
+        # write the snap version to the relation databag
+        self.set_region_agent_data(self.unit, "snap-channel", MAAS_SNAP_CHANNEL)
+
+    def _on_maas_cluster_data_changed(self, event: ops.RelationChangedEvent) -> None:
+        logger.info(event)
+
+        if self.get_region_agent_data(self.app, "agent-update"):
+            if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
+                self.unit.status = ops.BlockedStatus("Awaiting unit refresh")
+                logger.exception("Awaiting unit refresh")
+                return
+
 
 
 if __name__ == "__main__":  # pragma: nocover
