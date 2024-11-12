@@ -367,7 +367,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.unit.status = ops.MaintenanceStatus(f"upgrading to {MAAS_SNAP_CHANNEL}...")
 
         if self.unit.is_leader():
-            self._set_region_agent_data_(self.app, "region-update", True)
+            self._set_region_agent_data_(self.app, "region-update", "true")
 
         if current := MaasHelper.get_installed_channel():
             if current > MAAS_SNAP_CHANNEL:
@@ -489,33 +489,36 @@ class MaasRegionCharm(ops.CharmBase):
     def _on_maas_cluster_data_changed(self, event: ops.RelationChangedEvent) -> None:
         logger.info(event)
 
-        if self.unit.is_leader() and (peers := self.maas_units):
-            # wait for regions
-            if any(
-                self._get_region_agent_data_(unit, "snap-channel") != MAAS_SNAP_CHANNEL
-                for unit in peers.units
-                if self._get_region_agent_data_(unit, "app") == "region"
-            ):
-                self.unit.status = ops.MaintenanceStatus("Waiting for regions to refresh")
-                event.defer()
-                return
+        # The leader needs to handle information flow
+        if self.unit.is_leader():
 
-            # upgrade agents if the regions are done
-            if self._get_region_agent_data_(self.app, "region-update"):
-                self._set_region_agent_data_(self.app, "region-update", False)
-                self._set_region_agent_data_(self.app, "agent-update", True)
+            if peers := self.maas_units:
+                # wait for regions
+                if any(
+                    self._get_region_agent_data_(unit, "snap-channel") != MAAS_SNAP_CHANNEL
+                    for unit in peers.units
+                    if self._get_region_agent_data_(unit, "app") == "region"
+                ):
+                    self.unit.status = ops.MaintenanceStatus("Waiting for regions to refresh")
+                    event.defer()
+                    return
 
-            # wait for agents
-            if any(
-                self._get_region_agent_data_(unit, "snap-channel") != MAAS_SNAP_CHANNEL
-                for unit in peers.units
-                if self._get_region_agent_data_(unit, "app") == "agent"
-            ):
-                self.unit.status = ops.MaintenanceStatus("Waiting for agents to refresh")
-                event.defer()
-                return
+                # upgrade agents if the regions are done
+                if self._get_region_agent_data_(self.app, "region-update") == "true":
+                    self._set_region_agent_data_(self.app, "region-update", "false")
+                    self._set_region_agent_data_(self.app, "agent-update", "true")
 
-            self._set_region_agent_data_(self.app, "agent-update", False)
+                # wait for agents
+                if any(
+                    self._get_region_agent_data_(unit, "snap-channel") != MAAS_SNAP_CHANNEL
+                    for unit in peers.units
+                    if self._get_region_agent_data_(unit, "app") == "agent"
+                ):
+                    self.unit.status = ops.MaintenanceStatus("Waiting for agents to refresh")
+                    event.defer()
+                    return
+
+                self._set_region_agent_data_(self.app, "agent-update", "false")
 
         # regions should block until upgraded
         if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:

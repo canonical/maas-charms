@@ -17,8 +17,17 @@ from charm import MAAS_RACK_PORTS, MAAS_SNAP_CHANNEL, MaasRackCharm
 
 class TestCharm(unittest.TestCase):
     def setUp(self):
+        self.remote_app = "maas-region"
+        self.cohort = "test-cohort"
+
         self.harness = ops.testing.Harness(MaasRackCharm)
         self.harness.add_network("10.0.0.10")
+        self.harness.add_relation(
+            maas.DEFAULT_ENDPOINT_NAME,
+            self.remote_app,
+            # as if the region is coordinating an update
+            app_data={"cohort": self.cohort, "agent-update": "true"},
+        )
         self.addCleanup(self.harness.cleanup)
 
     @patch("charm.MaasHelper", autospec=True)
@@ -27,10 +36,10 @@ class TestCharm(unittest.TestCase):
         mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
         self.harness.begin_with_initial_hooks()
         self.harness.evaluate_status()
-        mock_helper.install.assert_called_once_with(MAAS_SNAP_CHANNEL, cohort_key=None)
+        mock_helper.install.assert_called_once_with(MAAS_SNAP_CHANNEL, cohort_key=self.cohort)
         mock_helper.set_running.assert_called_once_with(True)
         mock_helper.get_installed_version.assert_called_once()
-        mock_helper.get_installed_channel.assert_called_once()
+        mock_helper.get_installed_channel.assert_called()
         self.assertEqual(
             self.harness.model.unit.status, ops.WaitingStatus("Waiting for enrollment token")
         )
@@ -49,7 +58,7 @@ class TestCharm(unittest.TestCase):
         mock_helper.get_installed_channel.return_value = "3.4/edge"
         self.harness.begin()
         self.harness.charm.on.upgrade_charm.emit()
-        mock_helper.refresh.assert_called_once_with(MAAS_SNAP_CHANNEL, cohort_key=None)
+        mock_helper.refresh.assert_called_once_with(MAAS_SNAP_CHANNEL, cohort_key=self.cohort)
         self.assertEqual(
             self.harness.model.unit.status,
             ops.MaintenanceStatus(f"upgrading to {MAAS_SNAP_CHANNEL}..."),

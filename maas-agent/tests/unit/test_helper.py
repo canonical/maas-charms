@@ -33,22 +33,10 @@ class TestHelperSnapCache(unittest.TestCase):
     @patch("helper.SnapCache", autospec=True)
     def test_install(self, mock_snap):
         mock_maas = self._setup_snap(mock_snap)
-        MaasHelper.install("test/channel")
+        MaasHelper.install("test/channel", "test-cohort")
         mock_maas.ensure.assert_has_calls(
             [
-                call(SnapState.Latest, channel="test/channel"),
-            ]
-        )
-        mock_maas.hold.assert_called_once()
-
-    @patch("helper.SnapCache", autospec=True)
-    def test_install_cohort(self, mock_snap):
-        mock_maas = self._setup_snap(mock_snap)
-        MaasHelper.install("test/channel", "maas-cohort")
-        mock_maas.ensure.assert_has_calls(
-            [
-                call(SnapState.Latest, channel="test/channel"),
-                call(SnapState.Present, cohort="maas-cohort"),
+                call(SnapState.Latest, channel="test/channel", cohort="test-cohort"),
             ]
         )
         mock_maas.hold.assert_called_once()
@@ -56,7 +44,7 @@ class TestHelperSnapCache(unittest.TestCase):
     @patch("helper.SnapCache", autospec=True)
     def test_install_already_present(self, mock_snap):
         mock_maas = self._setup_snap(mock_snap, present=True)
-        MaasHelper.install("test/channel")
+        MaasHelper.install("test/channel", "test-cohort")
         mock_maas.ensure.assert_not_called()
 
     @patch("helper.SnapCache", autospec=True)
@@ -88,34 +76,11 @@ class TestHelperSnapCache(unittest.TestCase):
         mock_maas = self._setup_snap(mock_snap, present=True)
         mock_maas.services.get.return_value = mock_service
 
-        MaasHelper.refresh("test/upgrade")
-        mock_maas.stop.assert_called_once()
-        mock_maas.ensure.assert_called_once_with(SnapState.Present, channel="test/upgrade")
-        mock_maas.start.assert_called_once()
-
-    @patch("helper.SnapCache", autospec=True)
-    def test_refresh_cohort(self, mock_snap):
-        mock_service = MagicMock()
-
-        # return False the first time, then True every subsequent time
-        def side_effect(key, default=None):
-            if side_effect.call_count == 0:
-                side_effect.call_count += 1
-                return False
-            return True
-
-        side_effect.call_count = 0
-        mock_service.get.side_effect = side_effect
-
-        mock_maas = self._setup_snap(mock_snap, present=True)
-        mock_maas.services.get.return_value = mock_service
-
         MaasHelper.refresh("test/upgrade", "maas")
         mock_maas.stop.assert_called_once()
         mock_maas.ensure.assert_has_calls(
             [
-                call(SnapState.Present, channel="test/upgrade"),
-                call(SnapState.Present, cohort="maas"),
+                call(SnapState.Present, channel="test/upgrade", cohort="maas"),
             ]
         )
         mock_maas.start.assert_called_once()

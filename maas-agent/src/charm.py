@@ -6,7 +6,7 @@
 
 import logging
 import socket
-from typing import Any, Union
+from typing import Union
 
 import ops
 from charms.grafana_agent.v0 import cos_agent
@@ -67,10 +67,13 @@ class MaasRackCharm(ops.CharmBase):
 
         # MAAS relation
         self.maas_region = maas.MaasRegionRequirer(self)
+        maas_region_events = self.on[maas.DEFAULT_ENDPOINT_NAME]
         self.framework.observe(self.maas_region.on.config_received, self._on_maas_config_received)
         self.framework.observe(self.maas_region.on.created, self._on_maas_created)
         # self.framework.observe(self.maas_region.on.removed, self._on_maas_removed)
-        self.framework.observe(self.maas_region.on.relation_changed, self._on_maas_cluster_data_changed)
+        self.framework.observe(
+            maas_region_events.relation_changed, self._on_maas_cluster_data_changed
+        )
 
     @property
     def version(self) -> Union[str, None]:
@@ -131,11 +134,11 @@ class MaasRackCharm(ops.CharmBase):
             event (ops.InstallEvent): Event from ops framework
         """
         self.unit.status = ops.MaintenanceStatus("installing...")
-        
-        self._write_snap_version_()
-        self.set_region_agent_data(self.unit, "app", "agent")
 
-        _cohort = self._cohort_
+        self._write_snap_version_()
+        self._write_agent_()
+
+        _cohort = self.get_cohort()
         if not _cohort:
             logger.exception("Snap cohort not found")
             return
@@ -175,11 +178,11 @@ class MaasRackCharm(ops.CharmBase):
                 logger.info("Cannot upgrade across revisions")
                 return
 
-        _cohort = self._cohort_
+        _cohort = self.get_cohort()
         if not _cohort:
             logger.exception("Snap cohort not found")
             return
-        
+
         try:
             MaasHelper.refresh(MAAS_SNAP_CHANNEL, cohort_key=_cohort)
             self._write_snap_version_()
@@ -218,41 +221,32 @@ class MaasRackCharm(ops.CharmBase):
         """Fetch the provides/requires relation between region/agent."""
         return self.model.get_relation(maas.DEFAULT_ENDPOINT_NAME)
 
-    def set_region_agent_data(
-        self, app_or_unit: Union[ops.Application, ops.Unit], key: str, data: Any
-    ) -> None:
-        """Put information into the region/agent relation."""
-        if not self.maas_units:
-            return
-        self.maas_units.data[app_or_unit][key] = data
-
-    def get_region_agent_data(
-        self, app_or_unit: Union[ops.Application, ops.Unit], key: str
-    ) -> Any:
-        """Retrieve information from the region/agent relation."""
-        if not self.maas_units:
-            return {}
-        return self.maas_units.data[app_or_unit].get(key, "")
-
-    @property
-    def _cohort_(self) -> Union[str, None]:
-        if data := self.get_region_agent_data(self.app, "cohort"):
-            return str(data)
+    def _get_relation_data_(self, key: str) -> Union[str, None]:
+        if relation := self.maas_units:
+            return relation.data[relation.app].get(key)
         return None
 
+    def get_cohort(self) -> Union[str, None]:
+        """Read the snap cohort from the region/agent relation."""
+        return self._get_relation_data_("cohort")
+
     def _write_snap_version_(self) -> None:
-        # write the snap version to the relation databag
-        self.set_region_agent_data(self.unit, "snap-channel", MAAS_SNAP_CHANNEL)
+        if relation := self.maas_units:
+            relation.data[self.unit]["snap-channel"] = MAAS_SNAP_CHANNEL
+
+    def _write_agent_(self) -> None:
+        if relation := self.maas_units:
+            relation.data[self.unit]["app"] = "agent"
 
     def _on_maas_cluster_data_changed(self, event: ops.RelationChangedEvent) -> None:
         logger.info(event)
 
-        if self.get_region_agent_data(self.app, "agent-update"):
+        # ensure we update our cohort if needed
+        if self._get_relation_data_("agent-update") == "true":
             if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
                 self.unit.status = ops.BlockedStatus("Awaiting unit refresh")
                 logger.exception("Awaiting unit refresh")
                 return
-
 
 
 if __name__ == "__main__":  # pragma: nocover
