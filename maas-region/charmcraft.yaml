@@ -54,8 +54,6 @@ requires:
 peers:
   maas-cluster:
     interface: maas_peers
-  maas-cohort:
-    interface: maas_cohort_peers
 
 provides:
   api:
