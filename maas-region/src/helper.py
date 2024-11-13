@@ -201,6 +201,9 @@ class MaasHelper:
 
         Args:
             admin_username (str): The admin username for MAAS
+
+        Raises:
+            CalledProcessError: failed to fetch key
         """
         apikey = (
             subprocess.check_output(["sudo", "maas", "apikey", f"--username={admin_username}"])
