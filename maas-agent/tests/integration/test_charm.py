@@ -28,14 +28,15 @@ async def test_build_and_deploy(ops_test: OpsTest):
 
     # create a snap cohort
     _, cohort, _ = await ops_test.run("sudo", "snap", "create-cohort", "maas", check=True)
-    logger.info(f"Created snap cohort: {cohort}")
     if _created_cohort := re.search(r"cohort-key:\s+([^\n]+)", cohort):
         cohort_key = str(_created_cohort.group(1))
     else:
-        raise ValueError("Could not find snap cohort!")
+        raise ValueError("Could not create cohort during setup")
+    logger.info(f"Created snap cohort: {cohort_key}")
 
-    # And add it to the relation
-    relation = await ops_test.model.integrate("maas-region", application_name="maas-region")
+    # create the region relation so we can push the cohort to the databag
+    await ops_test.model.deploy("maas-region", application_name="maas-region")
+    relation = await ops_test.model.add_relation(APP_NAME, "maas-region")
     await ops_test.model.wait_for_idle(
         apps=["maas-region"], status="waiting", raise_on_blocked=True, timeout=1000
     )
