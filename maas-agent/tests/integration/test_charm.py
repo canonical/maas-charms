@@ -35,7 +35,6 @@ async def test_build_and_deploy(ops_test: OpsTest):
     logger.info(f"Created snap cohort: {cohort_key}")
 
     # create the region relation so we can push the cohort to the databag
-    await ops_test.model.deploy("maas-region", application_name="maas-region")
     relation = await ops_test.model.add_relation(APP_NAME, "maas-region")
     await ops_test.model.wait_for_idle(
         apps=["maas-region"], status="waiting", raise_on_blocked=True, timeout=1000
