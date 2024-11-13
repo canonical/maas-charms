@@ -130,9 +130,32 @@ parts:
     prime:
       - src/loki/loki.yml
 
+  grafana-dashboards:
+    plugin: dump
+    source: https://github.com/canonical/maas-grafana-dashboards
+    source-depth: 1
+    source-type: git
+    source-subdir: maas
+    organize:
+      "*": src/grafana_dashboards/
+    prime:
+      - src/grafana_dashboards/*
+
 config:
   options:
     tls_mode:
+      default: "disabled"
+      description: Whether to enable TLS termination at HA Proxy ('termination'), at MAAS ('passthrough'), or no TLS ('disabled')
+      type: string
+    ssl_cert_content:
       default: ""
-      description: Whether to enable TLS termination at HA Proxy ('termination'), or no TLS ('')
+      description: SSL certificate for tls_mode='passthrough'
+      type: string
+    ssl_key_content:
+      default: ""
+      description: SSL private key for tls_mode='passthrough'
+      type: string
+    ssl_cacert_content:
+      default: ""
+      description: CA Certificates chain in PEM format
       type: string

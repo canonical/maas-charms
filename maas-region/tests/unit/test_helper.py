@@ -144,6 +144,20 @@
 #     def test_get_maas_secret_not_initialised(self, _):
 #         self.assertIsNone(MaasHelper.get_maas_secret())
 
+    @patch("pathlib.Path.read_text")
+    def test_is_tls_enabled_no(self, mock_read_text):
+        mock_read_text.return_value = "listen 80"
+        self.assertEqual(MaasHelper.is_tls_enabled(), False)
+
+    @patch("pathlib.Path.read_text")
+    def test_is_tls_enabled_yes(self, mock_read_text):
+        mock_read_text.return_value = "listen 5443"
+        self.assertEqual(MaasHelper.is_tls_enabled(), True)
+
+    @patch("pathlib.Path.read_text", side_effect=FileNotFoundError)
+    def test_is_tls_enabled_not_initalized(self, _):
+        self.assertEqual(MaasHelper.is_tls_enabled(), None)
+
 
 # class TestHelperSetup(unittest.TestCase):
 #     @patch("helper.subprocess.check_call")

@@ -16,9 +16,30 @@ jobs:
       commit-username: maas-lander
       commit-email: 115650013+maas-lander@users.noreply.github.com
 
+  detect-open-prs:
+    name: Check open library updates PRs
+    needs: update-lib-region
+    runs-on: ubuntu-24.04
+    outputs:
+      open_prs: ${{ steps.open-prs.outputs.open_prs }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for any pre-existing PR and save it in the output
+        id: open-prs
+        run: |
+          OPEN_PRS="$(gh pr list --head chore/auto-libs --state open --json id --jq 'length')"
+          echo "open_prs=$OPEN_PRS" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.OBSERVABILITY_NOCTUA_TOKEN }}
+
   update-lib-agent:
     name: Check libraries
-    needs: update-lib-region
+    needs: detect-open-prs
+    if: needs.detect-open-prs.outputs.open_prs == '0'
     uses: canonical/observability/.github/workflows/charm-update-libs.yaml@main
     secrets: inherit
     with:

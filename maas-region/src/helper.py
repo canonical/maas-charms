@@ -6,6 +6,7 @@
 import re
 import subprocess
 from logging import getLogger
+from os import remove
 from pathlib import Path
 from time import sleep
 from typing import Union
@@ -17,6 +18,13 @@ MAAS_MODE = Path("/var/snap/maas/common/snap_mode")
 MAAS_SECRET = Path("/var/snap/maas/common/maas/secret")
 MAAS_ID = Path("/var/snap/maas/common/maas/maas_id")
 MAAS_SERVICE = "pebble"
+MAAS_SSL_CERT_FILEPATH = Path("/var/snap/maas/common/cert.pem")
+MAAS_SSL_KEY_FILEPATH = Path("/var/snap/maas/common/key.pem")
+MAAS_CACERT_FILEPATH = Path("/var/snap/maas/common/cacert.pem")
+NGINX_CFG_FILEPATH = Path("/var/snap/maas/current/http/regiond.nginx.conf")
+MAAS_HTTPS_PORT = 5443
+
+logger = getLogger(__name__)
 
 
 class MaasHelper:
@@ -200,6 +208,80 @@ class MaasHelper:
             "--database-uri",
             dsn,
             "--force",
+        ]
+        subprocess.check_call(cmd)
+
+    @staticmethod
+    def is_tls_enabled() -> Union[bool, None]:
+        """Check whether MAAS currently has TLS enabled.
+
+        Returns:
+            bool | None: True if MAAS has TLS enabled, False if not, None if MAAS is not initialized
+        """
+        try:
+            return f"listen {MAAS_HTTPS_PORT}" in NGINX_CFG_FILEPATH.read_text()
+        except FileNotFoundError:
+            # MAAS is not initialized yet, don't give false hope
+            return None
+
+    @staticmethod
+    def delete_tls_files() -> None:
+        """Delete the TLS files used for setting configuring tls."""
+        if MAAS_SSL_CERT_FILEPATH.exists():
+            remove(MAAS_SSL_CERT_FILEPATH)
+        if MAAS_SSL_KEY_FILEPATH.exists():
+            remove(MAAS_SSL_KEY_FILEPATH)
+        if MAAS_CACERT_FILEPATH.exists():
+            remove(MAAS_CACERT_FILEPATH)
+
+    @staticmethod
+    def create_tls_files(
+        ssl_certificate: str, ssl_key: str, cacert: str = "", overwrite: bool = False
+    ) -> None:
+        """Ensure that the SSL certificate and private key exist.
+
+        Args:
+            ssl_certificate (str): contents of the certificate file
+            ssl_key (str): contents of the private key file
+            cacert (str): optionally, contents of cacert chain for a self-signed ssl_certificate
+            overwrite (bool): Whether to overwrite the files if they exist already
+        """
+        if not MAAS_SSL_CERT_FILEPATH.exists() or overwrite:
+            MAAS_SSL_CERT_FILEPATH.write_text(ssl_certificate)
+        if not MAAS_SSL_KEY_FILEPATH.exists() or overwrite:
+            MAAS_SSL_KEY_FILEPATH.write_text(ssl_key)
+        if cacert and (not MAAS_CACERT_FILEPATH.exists() or overwrite):
+            MAAS_CACERT_FILEPATH.write_text(cacert)
+
+    @staticmethod
+    def enable_tls(cacert: bool = False) -> None:
+        """Set up TLS for the Region controller.
+
+        Raises:
+            CalledProcessError: if "maas config-tls enable" command failed for any reason
+        """
+        cmd = [
+            "/snap/bin/maas",
+            "config-tls",
+            "enable",
+            "--yes",
+        ]
+        if cacert:
+            cmd.extend(["--cacert", str(MAAS_CACERT_FILEPATH)])
+        cmd.extend([str(MAAS_SSL_KEY_FILEPATH), str(MAAS_SSL_CERT_FILEPATH)])
+        subprocess.check_call(cmd)
+
+    @staticmethod
+    def disable_tls() -> None:
+        """Disable TLS for the Region controller.
+
+        Raises:
+            CalledProcessError: if "maas config-tls disable" command failed for any reason
+        """
+        cmd = [
+            "/snap/bin/maas",
+            "config-tls",
+            "disable",
         ]
         subprocess.check_call(cmd)
 

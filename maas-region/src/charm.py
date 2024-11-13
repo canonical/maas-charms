@@ -69,9 +69,10 @@ class MaasRegionCharm(ops.CharmBase):
     """Charm the application."""
 
     _TLS_MODES = [
-        "",
+        "disabled",
         "termination",
-    ]  # no TLS, termination at HA Proxy
+        "passthrough",
+    ]  # no TLS, termination at HA Proxy, passthrough to MAAS
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -121,7 +122,7 @@ class MaasRegionCharm(ops.CharmBase):
             ],
             metrics_rules_dir="./src/prometheus",
             logs_rules_dir="./src/loki",
-            # dashboard_dirs=["./src/grafana_dashboards"],
+            dashboard_dirs=["./src/grafana_dashboards"],
         )
         self.tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
         self.charm_tracing_endpoint, _ = charm_tracing_config(self.tracing, None)
@@ -268,6 +269,9 @@ class MaasRegionCharm(ops.CharmBase):
             MaasHelper.setup_region(
                 self.maas_api_url, self.connection_string, self.get_operational_mode()
             )
+            # check maas_api_url existence in case MAAS isn't ready yet
+            if self.maas_api_url and self.unit.is_leader():
+                self._update_tls_config()
             return True
         except subprocess.CalledProcessError:
             return False
@@ -291,6 +295,9 @@ class MaasRegionCharm(ops.CharmBase):
         return list(set(eps))
 
     def _update_ha_proxy(self) -> None:
+        region_port = (
+            MAAS_HTTPS_PORT if self.config["tls_mode"] == "passthrough" else MAAS_HTTP_PORT
+        )
         if relation := self.model.get_relation(MAAS_API_RELATION):
             app_name = f"api-{self.app.name}"
             data = [
@@ -303,13 +310,13 @@ class MaasRegionCharm(ops.CharmBase):
                         (
                             f"{app_name}-{self.unit.name.replace('/', '-')}",
                             self.bind_address,
-                            MAAS_HTTP_PORT,
+                            region_port,
                             [],
                         )
                     ],
                 },
             ]
-            if self.config["tls_mode"] == "termination":
+            if self.config["tls_mode"] != "disabled":
                 data.append(
                     {
                         "service_name": "agent_service",
@@ -325,8 +332,21 @@ class MaasRegionCharm(ops.CharmBase):
                         ],
                     }
                 )
-            # TODO: Implement passthrough configuration
             relation.data[self.unit]["services"] = yaml.safe_dump(data)
+
+    def _update_tls_config(self) -> None:
+        """Enable or disable TLS in MAAS."""
+        if (tls_enabled := MaasHelper.is_tls_enabled()) is not None:
+            if not tls_enabled and self.config["tls_mode"] == "passthrough":
+                MaasHelper.create_tls_files(
+                    self.config["ssl_cert_content"],  # type: ignore
+                    self.config["ssl_key_content"],  # type: ignore
+                    self.config["ssl_cacert_content"],  # type: ignore
+                )
+                MaasHelper.enable_tls()
+                MaasHelper.delete_tls_files()
+            elif tls_enabled and self.config["tls_mode"] in ["disabled", "termination"]:
+                MaasHelper.disable_tls()
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
@@ -641,12 +661,23 @@ class MaasRegionCharm(ops.CharmBase):
             event.fail("MAAS is not initialized yet")
 
     def _on_config_changed(self, event: ops.ConfigChangedEvent):
+        # validate tls_mode
         tls_mode = self.config["tls_mode"]
         if tls_mode not in self._TLS_MODES:
             msg = f"Invalid tls_mode configuration: '{tls_mode}'. Valid options are: {self._TLS_MODES}"
             self.unit.status = ops.BlockedStatus(msg)
             raise ValueError(msg)
+        # validate certificate and key
+        if tls_mode == "passthrough":
+            cert = self.config["ssl_cert_content"]
+            key = self.config["ssl_key_content"]
+            if not cert or not key:
+                raise ValueError(
+                    "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
+                )
         self._update_ha_proxy()
+        if self.unit.is_leader():
+            self._update_tls_config()
 
 
 if __name__ == "__main__":  # pragma: nocover
