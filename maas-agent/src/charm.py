@@ -137,8 +137,7 @@ class MaasRackCharm(ops.CharmBase):
 
         self._write_snap_version_()
         self._write_app_type_(self.unit, "agent")
-
-        _cohort = self.get_cohort()
+        _cohort = self._ensure_maas_cohort(_event) or self.get_cohort()
         if not _cohort:
             logger.exception("Snap cohort not found")
             return
@@ -248,6 +247,10 @@ class MaasRackCharm(ops.CharmBase):
         """Read the snap cohort from the region/agent relation."""
         return self._get_peer_data_(self.maas_units, app_or_unit=None, key="cohort")
 
+    def set_cohort(self, cohort: str) -> None:
+        """Write the snap cohort to the region/agent relation."""
+        self._set_peer_data_(self.maas_units, app_or_unit=None, key="cohort", data=cohort)
+
     def _write_snap_version_(self) -> None:
         # write the snap version to the relation databag
         self._set_peer_data_(self.maas_units, self.unit, "snap-channel", MAAS_SNAP_CHANNEL)
@@ -272,6 +275,33 @@ class MaasRackCharm(ops.CharmBase):
                 self.unit.status = ops.BlockedStatus("Awaiting unit refresh")
                 logger.exception("Awaiting unit refresh")
                 return
+
+    def _ensure_maas_cohort(self, event: ops.InstallEvent) -> Union[None, str]:
+        logger.info(event)
+        _cohort = self.get_cohort()
+
+        if self.unit.is_leader():
+            if not _cohort:
+                logger.debug("Cohort not found in databag")
+                _cohort = MaasHelper.get_or_create_snap_cohort()
+
+            if not _cohort:
+                msg = "Could not find or create MAAS snap cohort"
+                logger.debug(msg)
+                self.unit.status = ops.BlockedStatus(msg)
+                return
+
+            logger.debug(f"Cohort found: {_cohort}")
+
+            self.set_cohort(_cohort)
+            logger.debug(_cohort)
+            return _cohort
+
+        if not _cohort:
+            event.defer()
+            return
+
+        return _cohort
 
 
 if __name__ == "__main__":  # pragma: nocover

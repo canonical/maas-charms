@@ -3,6 +3,7 @@
 
 """Helper functions for MAAS management."""
 
+import re
 import subprocess
 from pathlib import Path
 from time import sleep
@@ -147,3 +148,20 @@ class MaasHelper:
             "--force",
         ]
         subprocess.check_call(cmd)
+
+    @staticmethod
+    def get_or_create_snap_cohort() -> Union[str, None]:
+        """Return the maas snap cohort, or create a new one."""
+        maas = SnapCache()[MAAS_SNAP_NAME]
+
+        verbose_info = maas._snap("info", ["--verbose"])
+        if _found_cohort := re.search(r"cohort:\s*([^\n]+)", verbose_info):
+            return str(_found_cohort.group(1))
+
+        cohort_creation = subprocess.check_output(
+            ["sudo", "snap", "create-cohort", maas._name], universal_newlines=True
+        )
+        if _created_cohort := re.search(r"cohort-key:\s+([^\n]+)", cohort_creation):
+            return str(_created_cohort.group(1))
+
+        return None
