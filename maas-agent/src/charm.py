@@ -4,9 +4,10 @@
 
 """Charm the application."""
 
+import json
 import logging
 import socket
-from typing import Union
+from typing import Any, Union
 
 import ops
 from charms.grafana_agent.v0 import cos_agent
@@ -136,7 +137,7 @@ class MaasRackCharm(ops.CharmBase):
         self.unit.status = ops.MaintenanceStatus("installing...")
 
         self._write_snap_version_()
-        self._write_agent_()
+        self._write_app_type_(self.unit, "agent")
 
         _cohort = self.get_cohort()
         if not _cohort:
@@ -216,33 +217,58 @@ class MaasRackCharm(ops.CharmBase):
     def _on_maas_created(self, event: ops.RelationCreatedEvent):
         self.maas_region.publish_unit_url(socket.getfqdn())
 
+    def _set_peer_data_(
+        self,
+        peer: Union[ops.Relation, None],
+        app_or_unit: Union[ops.Application, ops.Unit, None],
+        key: str,
+        data: Any,
+    ) -> None:
+        if not peer:
+            return
+        peer.data[app_or_unit or peer.app][key] = data
+
+    def _get_peer_data_(
+        self,
+        peer: Union[ops.Relation, None],
+        app_or_unit: Union[ops.Application, ops.Unit, None],
+        key: str,
+    ) -> Any:
+        if not peer:
+            return {}
+        if (data := peer.data[app_or_unit or peer.app].get(key)):
+            return data
+        return {}
+
     @property
     def maas_units(self) -> Union[ops.Relation, None]:
         """Fetch the provides/requires relation between region/agent."""
         return self.model.get_relation(maas.DEFAULT_ENDPOINT_NAME)
 
-    def _get_relation_data_(self, key: str) -> Union[str, None]:
-        if relation := self.maas_units:
-            return relation.data[relation.app].get(key)
-        return None
-
     def get_cohort(self) -> Union[str, None]:
         """Read the snap cohort from the region/agent relation."""
-        return self._get_relation_data_("cohort")
+        return self._get_peer_data_(self.maas_units, app_or_unit=None, key="cohort")
 
     def _write_snap_version_(self) -> None:
-        if relation := self.maas_units:
-            relation.data[self.unit]["snap-channel"] = MAAS_SNAP_CHANNEL
+        # write the snap version to the relation databag
+        self._set_peer_data_(self.maas_units, self.unit, "snap-channel", MAAS_SNAP_CHANNEL)
 
-    def _write_agent_(self) -> None:
-        if relation := self.maas_units:
-            relation.data[self.unit]["app"] = "agent"
+    def _write_app_type_(self, unit: Union[ops.Unit, None], app: str) -> None:
+        # Write the app type (region/agent) to the relation databag
+        return self._set_peer_data_(self.maas_units, unit or self.unit, "app", app)
+
+    @property
+    def _agents_updating_(self) -> bool:
+        # Check if the updating flag is true for agents
+        return (
+            self._get_peer_data_(self.maas_units, app_or_unit=None, key="agent-update") == "true"
+        )
 
     def _on_maas_cluster_data_changed(self, event: ops.RelationChangedEvent) -> None:
         logger.info(event)
 
         # ensure we update our cohort if needed
-        if self._get_relation_data_("agent-update") == "true":
+        if self._agents_updating_:
             if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
                 self.unit.status = ops.BlockedStatus("Awaiting unit refresh")
                 logger.exception("Awaiting unit refresh")
