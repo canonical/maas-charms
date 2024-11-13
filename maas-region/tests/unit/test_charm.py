@@ -120,7 +120,7 @@ class TestClusterUpdates(unittest.TestCase):
         self.assertEqual(ha_data[0]["servers"][0][1], "10.0.0.10")
 
     @patch("charm.MaasHelper", autospec=True)
-    def test_ha_proxy_data_tls(self, mock_helper):
+    def test_ha_proxy_data_tls_termination(self, mock_helper):
         self.harness.set_leader(True)
         self.harness.update_config({"tls_mode": "termination"})
         self.harness.begin()
@@ -134,6 +134,30 @@ class TestClusterUpdates(unittest.TestCase):
         self.assertIn("service_host", ha_data[1])  # codespell:ignore
         self.assertEqual(len(ha_data[1]["servers"]), 1)
         self.assertEqual(ha_data[1]["servers"][0][1], "10.0.0.10")
+        self.assertEqual(ha_data[0]["servers"][0][2], 5240)
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_ha_proxy_data_tls_passthrough(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.update_config(
+            {
+                "tls_mode": "passthrough",
+                "ssl_cert_content": "BEGIN CERTIFICATE",
+                "ssl_key_content": "BEGIN_PRIVATE_KEY",
+            }
+        )
+        self.harness.begin()
+        ha = self.harness.add_relation(
+            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
+        )
+
+        ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
+        self.assertEqual(len(ha_data), 2)
+        self.assertIn("service_name", ha_data[1])  # codespell:ignore
+        self.assertIn("service_host", ha_data[1])  # codespell:ignore
+        self.assertEqual(len(ha_data[1]["servers"]), 1)
+        self.assertEqual(ha_data[1]["servers"][0][1], "10.0.0.10")
+        self.assertEqual(ha_data[0]["servers"][0][2], 5443)
 
     @patch("charm.MaasHelper", autospec=True)
     def test_invalid_tls_mode(self, mock_helper):
@@ -147,6 +171,18 @@ class TestClusterUpdates(unittest.TestCase):
 
         ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
         self.assertEqual(len(ha_data), 1)
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_bad_ssl_cert_key_config(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        self.harness.add_relation(
+            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
+        )
+        with self.assertRaises(ValueError):
+            self.harness.update_config(
+                {"tls_mode": "passthrough", "ssl_cert_content": "test_cert"}
+            )
 
     @patch("charm.MaasHelper", autospec=True)
     def test_on_maas_cluster_changed_new_agent(self, mock_helper):
