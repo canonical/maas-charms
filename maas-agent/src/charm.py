@@ -4,7 +4,6 @@
 
 """Charm the application."""
 
-import json
 import logging
 import socket
 from typing import Any, Union
@@ -236,7 +235,7 @@ class MaasRackCharm(ops.CharmBase):
     ) -> Any:
         if not peer:
             return {}
-        if (data := peer.data[app_or_unit or peer.app].get(key)):
+        if data := peer.data[app_or_unit or peer.app].get(key):
             return data
         return {}
 

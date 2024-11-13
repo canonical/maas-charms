@@ -41,6 +41,7 @@ class MaasHelper:
         maas = SnapCache()[MAAS_SNAP_NAME]
         if not maas.present:
             maas.ensure(SnapState.Latest, channel=channel, cohort=cohort_key)
+        maas.hold()
 
     @staticmethod
     def uninstall() -> None:
