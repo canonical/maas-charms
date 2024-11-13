@@ -370,9 +370,7 @@ class MaasRegionCharm(ops.CharmBase):
 
         self._write_snap_version_()
         self._write_app_type_(self.unit, "region")
-        self._ensure_maas_cohort(_event)
-
-        _cohort = self.get_cohort()
+        _cohort = self._ensure_maas_cohort(_event) or self.get_cohort()
         if not _cohort:
             logger.exception("Snap cohort not found")
             return
@@ -589,7 +587,7 @@ class MaasRegionCharm(ops.CharmBase):
             logger.exception("Awaiting unit refresh")
             return
 
-    def _ensure_maas_cohort(self, event: ops.InstallEvent) -> None:
+    def _ensure_maas_cohort(self, event: ops.InstallEvent) -> Union[None, str]:
         logger.info(event)
         _cohort = self.get_cohort()
 
@@ -608,11 +606,12 @@ class MaasRegionCharm(ops.CharmBase):
 
             self.set_cohort(_cohort)
             logger.debug(_cohort)
-            return
+            return _cohort
 
         if not _cohort:
             event.defer()
             return
+        return _cohort
 
     def _on_create_admin_action(self, event: ops.ActionEvent):
         """Handle the create-admin action.
