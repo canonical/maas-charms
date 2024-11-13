@@ -436,6 +436,10 @@ class MaasRegionCharm(ops.CharmBase):
             event.set_results({"info": f"user {username} successfully created"})
         except subprocess.CalledProcessError:
             event.fail(f"Failed to create user {username}")
+        try:
+            MaasHelper.enable_prometheus_metrics(username)
+        except subprocess.CalledProcessError:
+            event.fail("Failed to enable prometheus metrics")
 
     def _on_get_api_key_action(self, event: ops.ActionEvent):
         """Handle the get-api-key action.
