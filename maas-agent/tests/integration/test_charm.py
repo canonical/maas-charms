@@ -4,6 +4,7 @@
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 
 import pytest
@@ -26,8 +27,19 @@ async def test_build_and_deploy(ops_test: OpsTest):
     charm = await ops_test.build_charm(".")
 
     # create a snap cohort
-    cohort = await ops_test.run("sudo", "snap", "create-cohort", "maas", check=True)
+    _, cohort, _ = await ops_test.run("sudo", "snap", "create-cohort", "maas", check=True)
     logger.info(f"Created snap cohort: {cohort}")
+    if _created_cohort := re.search(r"cohort-key:\s+([^\n]+)", cohort):
+        cohort_key = str(_created_cohort.group(1))
+    else:
+        raise ValueError("Could not find snap cohort!")
+
+    # And add it to the relation
+    relation = await ops_test.model.integrate("maas-region", application_name="maas-region")
+    await ops_test.model.wait_for_idle(
+        apps=["maas-region"], status="waiting", raise_on_blocked=True, timeout=1000
+    )
+    await ops_test.model.relations[relation].data[APP_NAME].update({"cohort": cohort_key})
 
     # Deploy the charm and wait for waiting/idle status
     await asyncio.gather(
