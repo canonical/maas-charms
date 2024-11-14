@@ -370,7 +370,7 @@ class MaasRegionCharm(ops.CharmBase):
 
         self._write_snap_version_()
         self._write_app_type_(self.unit, "region")
-        _cohort = self._ensure_maas_cohort(_event) or self.get_cohort()
+        _cohort = self._ensure_maas_cohort(_event)
         if not _cohort:
             logger.exception("Snap cohort not found")
             return
@@ -413,7 +413,7 @@ class MaasRegionCharm(ops.CharmBase):
                 logger.info("Cannot upgrade across revisions")
                 return
 
-        _cohort = self.get_cohort()
+        _cohort = self._ensure_maas_cohort(_event)
         if not _cohort:
             logger.exception("Snap cohort not found")
             return
@@ -587,7 +587,9 @@ class MaasRegionCharm(ops.CharmBase):
             logger.exception("Awaiting unit refresh")
             return
 
-    def _ensure_maas_cohort(self, event: ops.InstallEvent) -> Union[None, str]:
+    def _ensure_maas_cohort(
+        self, event: Union[ops.InstallEvent, ops.UpgradeCharmEvent]
+    ) -> Union[None, str]:
         logger.info(event)
         _cohort = self.get_cohort()
 
