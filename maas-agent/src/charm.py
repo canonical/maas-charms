@@ -140,6 +140,7 @@ class MaasRackCharm(ops.CharmBase):
         _cohort = self._ensure_maas_cohort(_event)
         if not _cohort:
             logger.exception("Snap cohort not found")
+            _event.defer()
             return
 
         try:
@@ -180,6 +181,7 @@ class MaasRackCharm(ops.CharmBase):
         _cohort = self._ensure_maas_cohort(_event)
         if not _cohort:
             logger.exception("Snap cohort not found")
+            _event.defer()
             return
 
         try:
