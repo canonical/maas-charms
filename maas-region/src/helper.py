@@ -196,14 +196,15 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
-    def enable_prometheus_metrics(admin_username: str) -> None:
-        """Enable prometheus metrics for MAAS.
+    def set_prometheus_metrics(admin_username: str, enable: bool) -> None:
+        """Enable or disable prometheus metrics for MAAS.
 
         Args:
             admin_username (str): The admin username for MAAS
+            enable (bool): True to enable, False to disable
 
         Raises:
-            CalledProcessError: failed to fetch key
+            CalledProcessError: failed to set prometheus_metrics setting
         """
         apikey = (
             subprocess.check_output(["sudo", "maas", "apikey", f"--username={admin_username}"])
@@ -224,7 +225,7 @@ class MaasHelper:
             "maas",
             "set-config",
             "name=prometheus_enabled",
-            "value=True",
+            f"value={enable}",
         ]
         subprocess.check_call(set_cmd)
 

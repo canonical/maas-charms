@@ -6,7 +6,9 @@
 
 import json
 import logging
+import random
 import socket
+import string
 import subprocess
 from typing import Any, List, Union
 
@@ -17,6 +19,7 @@ from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region.v0 import maas
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
+from ops.model import SecretNotFoundError
 
 from helper import MaasHelper
 
@@ -53,6 +56,9 @@ MAAS_REGION_PORTS = [
     *[ops.Port("tcp", p) for p in range(5270, 5274 + 1)],  # Temporal
     *[ops.Port("tcp", p) for p in range(5280, 5284 + 1)],  # Temporal
 ]
+
+MAAS_ADMIN_SECRET_LABEL = "maas-admin"
+MAAS_ADMIN_SECRET_KEY = "maas-admin-secret-uri"
 
 
 @trace_charm(
@@ -251,6 +257,21 @@ class MaasRegionCharm(ops.CharmBase):
             # check maas_api_url existence in case MAAS isn't ready yet
             if self.maas_api_url and self.unit.is_leader():
                 self._update_tls_config()
+                # create admin account for internal use if not already there
+                try:
+                    self.model.get_secret(label=MAAS_ADMIN_SECRET_LABEL)
+                except SecretNotFoundError:
+                    password = "".join(
+                        random.SystemRandom().choice(string.ascii_letters + string.digits)
+                        for _ in range(15)
+                    )
+                    content = {"username": "maas-admin-internal", "password": password}
+
+                    secret = self.app.add_secret(content, label=MAAS_ADMIN_SECRET_LABEL)
+                    self.set_peer_data(self.app, MAAS_ADMIN_SECRET_KEY, secret.id)
+                    MaasHelper.create_admin_user(content["username"], password, "", None)
+                    # enable prometheus metrics with our new admin account
+                    MaasHelper.set_prometheus_metrics(content["username"], True)
             return True
         except subprocess.CalledProcessError:
             return False
@@ -326,6 +347,12 @@ class MaasRegionCharm(ops.CharmBase):
                 MaasHelper.delete_tls_files()
             elif tls_enabled and self.config["tls_mode"] in ["disabled", "termination"]:
                 MaasHelper.disable_tls()
+
+    def _update_prometheus_config(self, enable: bool) -> None:
+        if secret_uri := self.get_peer_data(self.app, MAAS_ADMIN_SECRET_KEY):
+            secret = self.model.get_secret(id=secret_uri)
+            username = secret.get_content()["username"]
+            MaasHelper.set_prometheus_metrics(username, enable)
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
@@ -436,10 +463,6 @@ class MaasRegionCharm(ops.CharmBase):
             event.set_results({"info": f"user {username} successfully created"})
         except subprocess.CalledProcessError:
             event.fail(f"Failed to create user {username}")
-        try:
-            MaasHelper.enable_prometheus_metrics(username)
-        except subprocess.CalledProcessError:
-            event.fail("Failed to enable prometheus metrics")
 
     def _on_get_api_key_action(self, event: ops.ActionEvent):
         """Handle the get-api-key action.
@@ -488,6 +511,7 @@ class MaasRegionCharm(ops.CharmBase):
         self._update_ha_proxy()
         if self.unit.is_leader():
             self._update_tls_config()
+            self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
 
 
 if __name__ == "__main__":  # pragma: nocover
