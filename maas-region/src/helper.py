@@ -207,12 +207,12 @@ class MaasHelper:
             CalledProcessError: failed to set prometheus_metrics setting
         """
         apikey = (
-            subprocess.check_output(["sudo", "maas", "apikey", f"--username={admin_username}"])
+            subprocess.check_output(["/snap/bin/maas", "apikey", f"--username={admin_username}"])
             .decode()
             .replace("\n", "")
         )
         login_cmd = [
-            "maas",
+            "/snap/bin/maas",
             "login",
             admin_username,
             "http://localhost:5240/MAAS/api/2.0/",
@@ -220,7 +220,7 @@ class MaasHelper:
         ]
         subprocess.check_call(login_cmd)
         set_cmd = [
-            "maas",
+            "/snap/bin/maas",
             admin_username,
             "maas",
             "set-config",
