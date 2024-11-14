@@ -195,7 +195,7 @@ class MaasRackCharm(ops.CharmBase):
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
         if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
             # are we waiting for an upgrade?
-            if self._regions_updating_:
+            if self._agents_updating_:
                 e.add_status(ops.MaintenanceStatus("Awaiting unit refresh"))
             # have we already set blocked due to attempting a downgrade
             elif not isinstance(self.unit.status, ops.BlockedStatus):
