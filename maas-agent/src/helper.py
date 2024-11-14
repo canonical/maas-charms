@@ -156,12 +156,12 @@ class MaasHelper:
 
         verbose_info = maas._snap("info", ["--verbose"])
         if _found_cohort := re.search(r"cohort:\s*([^\n]+)", verbose_info):
-            return str(_found_cohort.group(1))
+            return str(_found_cohort.group(1)).strip('"').strip("'")
 
         cohort_creation = subprocess.check_output(
             ["sudo", "snap", "create-cohort", maas._name], universal_newlines=True
         )
         if _created_cohort := re.search(r"cohort-key:\s+([^\n]+)", cohort_creation):
-            return str(_created_cohort.group(1))
+            return str(_created_cohort.group(1)).strip('"').strip("'")
 
         return None

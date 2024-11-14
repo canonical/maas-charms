@@ -430,8 +430,11 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
         if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
-            # skip if we've already set blocked due to attempting a downgrade
-            if not isinstance(self.unit.status, ops.BlockedStatus):
+            # are we waiting for an upgrade?
+            if self._regions_updating_:
+                e.add_status(ops.MaintenanceStatus("Awaiting unit refresh"))
+            # have we already set blocked due to attempting a downgrade
+            elif not isinstance(self.unit.status, ops.BlockedStatus):
                 e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
         elif not self.unit.opened_ports().issuperset(MAAS_REGION_PORTS):
             e.add_status(ops.WaitingStatus("Waiting for service ports"))
@@ -493,11 +496,15 @@ class MaasRegionCharm(ops.CharmBase):
 
     def get_cohort(self) -> Union[str, None]:
         """Read the snap cohort from the region/agent relation."""
-        return self._get_peer_data_(self.maas_units, app_or_unit=None, key="cohort")
+        if cohort := self._get_peer_data_(self.maas_units, app_or_unit=None, key="cohort"):
+            return str(cohort).strip('"').strip("'")
+        return None
 
     def set_cohort(self, cohort: str) -> None:
         """Write the snap cohort to the region/agent relation."""
-        self._set_peer_data_(self.maas_units, app_or_unit=None, key="cohort", data=cohort)
+        self._set_peer_data_(
+            self.maas_units, app_or_unit=None, key="cohort", data=cohort.strip('"').strip("'")
+        )
 
     def _write_snap_version_(self) -> None:
         # write the snap version to the relation databag
@@ -609,12 +616,12 @@ class MaasRegionCharm(ops.CharmBase):
 
             self.set_cohort(_cohort)
             logger.debug(_cohort)
-            return _cohort
+            return _cohort.strip('"').strip("'")
 
         if not _cohort:
             event.defer()
             return
-        return _cohort
+        return _cohort.strip('"').strip("'")
 
     def _on_create_admin_action(self, event: ops.ActionEvent):
         """Handle the create-admin action.
