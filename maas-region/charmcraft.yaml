@@ -162,4 +162,4 @@ config:
     enable_prometheus_metrics:
       default: true
       description: Whether to enable Prometheus metrics for MAAS
-      type: bool
+      type: boolean
