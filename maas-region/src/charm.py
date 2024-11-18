@@ -404,15 +404,11 @@ class MaasRegionCharm(ops.CharmBase):
         if self.unit.is_leader():
             self._set_regions_updating_(True)
 
-        if current := MaasHelper.get_installed_channel():
-            if current > MAAS_SNAP_CHANNEL:
-                msg = f"Cannot downgrade {current} to {MAAS_SNAP_CHANNEL}"
-                self.unit.status = ops.BlockedStatus(msg)
-                logger.exception(msg)
-                return
-            elif current == MAAS_SNAP_CHANNEL:
-                logger.info("Cannot upgrade across revisions")
-                return
+        if (current := MaasHelper.get_installed_channel()) and current >= MAAS_SNAP_CHANNEL:
+            self.unit.status = ops.BlockedStatus(
+                "Cannot side- or down- grade with refresh command."
+            )
+            return
 
         _cohort = self._ensure_maas_cohort(_event)
         if not _cohort:
@@ -429,19 +425,31 @@ class MaasRegionCharm(ops.CharmBase):
             logger.error(str(ex))
 
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
-        if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
-            # are we waiting for an upgrade?
-            if self._regions_updating_:
+        if (current := MaasHelper.get_installed_channel()) and (current != MAAS_SNAP_CHANNEL):
+
+            if self._agents_updating_:
                 e.add_status(ops.MaintenanceStatus("Awaiting unit refresh"))
-            # have we already set blocked due to attempting a downgrade
-            elif not isinstance(self.unit.status, ops.BlockedStatus):
+
+            elif current > MAAS_SNAP_CHANNEL:
+                e.add_status(
+                    ops.BlockedStatus(f"Cannot downgrade {current} to {MAAS_SNAP_CHANNEL}")
+                )
+
+            elif current == MAAS_SNAP_CHANNEL:
+                e.add_status(ops.BlockedStatus("Cannot upgrade across revisions"))
+
+            else:
                 e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
+
         elif not self.unit.opened_ports().issuperset(MAAS_REGION_PORTS):
             e.add_status(ops.WaitingStatus("Waiting for service ports"))
+
         elif not self.connection_string:
             e.add_status(ops.WaitingStatus("Waiting for database DSN"))
+
         elif not self.maas_api_url:
             ops.WaitingStatus("Waiting for MAAS initialization")
+
         else:
             self.unit.status = ops.ActiveStatus()
 

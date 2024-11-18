@@ -85,7 +85,7 @@ class TestCharm(unittest.TestCase):
         mock_helper.refresh.assert_not_called()
         self.assertEqual(
             self.harness.model.unit.status,
-            ops.BlockedStatus(f"Cannot downgrade invalid/channel to {MAAS_SNAP_CHANNEL}"),
+            ops.BlockedStatus("Cannot side- or down- grade with refresh command."),
         )
 
 
