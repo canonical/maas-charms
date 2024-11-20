@@ -259,7 +259,9 @@ class MaasRegionCharm(ops.CharmBase):
                 self._update_tls_config()
                 # create admin account for internal use if not already there
                 try:
-                    self.model.get_secret(label=MAAS_ADMIN_SECRET_LABEL)
+                    secret = self.model.get_secret(label=MAAS_ADMIN_SECRET_LABEL)
+                    username = secret.get_content()["username"]
+                    MaasHelper.set_prometheus_metrics(username, True)
                 except SecretNotFoundError:
                     password = "".join(
                         random.SystemRandom().choice(string.ascii_letters + string.digits)
@@ -268,11 +270,11 @@ class MaasRegionCharm(ops.CharmBase):
                     content = {"username": "maas-admin-internal", "password": password}
 
                     MaasHelper.create_admin_user(content["username"], password, "", None)
+                    secret = self.app.add_secret(content, label=MAAS_ADMIN_SECRET_LABEL)
+                    self.set_peer_data(self.app, MAAS_ADMIN_SECRET_KEY, secret.id)
                     # enable prometheus metrics with our new admin account
                     MaasHelper.set_prometheus_metrics(content["username"], True)
 
-                    secret = self.app.add_secret(content, label=MAAS_ADMIN_SECRET_LABEL)
-                    self.set_peer_data(self.app, MAAS_ADMIN_SECRET_KEY, secret.id)
             return True
         except subprocess.CalledProcessError:
             return False
