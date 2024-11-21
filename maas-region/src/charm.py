@@ -10,7 +10,7 @@ import random
 import socket
 import string
 import subprocess
-from typing import Any, List, Union
+from typing import Any, Dict, List, Union
 
 import ops
 import yaml
@@ -78,6 +78,7 @@ class MaasRegionCharm(ops.CharmBase):
         "termination",
         "passthrough",
     ]  # no TLS, termination at HA Proxy, passthrough to MAAS
+    _INTERNAL_ADMIN_USER = "maas-admin-internal"
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -249,6 +250,33 @@ class MaasRegionCharm(ops.CharmBase):
             return False
         return True
 
+    def _create_or_get_internal_admin(self) -> Dict[str, str]:
+        """Create an internal admin user if one does not already exist.
+
+        Store the credentials in a secret, and return the credentials.
+        If one exists, just return the credentials for the account.
+
+        Returns:
+            dict[str, str]: username and password of the admin user
+
+        Raises:
+            CalledProcessError: failed to create the user
+        """
+        try:
+            secret = self.model.get_secret(label=MAAS_ADMIN_SECRET_LABEL)
+            return secret.get_content()
+        except SecretNotFoundError:
+            password = "".join(
+                random.SystemRandom().choice(string.ascii_letters + string.digits)
+                for _ in range(15)
+            )
+            content = {"username": self._INTERNAL_ADMIN_USER, "password": password}
+
+            MaasHelper.create_admin_user(content["username"], password, "", None)
+            secret = self.app.add_secret(content, label=MAAS_ADMIN_SECRET_LABEL)
+            self.set_peer_data(self.app, MAAS_ADMIN_SECRET_KEY, secret.id)
+            return content
+
     def _initialize_maas(self) -> bool:
         try:
             MaasHelper.setup_region(
@@ -257,24 +285,10 @@ class MaasRegionCharm(ops.CharmBase):
             # check maas_api_url existence in case MAAS isn't ready yet
             if self.maas_api_url and self.unit.is_leader():
                 self._update_tls_config()
-                # create admin account for internal use if not already there
-                try:
-                    secret = self.model.get_secret(label=MAAS_ADMIN_SECRET_LABEL)
-                    username = secret.get_content()["username"]
-                    MaasHelper.set_prometheus_metrics(username, True)
-                except SecretNotFoundError:
-                    password = "".join(
-                        random.SystemRandom().choice(string.ascii_letters + string.digits)
-                        for _ in range(15)
-                    )
-                    content = {"username": "maas-admin-internal", "password": password}
-
-                    MaasHelper.create_admin_user(content["username"], password, "", None)
-                    secret = self.app.add_secret(content, label=MAAS_ADMIN_SECRET_LABEL)
-                    self.set_peer_data(self.app, MAAS_ADMIN_SECRET_KEY, secret.id)
-                    # enable prometheus metrics with our new admin account
-                    MaasHelper.set_prometheus_metrics(content["username"], True)
-
+                credentials = self._create_or_get_internal_admin()
+                MaasHelper.set_prometheus_metrics(
+                    credentials["username"], self.config["enable_prometheus_metrics"]  # type: ignore
+                )
             return True
         except subprocess.CalledProcessError:
             return False
@@ -446,6 +460,10 @@ class MaasRegionCharm(ops.CharmBase):
         if self.unit.is_leader() and not self._publish_tokens():
             event.defer()
             return
+        creds = self._create_or_get_internal_admin()
+        MaasHelper.set_prometheus_metrics(
+            creds["username"], self.config["enable_prometheus_metrics"]  # type: ignore
+        )
         if cur_mode := MaasHelper.get_maas_mode():
             if self.get_operational_mode() != cur_mode:
                 self._initialize_maas()
