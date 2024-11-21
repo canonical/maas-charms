@@ -287,7 +287,7 @@ class MaasRegionCharm(ops.CharmBase):
                 self._update_tls_config()
                 credentials = self._create_or_get_internal_admin()
                 MaasHelper.set_prometheus_metrics(
-                    credentials["username"], self.config["enable_prometheus_metrics"]  # type: ignore
+                    credentials["username"], self.bind_address, self.config["enable_prometheus_metrics"]  # type: ignore
                 )
             return True
         except subprocess.CalledProcessError:
@@ -369,7 +369,7 @@ class MaasRegionCharm(ops.CharmBase):
         if secret_uri := self.get_peer_data(self.app, MAAS_ADMIN_SECRET_KEY):
             secret = self.model.get_secret(id=secret_uri)
             username = secret.get_content()["username"]
-            MaasHelper.set_prometheus_metrics(username, enable)
+            MaasHelper.set_prometheus_metrics(username, self.bind_address, enable) # type: ignore
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
@@ -462,7 +462,7 @@ class MaasRegionCharm(ops.CharmBase):
             return
         creds = self._create_or_get_internal_admin()
         MaasHelper.set_prometheus_metrics(
-            creds["username"], self.config["enable_prometheus_metrics"]  # type: ignore
+            creds["username"], self.bind_address, self.config["enable_prometheus_metrics"]  # type: ignore
         )
         if cur_mode := MaasHelper.get_maas_mode():
             if self.get_operational_mode() != cur_mode:

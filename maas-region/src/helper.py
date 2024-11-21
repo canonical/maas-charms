@@ -196,11 +196,12 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
-    def set_prometheus_metrics(admin_username: str, enable: bool) -> None:
+    def set_prometheus_metrics(admin_username: str, maas_ip: str, enable: bool) -> None:
         """Enable or disable prometheus metrics for MAAS.
 
         Args:
             admin_username (str): The admin username for MAAS
+            maas_ip (str): IP address of the MAAS API
             enable (bool): True to enable, False to disable
 
         Raises:
@@ -215,7 +216,7 @@ class MaasHelper:
             "/snap/bin/maas",
             "login",
             admin_username,
-            "http://localhost:5240/MAAS/api/2.0/",
+            f"http://{maas_ip}:5240/MAAS/api/2.0/",
             apikey,
         ]
         subprocess.check_call(login_cmd)
