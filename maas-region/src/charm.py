@@ -369,7 +369,7 @@ class MaasRegionCharm(ops.CharmBase):
         if secret_uri := self.get_peer_data(self.app, MAAS_ADMIN_SECRET_KEY):
             secret = self.model.get_secret(id=secret_uri)
             username = secret.get_content()["username"]
-            MaasHelper.set_prometheus_metrics(username, self.bind_address, enable) # type: ignore
+            MaasHelper.set_prometheus_metrics(username, self.bind_address, enable)  # type: ignore
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.

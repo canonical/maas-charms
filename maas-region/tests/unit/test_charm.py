@@ -81,6 +81,26 @@ class TestDBRelation(unittest.TestCase):
             "region",
         )
 
+    @patch("charm.MaasHelper", autospec=True)
+    def test_database_connected_creates_admin(self, mock_helper):
+        mock_helper.set_prometheus_metrics.return_value = None
+        mock_helper.create_admin_user.return_value = None
+        self.harness.set_leader(True)
+        self.harness.begin()
+        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
+        self.harness.update_relation_data(
+            db_rel,
+            "postgresql",
+            {
+                "endpoints": "30.0.0.1:5432",
+                "read-only-endpoints": "30.0.0.2:5432",
+                "username": "test_maas_db",
+                "password": "my_secret",
+            },
+        )
+        credentials = self.harness.model.get_secret(label="maas-admin").get_content()
+        self.assertEqual(credentials["username"], "maas-admin-internal")
+
 
 class TestClusterUpdates(unittest.TestCase):
 
@@ -202,6 +222,23 @@ class TestClusterUpdates(unittest.TestCase):
         self.assertEqual(data["regions"], f'["{socket.getfqdn()}"]')
         self.assertIn("maas_secret_id", data)  # codespell:ignore
 
+    @patch("charm.MaasHelper", autospec=True)
+    def test_on_maas_cluster_changed_prometheus_enabled(self, mock_helper):
+        mock_helper.get_maas_mode.return_value = "region"
+        mock_helper.get_maas_secret.return_value = "very-secret"
+        mock_helper.create_admin_user.return_value = None
+        self.harness.set_leader(True)
+        self.harness.begin()
+        remote_app = "maas-agent"
+        self.harness.add_relation(
+            maas.DEFAULT_ENDPOINT_NAME,
+            remote_app,
+            unit_data={"unit": f"{remote_app}/0", "url": "some_url"},
+        )
+        mock_helper.set_prometheus_metrics.assert_called_with(
+            "maas-admin-internal", "10.0.0.10", True
+        )
+
     @patch(
         "charm.MaasRegionCharm.connection_string",
         new_callable=PropertyMock(return_value="postgres://"),
@@ -281,6 +318,31 @@ class TestClusterUpdates(unittest.TestCase):
             f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
             "postgres://",
             "region",
+        )
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_config_change_prometheus_updated(self, mock_helper):
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        mock_helper.set_prometheus_metrics.return_value = None
+        mock_helper.create_admin_user.return_value = None
+        self.harness.set_leader(True)
+        self.harness.begin_with_initial_hooks()
+        # make admin secret be set
+        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
+        self.harness.update_relation_data(
+            db_rel,
+            "postgresql",
+            {
+                "endpoints": "30.0.0.1:5432",
+                "read-only-endpoints": "30.0.0.2:5432",
+                "username": "test_maas_db",
+                "password": "my_secret",
+            },
+        )
+        self.harness.update_config({"enable_prometheus_metrics": False})
+        mock_helper.set_prometheus_metrics.assert_called_with(
+            "maas-admin-internal", "10.0.0.10", False
         )
 
 
