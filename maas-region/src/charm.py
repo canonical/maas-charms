@@ -6,9 +6,11 @@
 
 import json
 import logging
+import random
 import socket
+import string
 import subprocess
-from typing import Any, List, Union
+from typing import Any, Dict, List, Union
 
 import ops
 import yaml
@@ -17,6 +19,7 @@ from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region.v0 import maas
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
+from ops.model import SecretNotFoundError
 
 from helper import MaasHelper
 
@@ -54,6 +57,9 @@ MAAS_REGION_PORTS = [
     *[ops.Port("tcp", p) for p in range(5280, 5284 + 1)],  # Temporal
 ]
 
+MAAS_ADMIN_SECRET_LABEL = "maas-admin"
+MAAS_ADMIN_SECRET_KEY = "maas-admin-secret-uri"
+
 
 @trace_charm(
     tracing_endpoint="charm_tracing_endpoint",
@@ -72,6 +78,7 @@ class MaasRegionCharm(ops.CharmBase):
         "termination",
         "passthrough",
     ]  # no TLS, termination at HA Proxy, passthrough to MAAS
+    _INTERNAL_ADMIN_USER = "maas-admin-internal"
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -243,6 +250,33 @@ class MaasRegionCharm(ops.CharmBase):
             return False
         return True
 
+    def _create_or_get_internal_admin(self) -> Dict[str, str]:
+        """Create an internal admin user if one does not already exist.
+
+        Store the credentials in a secret, and return the credentials.
+        If one exists, just return the credentials for the account.
+
+        Returns:
+            dict[str, str]: username and password of the admin user
+
+        Raises:
+            CalledProcessError: failed to create the user
+        """
+        try:
+            secret = self.model.get_secret(label=MAAS_ADMIN_SECRET_LABEL)
+            return secret.get_content()
+        except SecretNotFoundError:
+            password = "".join(
+                random.SystemRandom().choice(string.ascii_letters + string.digits)
+                for _ in range(15)
+            )
+            content = {"username": self._INTERNAL_ADMIN_USER, "password": password}
+
+            MaasHelper.create_admin_user(content["username"], password, "", None)
+            secret = self.app.add_secret(content, label=MAAS_ADMIN_SECRET_LABEL)
+            self.set_peer_data(self.app, MAAS_ADMIN_SECRET_KEY, secret.id)
+            return content
+
     def _initialize_maas(self) -> bool:
         try:
             MaasHelper.setup_region(
@@ -251,6 +285,10 @@ class MaasRegionCharm(ops.CharmBase):
             # check maas_api_url existence in case MAAS isn't ready yet
             if self.maas_api_url and self.unit.is_leader():
                 self._update_tls_config()
+                credentials = self._create_or_get_internal_admin()
+                MaasHelper.set_prometheus_metrics(
+                    credentials["username"], self.bind_address, self.config["enable_prometheus_metrics"]  # type: ignore
+                )
             return True
         except subprocess.CalledProcessError:
             return False
@@ -326,6 +364,12 @@ class MaasRegionCharm(ops.CharmBase):
                 MaasHelper.delete_tls_files()
             elif tls_enabled and self.config["tls_mode"] in ["disabled", "termination"]:
                 MaasHelper.disable_tls()
+
+    def _update_prometheus_config(self, enable: bool) -> None:
+        if secret_uri := self.get_peer_data(self.app, MAAS_ADMIN_SECRET_KEY):
+            secret = self.model.get_secret(id=secret_uri)
+            username = secret.get_content()["username"]
+            MaasHelper.set_prometheus_metrics(username, self.bind_address, enable)  # type: ignore
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
@@ -416,6 +460,15 @@ class MaasRegionCharm(ops.CharmBase):
         if self.unit.is_leader() and not self._publish_tokens():
             event.defer()
             return
+        try:
+            creds = self._create_or_get_internal_admin()
+            MaasHelper.set_prometheus_metrics(
+                creds["username"], self.bind_address, self.config["enable_prometheus_metrics"]  # type: ignore
+            )
+        except subprocess.CalledProcessError:
+            # If above failed, it's likely because things aren't ready yet.
+            # we will try again
+            pass
         if cur_mode := MaasHelper.get_maas_mode():
             if self.get_operational_mode() != cur_mode:
                 self._initialize_maas()
@@ -484,6 +537,7 @@ class MaasRegionCharm(ops.CharmBase):
         self._update_ha_proxy()
         if self.unit.is_leader():
             self._update_tls_config()
+            self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
 
 
 if __name__ == "__main__":  # pragma: nocover
