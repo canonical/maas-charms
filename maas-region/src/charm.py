@@ -460,10 +460,15 @@ class MaasRegionCharm(ops.CharmBase):
         if self.unit.is_leader() and not self._publish_tokens():
             event.defer()
             return
-        creds = self._create_or_get_internal_admin()
-        MaasHelper.set_prometheus_metrics(
-            creds["username"], self.bind_address, self.config["enable_prometheus_metrics"]  # type: ignore
-        )
+        try:
+            creds = self._create_or_get_internal_admin()
+            MaasHelper.set_prometheus_metrics(
+                creds["username"], self.bind_address, self.config["enable_prometheus_metrics"]  # type: ignore
+            )
+        except subprocess.CalledProcessError:
+            # If above failed, it's likely because things aren't ready yet.
+            # we will try again
+            pass
         if cur_mode := MaasHelper.get_maas_mode():
             if self.get_operational_mode() != cur_mode:
                 self._initialize_maas()
