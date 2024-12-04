@@ -181,7 +181,7 @@ class MaasRegionCharm(ops.CharmBase):
         return MaasHelper.get_maas_secret()
 
     @property
-    def bind_address(self) -> Union[str, None]:
+    def bind_address(self) -> str:
         """Get Unit bind address.
 
         Returns:
@@ -189,7 +189,8 @@ class MaasRegionCharm(ops.CharmBase):
         """
         if bind := self.model.get_binding("juju-info"):
             return str(bind.network.bind_address)
-        return None
+        else:
+            raise ops.model.ModelError("Bind address not set in the model")
 
     @property
     def maas_api_url(self) -> str:
@@ -373,7 +374,7 @@ class MaasRegionCharm(ops.CharmBase):
         if secret_uri := self.get_peer_data(self.app, MAAS_ADMIN_SECRET_KEY):
             secret = self.model.get_secret(id=secret_uri)
             username = secret.get_content()["username"]
-            MaasHelper.set_prometheus_metrics(username, self.bind_address, enable)  # type: ignore
+            MaasHelper.set_prometheus_metrics(username, self.bind_address, enable)
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
