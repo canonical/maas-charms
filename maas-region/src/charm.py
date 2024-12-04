@@ -17,6 +17,7 @@ import yaml
 from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region.v0 import maas
+from charms.maas_site_manager_k8s.v0 import enrol
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
 from ops.model import SecretNotFoundError
@@ -110,6 +111,12 @@ class MaasRegionCharm(ops.CharmBase):
         self.maasdb = db.DatabaseRequires(self, MAAS_DB_NAME, self.maasdb_name)
         self.framework.observe(self.maasdb.on.database_created, self._on_maasdb_created)
         self.framework.observe(self.maasdb.on.endpoints_changed, self._on_maasdb_endpoints_changed)
+
+        # Site Manager relation
+        self.msm = enrol.EnrolRequirer(self)
+        self.framework.observe(self.msm.on.token_issued, self._on_msm_token_issued)
+        self.framework.observe(self.msm.on.created, self._on_msm_created)
+        self.framework.observe(self.msm.on.removed, self._on_msm_removed)
 
         # HAProxy
         api_events = self.on[MAAS_API_RELATION]
@@ -543,6 +550,26 @@ class MaasRegionCharm(ops.CharmBase):
         if self.unit.is_leader():
             self._update_tls_config()
             self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
+
+    def _on_msm_created(self, event: ops.RelationCreatedEvent) -> None:
+        logger.info(event)
+        if self.unit.is_leader():
+            if cluster_uuid := MaasHelper.get_maas_uuid():
+                self.msm.request_enrol(cluster_uuid)
+            else:
+                event.defer()
+
+    def _on_msm_removed(self, event: enrol.TokenWithdrawEvent) -> None:
+        logger.info(event)
+
+    def _on_msm_token_issued(self, event: enrol.TokenIssuedEvent) -> None:
+        logger.info(event)
+        try:
+            logger.debug("got enrolment token from Site Manager, enrolling")
+            MaasHelper.msm_enroll(event._token)
+            logger.info("Enrolled to Site Manager")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"failed to enroll: {e}")
 
 
 if __name__ == "__main__":  # pragma: nocover
