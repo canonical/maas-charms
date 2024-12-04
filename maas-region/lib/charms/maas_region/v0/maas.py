@@ -6,8 +6,7 @@ Allows MAAS Agents to enroll with Region controllers
 import dataclasses
 import json
 import logging
-from collections.abc import MutableMapping
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, MutableMapping, Union
 
 import ops
 from ops.charm import CharmEvents
@@ -22,7 +21,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 2
+LIBPATCH = 3
 
 
 DEFAULT_ENDPOINT_NAME = "maas-region"
