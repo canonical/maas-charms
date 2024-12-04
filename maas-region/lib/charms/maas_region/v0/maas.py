@@ -6,7 +6,8 @@ Allows MAAS Agents to enroll with Region controllers
 import dataclasses
 import json
 import logging
-from typing import Any, Dict, List, MutableMapping, Union
+from collections.abc import MutableMapping
+from typing import Any, Dict, List, Union
 
 import ops
 from ops.charm import CharmEvents
