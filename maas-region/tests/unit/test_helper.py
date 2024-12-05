@@ -12,7 +12,6 @@ from helper import MAAS_SERVICE, MaasHelper
 
 
 class TestHelperSnapCache(unittest.TestCase):
-
     def _setup_snap(self, mock_snap, present=False, revision="1234", channel="latest/stable"):
         maas = MagicMock()
         type(maas).present = PropertyMock(return_value=present)
@@ -79,7 +78,6 @@ class TestHelperSnapCache(unittest.TestCase):
 
 
 class TestHelperFiles(unittest.TestCase):
-
     @patch("pathlib.Path.open", new_callable=lambda: mock_open(read_data="maas-id\n"))
     def test_get_maas_id(self, _):
         self.assertEqual(MaasHelper.get_maas_id(), "maas-id")
