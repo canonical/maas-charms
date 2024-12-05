@@ -54,7 +54,6 @@ class TestCharm(unittest.TestCase):
 
 
 class TestDBRelation(unittest.TestCase):
-
     def setUp(self):
         self.harness = ops.testing.Harness(MaasRegionCharm)
         self.harness.add_network("10.0.0.10")
@@ -103,7 +102,6 @@ class TestDBRelation(unittest.TestCase):
 
 
 class TestClusterUpdates(unittest.TestCase):
-
     def setUp(self):
         self.harness = ops.testing.Harness(MaasRegionCharm)
         self.harness.add_network("10.0.0.10")
@@ -347,7 +345,6 @@ class TestClusterUpdates(unittest.TestCase):
 
 
 class TestCharmActions(unittest.TestCase):
-
     def setUp(self):
         self.harness = ops.testing.Harness(MaasRegionCharm)
         self.harness.add_network("10.0.0.10")

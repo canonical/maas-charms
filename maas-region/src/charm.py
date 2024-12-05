@@ -73,11 +73,13 @@ MAAS_ADMIN_SECRET_KEY = "maas-admin-secret-uri"
 class MaasRegionCharm(ops.CharmBase):
     """Charm the application."""
 
-    _TLS_MODES = [
-        "disabled",
-        "termination",
-        "passthrough",
-    ]  # no TLS, termination at HA Proxy, passthrough to MAAS
+    _TLS_MODES = frozenset(
+        [
+            "disabled",
+            "termination",
+            "passthrough",
+        ]
+    )  # no TLS, termination at HA Proxy, passthrough to MAAS
     _INTERNAL_ADMIN_USER = "maas-admin-internal"
 
     def __init__(self, *args):
@@ -179,7 +181,7 @@ class MaasRegionCharm(ops.CharmBase):
         return MaasHelper.get_maas_secret()
 
     @property
-    def bind_address(self) -> Union[str, None]:
+    def bind_address(self) -> str:
         """Get Unit bind address.
 
         Returns:
@@ -187,7 +189,8 @@ class MaasRegionCharm(ops.CharmBase):
         """
         if bind := self.model.get_binding("juju-info"):
             return str(bind.network.bind_address)
-        return None
+        else:
+            raise ops.model.ModelError("Bind address not set in the model")
 
     @property
     def maas_api_url(self) -> str:
@@ -200,9 +203,7 @@ class MaasRegionCharm(ops.CharmBase):
             unit = next(iter(relation.units), None)
             if unit and (addr := relation.data[unit].get("public-address")):
                 return f"http://{addr}:{MAAS_PROXY_PORT}/MAAS"
-        if bind := self.bind_address:
-            return f"http://{bind}:{MAAS_HTTP_PORT}/MAAS"
-        return ""
+        return f"http://{self.bind_address}:{MAAS_HTTP_PORT}/MAAS"
 
     @property
     def maas_id(self) -> Union[str, None]:
@@ -287,7 +288,9 @@ class MaasRegionCharm(ops.CharmBase):
                 self._update_tls_config()
                 credentials = self._create_or_get_internal_admin()
                 MaasHelper.set_prometheus_metrics(
-                    credentials["username"], self.bind_address, self.config["enable_prometheus_metrics"]  # type: ignore
+                    credentials["username"],
+                    self.bind_address,
+                    self.config["enable_prometheus_metrics"],  # type: ignore
                 )
             return True
         except subprocess.CalledProcessError:
@@ -369,7 +372,7 @@ class MaasRegionCharm(ops.CharmBase):
         if secret_uri := self.get_peer_data(self.app, MAAS_ADMIN_SECRET_KEY):
             secret = self.model.get_secret(id=secret_uri)
             username = secret.get_content()["username"]
-            MaasHelper.set_prometheus_metrics(username, self.bind_address, enable)  # type: ignore
+            MaasHelper.set_prometheus_metrics(username, self.bind_address, enable)
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
@@ -463,7 +466,9 @@ class MaasRegionCharm(ops.CharmBase):
         try:
             creds = self._create_or_get_internal_admin()
             MaasHelper.set_prometheus_metrics(
-                creds["username"], self.bind_address, self.config["enable_prometheus_metrics"]  # type: ignore
+                creds["username"],
+                self.bind_address,
+                self.config["enable_prometheus_metrics"],  # type: ignore
             )
         except subprocess.CalledProcessError:
             # If above failed, it's likely because things aren't ready yet.
