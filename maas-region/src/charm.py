@@ -203,9 +203,7 @@ class MaasRegionCharm(ops.CharmBase):
             unit = next(iter(relation.units), None)
             if unit and (addr := relation.data[unit].get("public-address")):
                 return f"http://{addr}:{MAAS_PROXY_PORT}/MAAS"
-        if bind := self.bind_address:
-            return f"http://{bind}:{MAAS_HTTP_PORT}/MAAS"
-        return ""
+        return f"http://{self.bind_address}:{MAAS_HTTP_PORT}/MAAS"
 
     @property
     def maas_id(self) -> Union[str, None]:
