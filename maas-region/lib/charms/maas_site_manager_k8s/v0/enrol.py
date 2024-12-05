@@ -18,7 +18,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 1
+LIBPATCH = 2
 
 DEFAULT_ENDPOINT_NAME = "maas-site-manager"
 TOKEN_SECRET_KEY = "enrol-token"
@@ -196,8 +196,8 @@ class EnrolRequirer(ops.Object):
             uuid=cluster_uuid,
         )
         if relation := self._relation:
-            unit_databag = relation.data[self.model.unit]
-            databag_model.dump(unit_databag)
+            app_databag = relation.data[self.model.app]
+            databag_model.dump(app_databag)
 
 
 class EnrolProvider(ops.Object):
