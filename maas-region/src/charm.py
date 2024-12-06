@@ -112,7 +112,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.maasdb.on.database_created, self._on_maasdb_created)
         self.framework.observe(self.maasdb.on.endpoints_changed, self._on_maasdb_endpoints_changed)
 
-        # Site Manager relation
+        # MAAS Site Manager relation
         self.msm = enrol.EnrolRequirer(self)
         self.framework.observe(self.msm.on.token_issued, self._on_msm_token_issued)
         self.framework.observe(self.msm.on.created, self._on_msm_created)
@@ -565,9 +565,9 @@ class MaasRegionCharm(ops.CharmBase):
     def _on_msm_token_issued(self, event: enrol.TokenIssuedEvent) -> None:
         logger.info(event)
         try:
-            logger.debug("got enrolment token from Site Manager, enrolling")
+            logger.debug("got enrollment token from MAAS Site Manager, enrolling")
             MaasHelper.msm_enroll(event._token)
-            logger.info("Enrolled to Site Manager")
+            logger.info("enrolled to MAAS Site Manager")
         except subprocess.CalledProcessError as e:
             logger.error(f"failed to enroll: {e}")
 

@@ -83,7 +83,7 @@ class MaasHelper:
 
     @staticmethod
     def get_maas_uuid() -> Union[str, None]:
-        """Get MAAS system UUID.
+        """Get MAAS deployment UUID.
 
         Returns:
             Union[str, None]: UUID, or None if not present
@@ -320,10 +320,10 @@ class MaasHelper:
 
     @staticmethod
     def msm_enroll(token: str) -> None:
-        """Enroll this cluster in Site Manager.
+        """Enroll this cluster in MAAS Site Manager.
 
         Args:
-            token (str): enrolment JWT
+            token (str): enrollment JWT token
 
         Raises:
             CalledProcessError: if "maas msm" command failed for any reason
