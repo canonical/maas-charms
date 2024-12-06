@@ -552,6 +552,10 @@ class MaasRegionCharm(ops.CharmBase):
             self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
 
     def _on_msm_created(self, event: ops.RelationCreatedEvent) -> None:
+        """MAAS Site Manager relation established.
+
+        request enrollment token.
+        """
         logger.info(event)
         if self.unit.is_leader():
             if cluster_uuid := MaasHelper.get_maas_uuid():
@@ -560,9 +564,17 @@ class MaasRegionCharm(ops.CharmBase):
                 event.defer()
 
     def _on_msm_removed(self, event: enrol.TokenWithdrawEvent) -> None:
+        """MAAS Site Manager relation removed.
+
+        withdraw is handled by the remote end, nothing to do here.
+        """
         logger.info(event)
 
     def _on_msm_token_issued(self, event: enrol.TokenIssuedEvent) -> None:
+        """Enroll MAAS.
+
+        use token to start the enrollment process.
+        """
         logger.info(event)
         try:
             logger.debug("got enrollment token from MAAS Site Manager, enrolling")
