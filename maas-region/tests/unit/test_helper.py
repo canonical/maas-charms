@@ -86,6 +86,14 @@ class TestHelperFiles(unittest.TestCase):
     def test_get_maas_id_not_initialised(self, _):
         self.assertIsNone(MaasHelper.get_maas_id())
 
+    @patch("pathlib.Path.open", new_callable=lambda: mock_open(read_data="maas-uuid\n"))
+    def test_get_maas_uuid(self, _):
+        self.assertEqual(MaasHelper.get_maas_uuid(), "maas-uuid")
+
+    @patch("pathlib.Path.open", side_effect=OSError)
+    def test_get_maas_uuid_not_initialised(self, _):
+        self.assertIsNone(MaasHelper.get_maas_uuid())
+
     @patch("pathlib.Path.open", new_callable=lambda: mock_open(read_data="region+rack\n"))
     def test_get_maas_mode(self, _):
         self.assertEqual(MaasHelper.get_maas_mode(), "region+rack")
@@ -181,5 +189,19 @@ class TestHelperSetup(unittest.TestCase):
                 "apikey",
                 "--username",
                 "user",
+            ]
+        )
+
+    @patch("helper.subprocess.check_call")
+    def test_msm_enroll(self, mock_run):
+        token = "my-jwt-token"
+        MaasHelper.msm_enroll(token)
+        mock_run.assert_called_once_with(
+            [
+                "/snap/bin/maas",
+                "msm",
+                "enrol",
+                "--yes",
+                token,
             ]
         )

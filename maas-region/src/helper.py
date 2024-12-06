@@ -15,6 +15,7 @@ MAAS_SNAP_NAME = "maas"
 MAAS_MODE = Path("/var/snap/maas/common/snap_mode")
 MAAS_SECRET = Path("/var/snap/maas/common/maas/secret")
 MAAS_ID = Path("/var/snap/maas/common/maas/maas_id")
+MAAS_UUID = Path("/var/snap/maas/common/maas/maas_uuid")
 MAAS_SERVICE = "pebble"
 MAAS_SSL_CERT_FILEPATH = Path("/var/snap/maas/common/cert.pem")
 MAAS_SSL_KEY_FILEPATH = Path("/var/snap/maas/common/key.pem")
@@ -76,6 +77,19 @@ class MaasHelper:
         """
         try:
             with MAAS_ID.open() as file:
+                return file.readline().strip()
+        except OSError:
+            return None
+
+    @staticmethod
+    def get_maas_uuid() -> Union[str, None]:
+        """Get MAAS deployment UUID.
+
+        Returns:
+            Union[str, None]: UUID, or None if not present
+        """
+        try:
+            with MAAS_UUID.open() as file:
                 return file.readline().strip()
         except OSError:
             return None
@@ -302,6 +316,19 @@ class MaasHelper:
             "config-tls",
             "disable",
         ]
+        subprocess.check_call(cmd)
+
+    @staticmethod
+    def msm_enroll(token: str) -> None:
+        """Enroll this cluster in MAAS Site Manager.
+
+        Args:
+            token (str): enrollment JWT token
+
+        Raises:
+            CalledProcessError: if "maas msm" command failed for any reason
+        """
+        cmd = ["/snap/bin/maas", "msm", "enrol", "--yes", token]
         subprocess.check_call(cmd)
 
     @staticmethod

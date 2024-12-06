@@ -50,6 +50,9 @@ requires:
   tracing:
     interface: tracing
     limit: 1
+  maas-site-manager:
+    interface: site_manager_enrol
+    limit: 1
 
 peers:
   maas-cluster:
