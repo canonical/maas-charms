@@ -159,3 +159,7 @@ config:
       default: ""
       description: CA Certificates chain in PEM format
       type: string
+    enable_prometheus_metrics:
+      default: true
+      description: Whether to enable Prometheus metrics for MAAS
+      type: boolean

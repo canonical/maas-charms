@@ -12,7 +12,6 @@ from helper import MAAS_SERVICE, MaasHelper
 
 
 class TestHelperSnapCache(unittest.TestCase):
-
     def _setup_snap(
         self,
         mock_snap,

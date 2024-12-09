@@ -213,6 +213,41 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
+    def set_prometheus_metrics(admin_username: str, maas_ip: str, enable: bool) -> None:
+        """Enable or disable prometheus metrics for MAAS.
+
+        Args:
+            admin_username (str): The admin username for MAAS
+            maas_ip (str): IP address of the MAAS API
+            enable (bool): True to enable, False to disable
+
+        Raises:
+            CalledProcessError: failed to set prometheus_metrics setting
+        """
+        apikey = (
+            subprocess.check_output(["/snap/bin/maas", "apikey", f"--username={admin_username}"])
+            .decode()
+            .replace("\n", "")
+        )
+        login_cmd = [
+            "/snap/bin/maas",
+            "login",
+            admin_username,
+            f"http://{maas_ip}:5240/MAAS/api/2.0/",
+            apikey,
+        ]
+        subprocess.check_call(login_cmd)
+        set_cmd = [
+            "/snap/bin/maas",
+            admin_username,
+            "maas",
+            "set-config",
+            "name=prometheus_enabled",
+            f"value={enable}",
+        ]
+        subprocess.check_call(set_cmd)
+
+    @staticmethod
     def is_tls_enabled() -> Union[bool, None]:
         """Check whether MAAS currently has TLS enabled.
 
