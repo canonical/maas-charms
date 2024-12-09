@@ -91,9 +91,6 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(maas_region_events.relation_changed, self._on_maas_cluster_changed)
         self.framework.observe(maas_region_events.relation_departed, self._on_maas_cluster_changed)
         self.framework.observe(maas_region_events.relation_broken, self._on_maas_cluster_changed)
-        self.framework.observe(
-            maas_region_events.relation_changed, self._on_maas_cluster_data_changed
-        )
 
         maas_peer_events = self.on[MAAS_PEER_NAME]
         self.framework.observe(maas_peer_events.relation_joined, self._on_maas_peer_changed)
@@ -490,6 +487,10 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_maas_cluster_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
+
+        # ensure we handle the update case
+        self._on_maas_cluster_data_changed(event)
+
         if self.unit.is_leader() and not self._publish_tokens():
             event.defer()
             return
@@ -511,7 +512,7 @@ class MaasRegionCharm(ops.CharmBase):
     def set_cohort(self, cohort: str) -> None:
         """Write the snap cohort to the region/agent relation."""
         self._set_peer_data_(
-            self.maas_units, app_or_unit=None, key="cohort", data=cohort.strip('"').strip("'")
+            self.maas_units, app_or_unit=self.app, key="cohort", data=cohort.strip('"').strip("'")
         )
 
     def _write_snap_version_(self) -> None:
@@ -534,7 +535,7 @@ class MaasRegionCharm(ops.CharmBase):
         # set the updating flag to true for regions
         self._set_peer_data_(
             self.maas_units,
-            app_or_unit=None,
+            app_or_unit=self.app,
             key="region-update",
             data="true" if updating else "false",
         )
@@ -562,46 +563,45 @@ class MaasRegionCharm(ops.CharmBase):
             self._get_peer_data_(self.maas_units, app_or_unit=None, key="agent-update") == "true"
         )
 
-    def _on_maas_cluster_data_changed(self, event: ops.RelationChangedEvent) -> None:
+    def _on_maas_cluster_data_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
 
-        # The leader needs to handle information flow
-        if self.unit.is_leader():
-
-            if peers := self.maas_units:
-                # wait for regions
-                if any(
-                    self._get_snap_version(unit) != MAAS_SNAP_CHANNEL
-                    for unit in peers.units
-                    if self._get_app_type_(unit) == "region"
-                ):
-                    self.unit.status = ops.MaintenanceStatus("Waiting for regions to refresh")
-                    event.defer()
-                    return
-
-                # upgrade agents if the regions are done
-                if self._regions_updating_:
-                    self._set_regions_updating_(False)
-                    self._set_agents_updating_(True)
-
-                # wait for agents
-                if any(
-                    self._get_snap_version(unit) != MAAS_SNAP_CHANNEL
-                    for unit in peers.units
-                    if self._get_app_type_(unit) == "agent"
-                ):
-                    self.unit.status = ops.MaintenanceStatus("Waiting for agents to refresh")
-                    event.defer()
-                    return
-
-                if self._agents_updating_:
-                    self._set_agents_updating_(False)
-
-        # regions should block until upgraded
-        if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
-            self.unit.status = ops.BlockedStatus("Awaiting unit refresh")
-            logger.exception("Awaiting unit refresh")
+        if not self.unit.is_leader():
+            # regions should block until upgraded
+            if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
+                self.unit.status = ops.BlockedStatus("Awaiting unit refresh")
+                logger.exception("Awaiting unit refresh")
             return
+
+        # The leader needs to handle information flow
+        if peers := self.maas_units:
+            # wait for regions
+            if any(
+                self._get_snap_version(unit) != MAAS_SNAP_CHANNEL
+                for unit in peers.units
+                if self._get_app_type_(unit) == "region"
+            ):
+                self.unit.status = ops.MaintenanceStatus("Waiting for regions to refresh")
+                event.defer()
+                return
+
+            # upgrade agents if the regions are done
+            if self._regions_updating_:
+                self._set_regions_updating_(False)
+                self._set_agents_updating_(True)
+
+            # wait for agents
+            if any(
+                self._get_snap_version(unit) != MAAS_SNAP_CHANNEL
+                for unit in peers.units
+                if self._get_app_type_(unit) == "agent"
+            ):
+                self.unit.status = ops.MaintenanceStatus("Waiting for agents to refresh")
+                event.defer()
+                return
+
+            if self._agents_updating_:
+                self._set_agents_updating_(False)
 
     def _ensure_maas_cohort(
         self, event: Union[ops.InstallEvent, ops.UpgradeCharmEvent]
