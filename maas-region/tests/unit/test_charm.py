@@ -13,6 +13,7 @@ import ops
 import ops.testing
 import yaml
 from charms.maas_region.v0 import maas
+from charms.maas_site_manager_k8s.v0 import enrol
 
 from charm import (
     MAAS_API_RELATION,
@@ -135,6 +136,61 @@ class TestDBRelation(unittest.TestCase):
         )
         credentials = self.harness.model.get_secret(label="maas-admin").get_content()
         self.assertEqual(credentials["username"], "maas-admin-internal")
+
+
+class TestMsmEnroll(unittest.TestCase):
+    REMOTE_APP = "msm-k8s"
+
+    def setUp(self):
+        self.harness = ops.testing.Harness(MaasRegionCharm)
+        self.harness.add_network("10.0.0.10")
+        self.addCleanup(self.harness.cleanup)
+
+    def _enroll(self, rel_id: int, jwt: str):
+        secret_id = self.harness.add_model_secret(self.REMOTE_APP, {enrol.TOKEN_SECRET_KEY: jwt})
+        self.harness.grant_secret(secret_id, self.harness.model.app)
+        databag = {}
+        app_data = enrol.EnrolProviderAppData(secret_id)
+        app_data.dump(databag)
+        self.harness.update_relation_data(rel_id, self.REMOTE_APP, databag)
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_enroll(self, mock_helper):
+        mock_helper.get_maas_uuid.return_value = "MAAS-CLUSTER-UUID"
+        self.harness.set_leader(True)
+        self.harness.begin()
+
+        # send enrollment request
+        rel_id = self.harness.add_relation(enrol.DEFAULT_ENDPOINT_NAME, self.REMOTE_APP)
+
+        self.assertEqual(
+            self.harness.get_relation_data(rel_id, self.harness.model.app),
+            {"uuid": "MAAS-CLUSTER-UUID"},
+        )
+        # mock enrollment data from MSM
+        self._enroll(rel_id, "TOKEN")
+
+        data = self.harness.get_relation_data(rel_id, self.REMOTE_APP)
+        self.assertIn("token_id", data)  # codespell:ignore
+        token = self.harness.model.get_secret(id=data["token_id"]).get_content()
+        self.assertEqual(token["enrol-token"], "TOKEN")
+        mock_helper.msm_enroll.assert_called_once_with(token["enrol-token"])
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_enroll_only_leader(self, mock_helper):
+        mock_helper.get_maas_uuid.return_value = "MAAS-CLUSTER-UUID"
+        self.harness.begin()
+
+        # other unit send enrollment request
+        rel_id = self.harness.add_relation(enrol.DEFAULT_ENDPOINT_NAME, self.REMOTE_APP)
+
+        self.assertEqual(
+            self.harness.get_relation_data(rel_id, self.harness.model.app),
+            {},
+        )
+        # mock enrollment data from MSM
+        self._enroll(rel_id, "TOKEN")
+        mock_helper.msm_enroll.assert_not_called()
 
 
 class TestClusterUpdates(unittest.TestCase):
