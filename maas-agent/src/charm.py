@@ -190,7 +190,6 @@ class MaasRackCharm(ops.CharmBase):
 
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
         if (current := MaasHelper.get_installed_channel()) and (current != MAAS_SNAP_CHANNEL):
-
             if self._agents_updating_:
                 e.add_status(ops.MaintenanceStatus("Awaiting unit refresh"))
 
