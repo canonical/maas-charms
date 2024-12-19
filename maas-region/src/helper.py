@@ -3,10 +3,12 @@
 
 """Helper functions for MAAS management."""
 
-import logging
+import re
 import subprocess
+from logging import getLogger
 from os import remove
 from pathlib import Path
+from time import sleep
 from typing import Union
 
 from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
@@ -23,23 +25,24 @@ MAAS_CACERT_FILEPATH = Path("/var/snap/maas/common/cacert.pem")
 NGINX_CFG_FILEPATH = Path("/var/snap/maas/current/http/regiond.nginx.conf")
 MAAS_HTTPS_PORT = 5443
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 class MaasHelper:
     """MAAS helper."""
 
     @staticmethod
-    def install(channel: str) -> None:
+    def install(channel: str, cohort_key: str) -> None:
         """Install snap.
 
         Args:
             channel (str): snapstore channel
+            cohort_key (str): cohort to join when installing snap
         """
         maas = SnapCache()[MAAS_SNAP_NAME]
         if not maas.present:
-            maas.ensure(SnapState.Latest, channel=channel)
-            maas.hold()
+            maas.ensure(SnapState.Latest, channel=channel, cohort=cohort_key)
+        maas.hold()
 
     @staticmethod
     def uninstall() -> None:
@@ -47,6 +50,20 @@ class MaasHelper:
         maas = SnapCache()[MAAS_SNAP_NAME]
         if maas.present:
             maas.ensure(SnapState.Absent)
+
+    @staticmethod
+    def refresh(channel: str, cohort_key: str) -> None:
+        """Refresh snap."""
+        maas = SnapCache()[MAAS_SNAP_NAME]
+        service = maas.services.get(MAAS_SERVICE, {})
+        maas.stop()
+        while service.get("activate", False):
+            sleep(1)
+        maas.ensure(SnapState.Present, channel=channel, cohort=cohort_key)
+        maas.start()
+        while not service.get("activate", True):
+            sleep(1)
+        maas.hold()
 
     @staticmethod
     def get_installed_version() -> Union[str, None]:
@@ -343,3 +360,25 @@ class MaasHelper:
                 return file.readline().strip()
         except OSError:
             return None
+
+    @staticmethod
+    def get_or_create_snap_cohort() -> Union[str, None]:
+        """Return the maas snap cohort, or create a new one."""
+        logger = getLogger(__name__)
+        maas = SnapCache()[MAAS_SNAP_NAME]
+
+        verbose_info = maas._snap("info", ["--verbose"])
+        if _found_cohort := re.search(r"cohort:\s*([^\n]+)", verbose_info):
+            logger.debug("Found cohort")
+            return str(_found_cohort.group(1)).strip('"').strip("'")
+        logger.debug("Could not find cohort key in snap info")
+
+        cohort_creation = subprocess.check_output(
+            ["sudo", "snap", "create-cohort", maas._name], universal_newlines=True
+        )
+        if _created_cohort := re.search(r"cohort-key:\s+([^\n]+)", cohort_creation):
+            logger.debug("Created cohort")
+            return str(_created_cohort.group(1)).strip('"').strip("'")
+
+        logger.debug(f"Could not find cohort key in snap create-cohort: {_created_cohort}")
+        return None
