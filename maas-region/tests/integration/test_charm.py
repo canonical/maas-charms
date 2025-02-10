@@ -50,6 +50,8 @@ async def test_database_integration(ops_test: OpsTest):
             application_name="postgresql",
             channel="14/stable",
             trust=True,
+            # workaround for https://bugs.launchpad.net/maas/+bug/2097079
+            config={"plugin_audit_enable": False},
         ),
         ops_test.model.wait_for_idle(
             apps=["postgresql"], status="active", raise_on_blocked=True, timeout=1000
