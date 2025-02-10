@@ -34,7 +34,7 @@ jobs:
     name: Release MAAS Region charm to edge
     needs: detect-region-changes
     if: needs.detect-region-changes.outputs.any_changed == 'true'
-    uses: canonical/observability/.github/workflows/charm-release.yaml@469a1f09208f0643e6666f7bb49f98f67e2f43fb
+    uses: canonical/observability/.github/workflows/charm-release.yaml@v0
     secrets: inherit
     with:
       charm-path: maas-region
@@ -70,7 +70,7 @@ jobs:
     name: Release MAAS Agent charm to edge
     needs: detect-agent-changes
     if: needs.detect-agent-changes.outputs.any_changed == 'true'
-    uses: canonical/observability/.github/workflows/charm-release.yaml@469a1f09208f0643e6666f7bb49f98f67e2f43fb
+    uses: canonical/observability/.github/workflows/charm-release.yaml@v0
     secrets: inherit
     with:
       charm-path: maas-agent
