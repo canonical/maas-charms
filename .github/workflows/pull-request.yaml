@@ -9,7 +9,7 @@ on:
 jobs:
   pull-request-region:
     name: PR Region
-    uses: canonical/observability/.github/workflows/charm-pull-request.yaml@main
+    uses: canonical/observability/.github/workflows/charm-pull-request.yaml@v0
     secrets: inherit
     with:
       charm-path: maas-region
@@ -17,7 +17,7 @@ jobs:
 
   pull-request-agent:
     name: PR Agent
-    uses: canonical/observability/.github/workflows/charm-pull-request.yaml@main
+    uses: canonical/observability/.github/workflows/charm-pull-request.yaml@v0
     secrets: inherit
     with:
       charm-path: maas-agent
