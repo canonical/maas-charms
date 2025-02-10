@@ -511,7 +511,7 @@ class MaasRegionCharm(ops.CharmBase):
         username = event.params["username"]
         try:
             key = MaasHelper.get_api_key(username)
-            event.set_results({"api-key": key})
+            event.set_results({"api-key": key.strip()})
         except subprocess.CalledProcessError:
             event.fail(f"Failed to get key for user {username}")
 
