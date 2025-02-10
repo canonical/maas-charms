@@ -445,11 +445,39 @@ class TestCharmActions(unittest.TestCase):
         self.harness.set_leader(True)
         self.harness.begin()
         mock_helper.create_admin_user.side_effect = subprocess.CalledProcessError(1, "maas")
-        with self.assertRaises(ops.testing.ActionFailed):
+        with self.assertRaises(ops.testing.ActionFailed) as e:
             self.harness.run_action(
                 "create-admin",
                 {"username": "my_user", "password": "my_secret", "email": "my_email"},
             )
+        err = e.exception
+        self.assertEqual(err.message, "Failed to create user my_user")
+
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_get_api_key_action(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        mock_helper.get_api_key.return_value = "aaa.bb.cccc\n"
+
+        output = self.harness.run_action(
+            "get-api-key", {"username": "my_user"}
+        )
+
+        self.assertEqual(output.results["api-key"], "aaa.bb.cccc")
+        mock_helper.get_api_key.assert_called_once_with("my_user")
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_get_api_key_action_fail(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        mock_helper.get_api_key.side_effect = subprocess.CalledProcessError(1, "maas")
+        with self.assertRaises(ops.testing.ActionFailed) as e:
+            self.harness.run_action(
+                "get-api-key", {"username": "my_user"}
+            )
+        err = e.exception
+        self.assertEqual(err.message, "Failed to get key for user my_user")
 
     def test_get_api_endpoint_action(self):
         self.harness.set_leader(True)
