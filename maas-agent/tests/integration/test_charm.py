@@ -56,6 +56,8 @@ async def test_region_integration(ops_test: OpsTest):
             "postgresql",
             application_name="postgresql",
             channel="14/stable",
+            # workaround for https://bugs.launchpad.net/maas/+bug/2097079
+            config={"plugin_audit_enable": False},
             trust=True,
         ),
         ops_test.model.wait_for_idle(
