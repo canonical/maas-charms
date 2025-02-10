@@ -9,7 +9,7 @@ on:
 jobs:
   update-lib-region:
     name: Check libraries
-    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@main
+    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@469a1f09208f0643e6666f7bb49f98f67e2f43fb
     secrets: inherit
     with:
       charm-path: maas-region
@@ -40,7 +40,7 @@ jobs:
     name: Check libraries
     needs: detect-open-prs
     if: needs.detect-open-prs.outputs.open_prs == '0'
-    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@main
+    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@469a1f09208f0643e6666f7bb49f98f67e2f43fb
     secrets: inherit
     with:
       charm-path: maas-agent
