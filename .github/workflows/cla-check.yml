@@ -8,4 +8,4 @@ jobs:
     if: github.actor != 'maas-lander'
     steps:
       - name: Check if CLA signed
-        uses: canonical/has-signed-canonical-cla@v1
+        uses: canonical/has-signed-canonical-cla@v2
