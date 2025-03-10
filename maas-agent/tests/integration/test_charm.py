@@ -55,7 +55,8 @@ async def test_region_integration(ops_test: OpsTest):
         ops_test.model.deploy(
             "postgresql",
             application_name="postgresql",
-            channel="14/stable",
+            channel="16/edge",
+            series="noble",
             # workaround for https://bugs.launchpad.net/maas/+bug/2097079
             config={"plugin_audit_enable": False},
             trust=True,

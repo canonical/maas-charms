@@ -48,7 +48,8 @@ async def test_database_integration(ops_test: OpsTest):
         ops_test.model.deploy(
             "postgresql",
             application_name="postgresql",
-            channel="14/stable",
+            channel="16/edge",
+            series="noble",
             trust=True,
             # workaround for https://bugs.launchpad.net/maas/+bug/2097079
             config={"plugin_audit_enable": False},
@@ -78,16 +79,24 @@ async def test_tls_mode(ops_test: OpsTest):
             "haproxy",
             application_name="haproxy",
             channel="latest/stable",
+            series="noble",
             trust=True,
         ),
         ops_test.model.wait_for_idle(
             apps=["haproxy"], status="active", raise_on_blocked=True, timeout=1000
         ),
     )
-    await ops_test.model.integrate(f"{APP_NAME}", "haproxy")
+
+    await asyncio.gather(
+        ops_test.model.integrate(f"{APP_NAME}", "haproxy"),
+        ops_test.model.wait_for_idle(
+            apps=["haproxy"], status="active", raise_on_blocked=True, timeout=1000
+        ),
+    )
+
     # the relation may take some time beyond the above await to fully apply
     start = time.time()
-    timeout = 30
+    timeout = 1000
     while True:
         try:
             show_unit = check_output(
