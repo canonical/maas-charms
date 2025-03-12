@@ -36,9 +36,16 @@ class TestCharm(unittest.TestCase):
     def test_start(self, mock_helper):
         mock_helper.get_installed_version.return_value = "mock-ver"
         mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
-        self.harness.begin_with_initial_hooks()
+        mock_helper.get_or_create_snap_cohort.return_value = "test_cohort"
+
+        self.harness.set_leader(True)
+        self.harness.begin()
+        self.harness.add_relation(maas.DEFAULT_ENDPOINT_NAME, self.harness.charm.app.name)
+        self.harness.charm.on.install.emit()
+        self.harness.charm.on.start.emit()
         self.harness.evaluate_status()
-        mock_helper.install.assert_called_once_with(MAAS_SNAP_CHANNEL)
+
+        mock_helper.install.assert_called_once_with(MAAS_SNAP_CHANNEL, cohort_key="test_cohort")
         mock_helper.set_running.assert_called_once_with(True)
         mock_helper.get_installed_version.assert_called_once()
         mock_helper.get_installed_channel.assert_called_once()
@@ -52,6 +59,35 @@ class TestCharm(unittest.TestCase):
         self.harness.begin()
         self.harness.charm.on.remove.emit()
         mock_helper.uninstall.assert_called_once()
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_refresh(self, mock_helper):
+        mock_helper.get_maas_mode.return_value = "rack"
+        mock_helper.get_installed_channel.return_value = "3.4/edge"
+
+        self.harness.set_leader(True)
+        self.harness.begin()
+        self.harness.add_relation(maas.DEFAULT_ENDPOINT_NAME, self.harness.charm.app.name)
+        self.harness.charm.set_cohort("test_cohort")
+
+        self.harness.charm.on.upgrade_charm.emit()
+        mock_helper.refresh.assert_called_once_with(MAAS_SNAP_CHANNEL, cohort_key="test_cohort")
+        self.assertEqual(
+            self.harness.model.unit.status,
+            ops.MaintenanceStatus(f"upgrading to {MAAS_SNAP_CHANNEL}..."),
+        )
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_refresh_invalid_channel(self, mock_helper):
+        mock_helper.get_maas_mode.return_value = "rack"
+        mock_helper.get_installed_channel.return_value = "invalid/channel"
+        self.harness.begin()
+        self.harness.charm.on.upgrade_charm.emit()
+        mock_helper.refresh.assert_not_called()
+        self.assertEqual(
+            self.harness.model.unit.status,
+            ops.BlockedStatus("Cannot side- or down- grade with refresh command."),
+        )
 
 
 class TestDBRelation(unittest.TestCase):
