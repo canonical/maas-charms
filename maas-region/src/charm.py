@@ -33,6 +33,7 @@ MAAS_DB_NAME = "maas-db"
 MAAS_SNAP_CHANNEL = "3.5/stable"
 
 MAAS_PROXY_PORT = 80
+MAAS_PROXY_TLS_PORT = 443
 
 MAAS_HTTP_PORT = 5240
 MAAS_HTTPS_PORT = 5443
@@ -331,7 +332,7 @@ class MaasRegionCharm(ops.CharmBase):
                 {
                     "service_name": "haproxy_service" if MAAS_PROXY_PORT == 80 else app_name,
                     "service_host": "0.0.0.0",
-                    "service_port": MAAS_PROXY_PORT,
+                    "service_port": MAAS_PROXY_PORT if self.config["tls_mode"] == "disabled" else MAAS_PROXY_TLS_PORT,
                     "service_options": ["mode http", "balance leastconn"],
                     "servers": [
                         (
