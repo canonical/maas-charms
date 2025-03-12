@@ -30,7 +30,7 @@ MAAS_PEER_NAME = "maas-cluster"
 MAAS_API_RELATION = "api"
 MAAS_DB_NAME = "maas-db"
 
-MAAS_SNAP_CHANNEL = "3.5/stable"
+MAAS_SNAP_CHANNEL = "3.6/candidate"
 
 MAAS_PROXY_PORT = 80
 
@@ -343,7 +343,7 @@ class MaasRegionCharm(ops.CharmBase):
                     ],
                 },
             ]
-            if self.config["tls_mode"] != "disabled":
+            if self.config["tls_mode"] == "passthrough":
                 data.append(
                     {
                         "service_name": "agent_service",
