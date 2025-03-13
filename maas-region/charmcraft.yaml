@@ -57,6 +57,8 @@ requires:
 peers:
   maas-cluster:
     interface: maas_peers
+  init:
+    interface: rolling_op
 
 provides:
   api:
