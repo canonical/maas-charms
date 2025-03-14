@@ -7,7 +7,7 @@ import json
 import socket
 import subprocess
 import unittest
-from unittest.mock import PropertyMock, patch
+from unittest.mock import PropertyMock, call, patch
 
 import ops
 import ops.testing
@@ -62,8 +62,10 @@ class TestDBRelation(unittest.TestCase):
 
     @patch("charm.MaasHelper", autospec=True)
     def test_database_connected(self, mock_helper):
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        self.harness.begin_with_initial_hooks()
         self.harness.set_leader(True)
-        self.harness.begin()
         db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
         self.harness.update_relation_data(
             db_rel,
@@ -85,8 +87,10 @@ class TestDBRelation(unittest.TestCase):
     def test_database_connected_creates_admin(self, mock_helper):
         mock_helper.set_prometheus_metrics.return_value = None
         mock_helper.create_admin_user.return_value = None
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        self.harness.begin_with_initial_hooks()
         self.harness.set_leader(True)
-        self.harness.begin()
         db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
         self.harness.update_relation_data(
             db_rel,
@@ -180,8 +184,10 @@ class TestClusterUpdates(unittest.TestCase):
 
     @patch("charm.MaasHelper", autospec=True)
     def test_ha_proxy_data(self, mock_helper):
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        self.harness.begin_with_initial_hooks()
         self.harness.set_leader(True)
-        self.harness.begin()
         ha = self.harness.add_relation(
             MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
         )
@@ -195,9 +201,11 @@ class TestClusterUpdates(unittest.TestCase):
 
     @patch("charm.MaasHelper", autospec=True)
     def test_ha_proxy_data_tls_termination(self, mock_helper):
-        self.harness.set_leader(True)
         self.harness.update_config({"tls_mode": "termination"})
-        self.harness.begin()
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        self.harness.begin_with_initial_hooks()
+        self.harness.set_leader(True)
         ha = self.harness.add_relation(
             MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
         )
@@ -212,7 +220,6 @@ class TestClusterUpdates(unittest.TestCase):
 
     @patch("charm.MaasHelper", autospec=True)
     def test_ha_proxy_data_tls_passthrough(self, mock_helper):
-        self.harness.set_leader(True)
         self.harness.update_config(
             {
                 "tls_mode": "passthrough",
@@ -220,7 +227,10 @@ class TestClusterUpdates(unittest.TestCase):
                 "ssl_key_content": "BEGIN_PRIVATE_KEY",
             }
         )
-        self.harness.begin()
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        self.harness.begin_with_initial_hooks()
+        self.harness.set_leader(True)
         ha = self.harness.add_relation(
             MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
         )
@@ -235,8 +245,10 @@ class TestClusterUpdates(unittest.TestCase):
 
     @patch("charm.MaasHelper", autospec=True)
     def test_invalid_tls_mode(self, mock_helper):
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        self.harness.begin_with_initial_hooks()
         self.harness.set_leader(True)
-        self.harness.begin()
         ha = self.harness.add_relation(
             MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
         )
@@ -248,8 +260,10 @@ class TestClusterUpdates(unittest.TestCase):
 
     @patch("charm.MaasHelper", autospec=True)
     def test_bad_ssl_cert_key_config(self, mock_helper):
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        self.harness.begin_with_initial_hooks()
         self.harness.set_leader(True)
-        self.harness.begin()
         self.harness.add_relation(
             MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
         )
@@ -262,8 +276,10 @@ class TestClusterUpdates(unittest.TestCase):
     def test_on_maas_cluster_changed_new_agent(self, mock_helper):
         mock_helper.get_maas_mode.return_value = "region"
         mock_helper.get_maas_secret.return_value = "very-secret"
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        self.harness.begin_with_initial_hooks()
         self.harness.set_leader(True)
-        self.harness.begin()
         remote_app = "maas-agent"
         rel_id = self.harness.add_relation(
             maas.DEFAULT_ENDPOINT_NAME,
@@ -281,8 +297,10 @@ class TestClusterUpdates(unittest.TestCase):
         mock_helper.get_maas_mode.return_value = "region"
         mock_helper.get_maas_secret.return_value = "very-secret"
         mock_helper.create_admin_user.return_value = None
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        self.harness.begin_with_initial_hooks()
         self.harness.set_leader(True)
-        self.harness.begin()
         remote_app = "maas-agent"
         self.harness.add_relation(
             maas.DEFAULT_ENDPOINT_NAME,
@@ -301,15 +319,26 @@ class TestClusterUpdates(unittest.TestCase):
     def test_ha_proxy_update_api_url(self, mock_helper, _mock_conn_id):
         mock_helper.get_maas_mode.return_value = "region"
         mock_helper.get_maas_secret.return_value = "very-secret"
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        self.harness.begin_with_initial_hooks()
         self.harness.set_leader(True)
-        self.harness.begin()
         self.harness.add_relation(
             MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
         )
-        mock_helper.setup_region.assert_called_once_with(
-            f"http://proxy.maas:{MAAS_PROXY_PORT}/MAAS",
-            "postgres://",
-            "region",
+        mock_helper.setup_region.assert_has_calls(
+            [
+                call(
+                    f"http://{self.harness.charm.bind_address}:{MAAS_HTTP_PORT}/MAAS",
+                    "postgres://",
+                    "region",
+                ),
+                call(
+                    f"http://proxy.maas:{MAAS_PROXY_PORT}/MAAS",
+                    "postgres://",
+                    "region",
+                ),
+            ]
         )
 
     @patch(
@@ -321,24 +350,29 @@ class TestClusterUpdates(unittest.TestCase):
         mock_helper.get_maas_mode.return_value = "region"
         mock_helper.get_maas_secret.return_value = "very-secret"
         my_fqdn = socket.getfqdn()
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        self.harness.begin_with_initial_hooks()
         self.harness.set_leader(True)
-        self.harness.begin()
         remote_app = "maas-agent"
         self.harness.add_relation(
             maas.DEFAULT_ENDPOINT_NAME,
             remote_app,
             unit_data={"unit": f"{remote_app}/0", "url": my_fqdn},
         )
-        mock_helper.setup_region.assert_called_once_with(
-            f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
-            "postgres://",
-            "region+rack",
+        mock_helper.setup_region.assert_has_calls(
+            [
+                call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "postgres://", "region"),
+                call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "postgres://", "region+rack"),
+            ]
         )
 
     @patch("charm.MaasHelper", autospec=True)
     def test_on_maas_cluster_changed_remove_agent(self, mock_helper):
         mock_helper.get_maas_mode.return_value = "region"
         mock_helper.get_maas_secret.return_value = "very-secret"
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        self.harness.begin_with_initial_hooks()
         self.harness.set_leader(True)
         remote_app = "maas-agent"
         rel_id = self.harness.add_relation(
@@ -346,7 +380,6 @@ class TestClusterUpdates(unittest.TestCase):
             remote_app,
             unit_data={"unit": f"{remote_app}/0", "url": "some_url"},
         )
-        self.harness.begin()
         self.harness.remove_relation_unit(rel_id, f"{remote_app}/0")
         mock_helper.setup_region.assert_not_called()
 
@@ -358,20 +391,31 @@ class TestClusterUpdates(unittest.TestCase):
     def test_on_maas_cluster_changed_remove_agent_same_machine(self, mock_helper, _mock_conn_id):
         mock_helper.get_maas_mode.return_value = "region+rack"
         mock_helper.get_maas_secret.return_value = "very-secret"
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
         my_fqdn = socket.getfqdn()
-        self.harness.set_leader(True)
         remote_app = "maas-agent"
         rel_id = self.harness.add_relation(
             maas.DEFAULT_ENDPOINT_NAME,
             remote_app,
             unit_data={"unit": f"{remote_app}/0", "url": my_fqdn},
         )
-        self.harness.begin()
+        self.harness.begin_with_initial_hooks()
+        self.harness.set_leader(True)
         self.harness.remove_relation_unit(rel_id, f"{remote_app}/0")
-        mock_helper.setup_region.assert_called_once_with(
-            f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
-            "postgres://",
-            "region",
+        mock_helper.setup_region.assert_has_calls(
+            [
+                call(
+                    f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
+                    "postgres://",
+                    "region+rack",
+                ),
+                call(
+                    f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
+                    "postgres://",
+                    "region",
+                ),
+            ]
         )
 
     @patch("charm.MaasHelper", autospec=True)
@@ -397,6 +441,40 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.update_config({"enable_prometheus_metrics": False})
         mock_helper.set_prometheus_metrics.assert_called_with(
             "maas-admin-internal", "10.0.0.10", False
+        )
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_config_change_maas_url(self, mock_helper):
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        self.harness.set_leader(True)
+        self.harness.begin_with_initial_hooks()
+        # make admin secret be set
+        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
+        self.harness.update_relation_data(
+            db_rel,
+            "postgresql",
+            {
+                "endpoints": "30.0.0.1:5432",
+                "read-only-endpoints": "30.0.0.2:5432",
+                "username": "test_maas_db",
+                "password": "my_secret",
+            },
+        )
+        self.harness.update_config({"maas_url": "http://custom-url:443"})
+        mock_helper.setup_region.assert_has_calls(
+            [
+                call(
+                    f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
+                    "postgres://test_maas_db:my_secret@30.0.0.1:5432/maas_region_db",
+                    "region",
+                ),
+                call(
+                    "http://custom-url:443",
+                    "postgres://test_maas_db:my_secret@30.0.0.1:5432/maas_region_db",
+                    "region",
+                ),
+            ]
         )
 
 
@@ -453,16 +531,13 @@ class TestCharmActions(unittest.TestCase):
         err = e.exception
         self.assertEqual(err.message, "Failed to create user my_user")
 
-
     @patch("charm.MaasHelper", autospec=True)
     def test_get_api_key_action(self, mock_helper):
         self.harness.set_leader(True)
         self.harness.begin()
         mock_helper.get_api_key.return_value = "aaa.bb.cccc\n"
 
-        output = self.harness.run_action(
-            "get-api-key", {"username": "my_user"}
-        )
+        output = self.harness.run_action("get-api-key", {"username": "my_user"})
 
         self.assertEqual(output.results["api-key"], "aaa.bb.cccc")
         mock_helper.get_api_key.assert_called_once_with("my_user")
@@ -473,15 +548,16 @@ class TestCharmActions(unittest.TestCase):
         self.harness.begin()
         mock_helper.get_api_key.side_effect = subprocess.CalledProcessError(1, "maas")
         with self.assertRaises(ops.testing.ActionFailed) as e:
-            self.harness.run_action(
-                "get-api-key", {"username": "my_user"}
-            )
+            self.harness.run_action("get-api-key", {"username": "my_user"})
         err = e.exception
         self.assertEqual(err.message, "Failed to get key for user my_user")
 
-    def test_get_api_endpoint_action(self):
+    @patch("charm.MaasHelper", autospec=True)
+    def test_get_api_endpoint_action(self, mock_helper):
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        self.harness.begin_with_initial_hooks()
         self.harness.set_leader(True)
-        self.harness.begin()
         output = self.harness.run_action("get-api-endpoint")
         self.assertEqual(output.results["api-url"], "http://10.0.0.10:5240/MAAS")
 

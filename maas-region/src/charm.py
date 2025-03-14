@@ -18,6 +18,7 @@ from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region.v0 import maas
 from charms.maas_site_manager_k8s.v0 import enrol
+from charms.rolling_ops.v0.rollingops import RollingOpsManager, RunWithLock
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
 from ops.model import SecretNotFoundError
@@ -27,6 +28,7 @@ from helper import MaasHelper
 logger = logging.getLogger(__name__)
 
 MAAS_PEER_NAME = "maas-cluster"
+MAAS_INIT_NAME = "init"
 MAAS_API_RELATION = "api"
 MAAS_DB_NAME = "maas-db"
 
@@ -90,7 +92,9 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.start, self._on_start)
+        self.framework.observe(self.on.collect_app_status, self._on_collect_app_status)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
+        self.framework.observe(self.on.leader_elected, self._on_leader_elected)
 
         # MAAS Region
         self.maas_region = maas.MaasRegionProvider(self)
@@ -107,7 +111,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(maas_peer_events.relation_broken, self._on_maas_peer_changed)
 
         # MAAS DB
-        self.maasdb_name = f'{self.app.name.replace("-", "_")}_db'
+        self.maasdb_name = f"{self.app.name.replace('-', '_')}_db"
         self.maasdb = db.DatabaseRequires(self, MAAS_DB_NAME, self.maasdb_name)
         self.framework.observe(self.maasdb.on.database_created, self._on_maasdb_created)
         self.framework.observe(self.maasdb.on.endpoints_changed, self._on_maasdb_endpoints_changed)
@@ -147,6 +151,11 @@ class MaasRegionCharm(ops.CharmBase):
         # Charm configuration
         self.framework.observe(self.on.config_changed, self._on_config_changed)
 
+        # RollingOps for handling maas init
+        self.restart_manager = RollingOpsManager(
+            charm=self, relation=MAAS_INIT_NAME, callback=self._initialize_maas
+        )
+
     @property
     def peers(self) -> Union[ops.Relation, None]:
         """Fetch the peer relation."""
@@ -183,7 +192,7 @@ class MaasRegionCharm(ops.CharmBase):
         """Reports the enrollment token.
 
         Returns:
-            str: the otken, or None if not available
+            str: the token, or None if not available
         """
         return MaasHelper.get_maas_secret()
 
@@ -199,13 +208,15 @@ class MaasRegionCharm(ops.CharmBase):
         else:
             raise ops.model.ModelError("Bind address not set in the model")
 
-    @property
-    def maas_api_url(self) -> str:
-        """Get MAAS API URL.
+    def calculate_maas_api_url(self) -> str:
+        """Calculate MAAS API URL.
 
         Returns:
             str: The API URL
         """
+        if maas_url := self.config["maas_url"]:
+            return str(maas_url)
+
         if relation := self.model.get_relation(MAAS_API_RELATION):
             unit = next(iter(relation.units), None)
             if unit and (addr := relation.data[unit].get("public-address")):
@@ -231,7 +242,10 @@ class MaasRegionCharm(ops.CharmBase):
         return "region+rack" if has_agent else "region"
 
     def set_peer_data(
-        self, app_or_unit: Union[ops.Application, ops.Unit], key: str, data: Any
+        self,
+        app_or_unit: Union[ops.Application, ops.Unit],
+        key: str,
+        data: Any = None,
     ) -> None:
         """Put information into the peer data bucket."""
         if not self.peers:
@@ -285,28 +299,60 @@ class MaasRegionCharm(ops.CharmBase):
             self.set_peer_data(self.app, MAAS_ADMIN_SECRET_KEY, secret.id)
             return content
 
-    def _initialize_maas(self) -> bool:
-        try:
-            MaasHelper.setup_region(
-                self.maas_api_url, self.connection_string, self.get_operational_mode()
+    def should_perform_maas_init(self) -> bool:
+        """Identify whether maas init can be performed.
+
+        Returns:
+            bool: True if successful
+        """
+        if not self.connection_string:
+            logger.info("skipping MAAS init since database is not available")
+            return False
+        maas_api_url = self.get_peer_data(self.app, "maas_url")
+        if (
+            maas_details := MaasHelper.get_maas_details()
+        ) and self.get_operational_mode() == MaasHelper.get_maas_mode():
+            u, p, h, d = (
+                maas_details["database_user"],
+                maas_details["database_pass"],
+                maas_details["database_host"],
+                maas_details["database_name"],
             )
-            # check maas_api_url existence in case MAAS isn't ready yet
-            if self.maas_api_url and self.unit.is_leader():
+            if (
+                maas_api_url == maas_details["maas_url"]
+                and f"postgres://{u}:{p}@{h}/{d}" == self.connection_string
+            ):
+                logger.info("skipping MAAS init since database and maas_url do not need an update")
+                return False
+        return True
+
+    def _initialize_maas(self, event: RunWithLock) -> None:
+        if not self.should_perform_maas_init():
+            return
+        try:
+            logger.info("running MAAS init")
+            MaasHelper.setup_region(
+                self.get_peer_data(self.app, "maas_url"),
+                self.connection_string,
+                self.get_operational_mode(),
+            )
+
+            if self.unit.is_leader():
                 self._update_tls_config()
+                self._publish_tokens()
                 credentials = self._create_or_get_internal_admin()
                 MaasHelper.set_prometheus_metrics(
                     credentials["username"],
                     self.bind_address,
                     self.config["enable_prometheus_metrics"],  # type: ignore
                 )
-            return True
         except subprocess.CalledProcessError:
-            return False
+            return
 
     def _publish_tokens(self) -> bool:
-        if self.maas_api_url and self.enrollment_token:
+        if self.enrollment_token:
             self.maas_region.publish_enroll_token(
-                self.maas_api_url,
+                self.get_peer_data(self.app, "maas_url"),
                 self._get_regions(),
                 self.enrollment_token,
             )
@@ -400,9 +446,8 @@ class MaasRegionCharm(ops.CharmBase):
             event (ops.InstallEvent): Event from ops framework
         """
         self.unit.status = ops.MaintenanceStatus("installing...")
-        channel = str(self.config.get("channel", MAAS_SNAP_CHANNEL))
         try:
-            MaasHelper.install(channel)
+            MaasHelper.install(MAAS_SNAP_CHANNEL)
         except Exception as ex:
             logger.error(str(ex))
 
@@ -418,6 +463,10 @@ class MaasRegionCharm(ops.CharmBase):
         except Exception as ex:
             logger.error(str(ex))
 
+    def _on_collect_app_status(self, e: ops.CollectStatusEvent) -> None:
+        if self.app.status.name == "active" and not MaasHelper.get_maas_details():
+            e.add_status(ops.WaitingStatus("Waiting for MAAS Initialization"))
+
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
         if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
             e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
@@ -425,10 +474,17 @@ class MaasRegionCharm(ops.CharmBase):
             e.add_status(ops.WaitingStatus("Waiting for service ports"))
         elif not self.connection_string:
             e.add_status(ops.WaitingStatus("Waiting for database DSN"))
-        elif not self.maas_api_url:
-            ops.WaitingStatus("Waiting for MAAS initialization")
+        elif not MaasHelper.get_maas_details():
+            e.add_status(ops.WaitingStatus("Waiting for MAAS Initialization"))
         else:
             self.unit.status = ops.ActiveStatus()
+
+    def _on_leader_elected(self, e: ops.LeaderElectedEvent) -> None:
+        maas_url = self.calculate_maas_api_url()
+        maas_api_url = self.get_peer_data(self.app, "maas_url")
+        if maas_api_url != maas_url:
+            self.set_peer_data(self.app, "maas_url", maas_url)
+            self.on[MAAS_INIT_NAME].acquire_lock.emit()
 
     def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
         """Database is ready.
@@ -436,10 +492,11 @@ class MaasRegionCharm(ops.CharmBase):
         Args:
             event (DatabaseCreatedEvent): event from DatabaseRequires
         """
-        logger.info(f"MAAS database credentials received for user '{event.username}'")
-        if self.connection_string:
-            self.unit.status = ops.MaintenanceStatus("Initialising the MAAS database")
-            self._initialize_maas()
+        logger.info(
+            f"MAAS database credentials received for user '{event.username}'. Initializing the MAAS database"
+        )
+        if self.unit.is_leader():
+            self.on[MAAS_INIT_NAME].acquire_lock.emit()
 
     def _on_maasdb_endpoints_changed(self, event: db.DatabaseEndpointsChangedEvent) -> None:
         """Update database DSN.
@@ -447,17 +504,21 @@ class MaasRegionCharm(ops.CharmBase):
         Args:
             event (DatabaseEndpointsChangedEvent): event from DatabaseRequires
         """
-        logger.info(f"MAAS database endpoints have been changed to: {event.endpoints}")
-        if self.connection_string:
-            self.unit.status = ops.MaintenanceStatus("Updating database connection")
-            self._initialize_maas()
+        logger.info(
+            f"MAAS database endpoints have been changed to: {event.endpoints}. Updating database connection"
+        )
+        if self.unit.is_leader():
+            self.on[MAAS_INIT_NAME].acquire_lock.emit()
 
     def _on_api_endpoint_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
         self._update_ha_proxy()
-        self._initialize_maas()
         if self.unit.is_leader():
-            self._publish_tokens()
+            maas_url = self.calculate_maas_api_url()
+            maas_api_url = self.get_peer_data(self.app, "maas_url")
+            if maas_api_url != maas_url:
+                self.set_peer_data(self.app, "maas_url", maas_url)
+            self.on[MAAS_INIT_NAME].acquire_lock.emit()
 
     def _on_maas_peer_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
@@ -481,9 +542,7 @@ class MaasRegionCharm(ops.CharmBase):
             # If above failed, it's likely because things aren't ready yet.
             # we will try again
             pass
-        if cur_mode := MaasHelper.get_maas_mode():
-            if self.get_operational_mode() != cur_mode:
-                self._initialize_maas()
+        self.on[MAAS_INIT_NAME].acquire_lock.emit()
 
     def _on_create_admin_action(self, event: ops.ActionEvent):
         """Handle the create-admin action.
@@ -526,7 +585,7 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_get_api_endpoint_action(self, event: ops.ActionEvent):
         """Handle the get-api-endpoint action."""
-        if url := self.maas_api_url:
+        if url := self.get_peer_data(self.app, "maas_url"):
             event.set_results({"api-url": url})
         else:
             event.fail("MAAS is not initialized yet")
@@ -546,10 +605,17 @@ class MaasRegionCharm(ops.CharmBase):
                 raise ValueError(
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
+
         self._update_ha_proxy()
         if self.unit.is_leader():
             self._update_tls_config()
             self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
+
+            maas_url = self.calculate_maas_api_url()
+            maas_api_url = self.get_peer_data(self.app, "maas_url")
+            if maas_api_url != maas_url:
+                self.set_peer_data(self.app, "maas_url", maas_url)
+                self.on[MAAS_INIT_NAME].acquire_lock.emit()
 
     def _on_msm_created(self, event: ops.RelationCreatedEvent) -> None:
         """MAAS Site Manager relation established.

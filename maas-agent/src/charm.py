@@ -106,6 +106,11 @@ class MaasRackCharm(ops.CharmBase):
 
     def _initialize_maas(self) -> None:
         if config := self.maas_region.get_enroll_data():
+            if maas_details := MaasHelper.get_maas_details():
+                if maas_details["maas_url"] == config.api_url:
+                    logger.info("skipping MAAS init since maas_url does not need an update")
+                    return
+
             MaasHelper.setup_rack(
                 config.api_url,
                 config.get_secret(self.model),
