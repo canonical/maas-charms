@@ -305,6 +305,7 @@ class MaasRegionCharm(ops.CharmBase):
             bool: True if successful
         """
         if not self.connection_string:
+            logger.info("skipping MAAS init since database is not available")
             return False
         maas_api_url = self.get_peer_data(self.app, "maas_url")
         if (
@@ -320,6 +321,7 @@ class MaasRegionCharm(ops.CharmBase):
                 maas_api_url == maas_details["maas_url"]
                 and f"postgres://{u}:{p}@{h}/{d}" == self.connection_string
             ):
+                logger.info("skipping MAAS init since database and maas_url do not need an update")
                 return False
         return True
 
@@ -327,6 +329,7 @@ class MaasRegionCharm(ops.CharmBase):
         if not self.should_perform_maas_init():
             return
         try:
+            logger.info("running MAAS init")
             MaasHelper.setup_region(
                 self.get_peer_data(self.app, "maas_url"),
                 self.connection_string,
@@ -335,6 +338,7 @@ class MaasRegionCharm(ops.CharmBase):
 
             if self.unit.is_leader():
                 self._update_tls_config()
+                self._publish_tokens()
                 credentials = self._create_or_get_internal_admin()
                 MaasHelper.set_prometheus_metrics(
                     credentials["username"],
@@ -465,8 +469,8 @@ class MaasRegionCharm(ops.CharmBase):
             e.add_status(ops.WaitingStatus("Waiting for service ports"))
         elif not self.connection_string:
             e.add_status(ops.WaitingStatus("Waiting for database DSN"))
-        elif self.model.app.status.message == f"Beginning rolling {MAAS_INIT_NAME}":
-            return
+        elif not MaasHelper.get_maas_details():
+            e.add_status(ops.WaitingStatus("Waiting for MAAS Initialization"))
         else:
             self.unit.status = ops.ActiveStatus()
 
@@ -483,9 +487,10 @@ class MaasRegionCharm(ops.CharmBase):
         Args:
             event (DatabaseCreatedEvent): event from DatabaseRequires
         """
-        logger.info(f"MAAS database credentials received for user '{event.username}'")
-        if self.connection_string:
-            self.unit.status = ops.MaintenanceStatus("Initialising the MAAS database")
+        logger.info(
+            f"MAAS database credentials received for user '{event.username}'. Initializing the MAAS database"
+        )
+        if self.unit.is_leader():
             self.on[MAAS_INIT_NAME].acquire_lock.emit()
 
     def _on_maasdb_endpoints_changed(self, event: db.DatabaseEndpointsChangedEvent) -> None:
@@ -494,29 +499,27 @@ class MaasRegionCharm(ops.CharmBase):
         Args:
             event (DatabaseEndpointsChangedEvent): event from DatabaseRequires
         """
-        logger.info(f"MAAS database endpoints have been changed to: {event.endpoints}")
-        if self.connection_string:
-            self.unit.status = ops.MaintenanceStatus("Updating database connection")
+        logger.info(
+            f"MAAS database endpoints have been changed to: {event.endpoints}. Updating database connection"
+        )
+        if self.unit.is_leader():
             self.on[MAAS_INIT_NAME].acquire_lock.emit()
 
     def _on_api_endpoint_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
+        self._update_ha_proxy()
         if self.unit.is_leader():
             maas_url = self.calculate_maas_api_url()
             maas_api_url = self.get_peer_data(self.app, "maas_url")
             if maas_api_url != maas_url:
                 self.set_peer_data(self.app, "maas_url", maas_url)
-        self._update_ha_proxy()
-        self.on[MAAS_INIT_NAME].acquire_lock.emit()
-        if self.unit.is_leader():
-            self._publish_tokens()
+            self.on[MAAS_INIT_NAME].acquire_lock.emit()
 
     def _on_maas_peer_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
         self.set_peer_data(self.unit, "system-name", socket.getfqdn())
         if self.unit.is_leader():
             self._publish_tokens()
-        self.on[MAAS_INIT_NAME].acquire_lock.emit()
 
     def _on_maas_cluster_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
@@ -534,9 +537,7 @@ class MaasRegionCharm(ops.CharmBase):
             # If above failed, it's likely because things aren't ready yet.
             # we will try again
             pass
-        if cur_mode := MaasHelper.get_maas_mode():
-            if self.get_operational_mode() != cur_mode:
-                self.on[MAAS_INIT_NAME].acquire_lock.emit()
+        self.on[MAAS_INIT_NAME].acquire_lock.emit()
 
     def _on_create_admin_action(self, event: ops.ActionEvent):
         """Handle the create-admin action.
@@ -605,7 +606,6 @@ class MaasRegionCharm(ops.CharmBase):
             self._update_tls_config()
             self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
 
-        if self.unit.is_leader():
             maas_url = self.calculate_maas_api_url()
             maas_api_url = self.get_peer_data(self.app, "maas_url")
             if maas_api_url != maas_url:

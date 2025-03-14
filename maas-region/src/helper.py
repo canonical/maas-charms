@@ -101,7 +101,7 @@ class MaasHelper:
         """Get MAAS operation mode.
 
         Returns:
-            Union[str, None]: mode, or None if not initialised
+            Union[str, None]: mode, or None if not initialized
         """
         try:
             with MAAS_MODE.open() as file:
@@ -111,7 +111,7 @@ class MaasHelper:
 
     @staticmethod
     def get_maas_details() -> Dict[str, str]:
-        """Get MAAS operation mode.
+        """Get MAAS details.
 
         Returns:
             Dict[str, str]: MAAS details
