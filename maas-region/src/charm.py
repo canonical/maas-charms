@@ -92,6 +92,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.start, self._on_start)
+        self.framework.observe(self.on.collect_app_status, self._on_collect_app_status)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
         self.framework.observe(self.on.leader_elected, self._on_leader_elected)
 
@@ -461,6 +462,10 @@ class MaasRegionCharm(ops.CharmBase):
             MaasHelper.uninstall()
         except Exception as ex:
             logger.error(str(ex))
+
+    def _on_collect_app_status(self, e: ops.CollectStatusEvent) -> None:
+        if self.app.status.name == "active" and not MaasHelper.get_maas_details():
+            e.add_status(ops.WaitingStatus("Waiting for MAAS Initialization"))
 
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
         if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
