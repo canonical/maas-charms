@@ -18,6 +18,7 @@ from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region.v0 import maas
 from charms.maas_site_manager_k8s.v0 import enrol
+from charms.operator_libs_linux.v2.snap import SnapError
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
 from ops.model import SecretNotFoundError
@@ -91,6 +92,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.start, self._on_start)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
+        self.framework.observe(self.on.upgrade_charm, self._on_upgrade_charm)
 
         # MAAS Region
         self.maas_region = maas.MaasRegionProvider(self)
@@ -230,20 +232,36 @@ class MaasRegionCharm(ops.CharmBase):
         has_agent = self.maas_region.gather_rack_units().get(socket.getfqdn())
         return "region+rack" if has_agent else "region"
 
+    def _set_peer_data_(
+        self,
+        peer: Union[ops.Relation, None],
+        app_or_unit: Union[ops.Application, ops.Unit, None],
+        key: str,
+        data: Any,
+    ) -> None:
+        if not peer:
+            return
+        peer.data[app_or_unit or peer.app][key] = json.dumps(data or {})
+
+    def _get_peer_data_(
+        self,
+        peer: Union[ops.Relation, None],
+        app_or_unit: Union[ops.Application, ops.Unit, None],
+        key: str,
+    ) -> Any:
+        if not peer:
+            return {}
+        return json.loads(data) if (data := peer.data[app_or_unit or peer.app].get(key)) else {}
+
     def set_peer_data(
         self, app_or_unit: Union[ops.Application, ops.Unit], key: str, data: Any
     ) -> None:
         """Put information into the peer data bucket."""
-        if not self.peers:
-            return
-        self.peers.data[app_or_unit][key] = json.dumps(data or {})
+        self._set_peer_data_(self.peers, app_or_unit, key, data)
 
     def get_peer_data(self, app_or_unit: Union[ops.Application, ops.Unit], key: str) -> Any:
         """Retrieve information from the peer data bucket."""
-        if not self.peers:
-            return {}
-        data = self.peers.data[app_or_unit].get(key, "")
-        return json.loads(data) if data else {}
+        return self._get_peer_data_(self.peers, app_or_unit, key)
 
     def _setup_network(self) -> bool:
         """Open the network ports.
@@ -400,9 +418,17 @@ class MaasRegionCharm(ops.CharmBase):
             event (ops.InstallEvent): Event from ops framework
         """
         self.unit.status = ops.MaintenanceStatus("installing...")
-        channel = str(self.config.get("channel", MAAS_SNAP_CHANNEL))
+
+        self._write_snap_version_()
+        self._write_app_type_(self.unit, "region")
+        _cohort = self._ensure_maas_cohort(_event)
+        if not _cohort:
+            logger.exception("Snap cohort not found")
+            _event.defer()
+            return
+
         try:
-            MaasHelper.install(channel)
+            MaasHelper.install(MAAS_SNAP_CHANNEL, cohort_key=_cohort)
         except Exception as ex:
             logger.error(str(ex))
 
@@ -418,15 +444,62 @@ class MaasRegionCharm(ops.CharmBase):
         except Exception as ex:
             logger.error(str(ex))
 
+    def _on_upgrade_charm(self, _event: ops.UpgradeCharmEvent) -> None:
+        """Upgrade MAAS installation on the machine.
+
+        Args:
+            event (ops.UpgradeCharmEvent): Event from ops framework
+        """
+        self.unit.status = ops.MaintenanceStatus(f"upgrading to {MAAS_SNAP_CHANNEL}...")
+
+        if self.unit.is_leader():
+            self._set_regions_updating_(True)
+
+        if (current := MaasHelper.get_installed_channel()) and current >= MAAS_SNAP_CHANNEL:
+            self.unit.status = ops.BlockedStatus(
+                "Cannot side- or down- grade with refresh command."
+            )
+            return
+
+        _cohort = self._ensure_maas_cohort(_event)
+        if not _cohort:
+            logger.exception("Snap cohort not found")
+            return
+
+        try:
+            MaasHelper.refresh(MAAS_SNAP_CHANNEL, cohort_key=_cohort)
+            # write this so the leader can coordinate
+            self._write_snap_version_()
+        except SnapError:
+            logger.exception(f"failed to upgrade MAAS snap to channel '{MAAS_SNAP_CHANNEL}'")
+        except Exception as ex:
+            logger.error(str(ex))
+
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
-        if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
-            e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
+        if (current := MaasHelper.get_installed_channel()) and (current != MAAS_SNAP_CHANNEL):
+            if self._agents_updating_:
+                e.add_status(ops.MaintenanceStatus("Awaiting unit refresh"))
+
+            elif current > MAAS_SNAP_CHANNEL:
+                e.add_status(
+                    ops.BlockedStatus(f"Cannot downgrade {current} to {MAAS_SNAP_CHANNEL}")
+                )
+
+            elif current == MAAS_SNAP_CHANNEL:
+                e.add_status(ops.BlockedStatus("Cannot upgrade across revisions"))
+
+            else:
+                e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
+
         elif not self.unit.opened_ports().issuperset(MAAS_REGION_PORTS):
             e.add_status(ops.WaitingStatus("Waiting for service ports"))
+
         elif not self.connection_string:
             e.add_status(ops.WaitingStatus("Waiting for database DSN"))
+
         elif not self.maas_api_url:
             ops.WaitingStatus("Waiting for MAAS initialization")
+
         else:
             self.unit.status = ops.ActiveStatus()
 
@@ -467,6 +540,10 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_maas_cluster_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
+
+        # ensure we handle the update case
+        self._on_maas_cluster_data_changed(event)
+
         if self.unit.is_leader() and not self._publish_tokens():
             event.defer()
             return
@@ -484,6 +561,139 @@ class MaasRegionCharm(ops.CharmBase):
         if cur_mode := MaasHelper.get_maas_mode():
             if self.get_operational_mode() != cur_mode:
                 self._initialize_maas()
+
+    @property
+    def maas_units(self) -> Union[ops.Relation, None]:
+        """Fetch the provides/requires relation between region/agent."""
+        return self.model.get_relation(maas.DEFAULT_ENDPOINT_NAME)
+
+    def get_cohort(self) -> Union[str, None]:
+        """Read the snap cohort from the region/agent relation."""
+        if cohort := self._get_peer_data_(self.maas_units, app_or_unit=None, key="cohort"):
+            return str(cohort).strip('"').strip("'")
+        return None
+
+    def set_cohort(self, cohort: str) -> None:
+        """Write the snap cohort to the region/agent relation."""
+        self._set_peer_data_(
+            self.maas_units, app_or_unit=self.app, key="cohort", data=cohort.strip('"').strip("'")
+        )
+
+    def _write_snap_version_(self) -> None:
+        # write the snap version to the relation databag
+        self._set_peer_data_(self.maas_units, self.unit, "snap-channel", MAAS_SNAP_CHANNEL)
+
+    def _get_snap_version(self, unit: Union[ops.Unit, None]) -> str:
+        # read the snap version from the relation databag
+        return self._get_peer_data_(self.maas_units, unit or self.unit, "snap-channel")
+
+    def _write_app_type_(self, unit: Union[ops.Unit, None], app: str) -> None:
+        # Write the app type (region/agent) to the relation databag
+        return self._set_peer_data_(self.maas_units, unit or self.unit, "app", app)
+
+    def _get_app_type_(self, unit: Union[ops.Unit, None]) -> str:
+        # read the app type (region/agent) from the relation databag
+        return self._get_peer_data_(self.maas_units, unit or self.unit, "app")
+
+    def _set_regions_updating_(self, updating: bool = False) -> None:
+        # set the updating flag to true for regions
+        self._set_peer_data_(
+            self.maas_units,
+            app_or_unit=self.app,
+            key="region-update",
+            data="true" if updating else "false",
+        )
+
+    def _set_agents_updating_(self, updating: bool = False) -> None:
+        # set the updating flag to true for agents
+        self._set_peer_data_(
+            self.maas_units,
+            app_or_unit=None,
+            key="agent-update",
+            data="true" if updating else "false",
+        )
+
+    @property
+    def _regions_updating_(self) -> bool:
+        # Check if the updating flag is true for regions
+        return (
+            self._get_peer_data_(self.maas_units, app_or_unit=None, key="region-update") == "true"
+        )
+
+    @property
+    def _agents_updating_(self) -> bool:
+        # Check if the updating flag is true for agents
+        return (
+            self._get_peer_data_(self.maas_units, app_or_unit=None, key="agent-update") == "true"
+        )
+
+    def _on_maas_cluster_data_changed(self, event: ops.RelationEvent) -> None:
+        logger.info(event)
+
+        if not self.unit.is_leader():
+            # regions should block until upgraded
+            if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
+                self.unit.status = ops.BlockedStatus("Awaiting unit refresh")
+                logger.exception("Awaiting unit refresh")
+            return
+
+        # The leader needs to handle information flow
+        if peers := self.maas_units:
+            # wait for regions
+            if any(
+                self._get_snap_version(unit) != MAAS_SNAP_CHANNEL
+                for unit in peers.units
+                if self._get_app_type_(unit) == "region"
+            ):
+                self.unit.status = ops.MaintenanceStatus("Waiting for regions to refresh")
+                event.defer()
+                return
+
+            # upgrade agents if the regions are done
+            if self._regions_updating_:
+                self._set_regions_updating_(False)
+                self._set_agents_updating_(True)
+
+            # wait for agents
+            if any(
+                self._get_snap_version(unit) != MAAS_SNAP_CHANNEL
+                for unit in peers.units
+                if self._get_app_type_(unit) == "agent"
+            ):
+                self.unit.status = ops.MaintenanceStatus("Waiting for agents to refresh")
+                event.defer()
+                return
+
+            if self._agents_updating_:
+                self._set_agents_updating_(False)
+
+    def _ensure_maas_cohort(
+        self, event: Union[ops.InstallEvent, ops.UpgradeCharmEvent]
+    ) -> Union[None, str]:
+        logger.info(event)
+        _cohort = self.get_cohort()
+
+        if self.unit.is_leader():
+            if not _cohort:
+                logger.debug("Cohort not found in databag")
+                _cohort = MaasHelper.get_or_create_snap_cohort()
+
+            if not _cohort:
+                msg = "Could not find or create MAAS snap cohort"
+                logger.debug(msg)
+                self.unit.status = ops.BlockedStatus(msg)
+                return
+
+            logger.debug(f"Cohort found: {_cohort}")
+
+            self.set_cohort(_cohort)
+            logger.debug(_cohort)
+            return _cohort.strip('"').strip("'")
+
+        if not _cohort:
+            event.defer()
+            return
+        return _cohort.strip('"').strip("'")
 
     def _on_create_admin_action(self, event: ops.ActionEvent):
         """Handle the create-admin action.

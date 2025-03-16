@@ -3,8 +3,10 @@
 
 """Helper functions for MAAS management."""
 
+import re
 import subprocess
 from pathlib import Path
+from time import sleep
 from typing import Union
 
 from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
@@ -20,16 +22,17 @@ class MaasHelper:
     """MAAS helper."""
 
     @staticmethod
-    def install(channel: str) -> None:
+    def install(channel: str, cohort_key: str) -> None:
         """Install snap.
 
         Args:
             channel (str): snapstore channel
+            cohort_key (str): cohort to join when installing snap
         """
         maas = SnapCache()[MAAS_SNAP_NAME]
         if not maas.present:
-            maas.ensure(SnapState.Latest, channel=channel)
-            maas.hold()
+            maas.ensure(SnapState.Latest, channel=channel, cohort=cohort_key)
+        maas.hold()
 
     @staticmethod
     def uninstall() -> None:
@@ -37,6 +40,20 @@ class MaasHelper:
         maas = SnapCache()[MAAS_SNAP_NAME]
         if maas.present:
             maas.ensure(SnapState.Absent)
+
+    @staticmethod
+    def refresh(channel: str, cohort_key: str) -> None:
+        """Refresh snap."""
+        maas = SnapCache()[MAAS_SNAP_NAME]
+        service = maas.services.get(MAAS_SERVICE, {})
+        maas.stop()
+        while service.get("activate", False):
+            sleep(1)
+        maas.ensure(SnapState.Present, channel=channel, cohort=cohort_key)
+        maas.start()
+        while not service.get("activate", True):
+            sleep(1)
+        maas.hold()
 
     @staticmethod
     def get_installed_version() -> Union[str, None]:
@@ -131,3 +148,20 @@ class MaasHelper:
             "--force",
         ]
         subprocess.check_call(cmd)
+
+    @staticmethod
+    def get_or_create_snap_cohort() -> Union[str, None]:
+        """Return the maas snap cohort, or create a new one."""
+        maas = SnapCache()[MAAS_SNAP_NAME]
+
+        verbose_info = maas._snap("info", ["--verbose"])
+        if _found_cohort := re.search(r"cohort:\s*([^\n]+)", verbose_info):
+            return str(_found_cohort.group(1)).strip('"').strip("'")
+
+        cohort_creation = subprocess.check_output(
+            ["sudo", "snap", "create-cohort", maas._name], universal_newlines=True
+        )
+        if _created_cohort := re.search(r"cohort-key:\s+([^\n]+)", cohort_creation):
+            return str(_created_cohort.group(1)).strip('"').strip("'")
+
+        return None
