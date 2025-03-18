@@ -107,7 +107,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(maas_peer_events.relation_broken, self._on_maas_peer_changed)
 
         # MAAS DB
-        self.maasdb_name = f'{self.app.name.replace("-", "_")}_db'
+        self.maasdb_name = f"{self.app.name.replace('-', '_')}_db"
         self.maasdb = db.DatabaseRequires(self, MAAS_DB_NAME, self.maasdb_name)
         self.framework.observe(self.maasdb.on.database_created, self._on_maasdb_created)
         self.framework.observe(self.maasdb.on.endpoints_changed, self._on_maasdb_endpoints_changed)
@@ -206,6 +206,8 @@ class MaasRegionCharm(ops.CharmBase):
         Returns:
             str: The API URL
         """
+        if maas_url := self.config["maas_url"]:
+            return str(maas_url)
         if relation := self.model.get_relation(MAAS_API_RELATION):
             unit = next(iter(relation.units), None)
             if unit and (addr := relation.data[unit].get("public-address")):
@@ -547,6 +549,11 @@ class MaasRegionCharm(ops.CharmBase):
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
         self._update_ha_proxy()
+        maas_details = MaasHelper.get_maas_details()
+        if self.connection_string and maas_details.get("maas_url") != self.maas_api_url:
+            self._initialize_maas()
+            if self.unit.is_leader():
+                self._publish_tokens()
         if self.unit.is_leader():
             self._update_tls_config()
             self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
