@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 0
       - name: Determine changed files in the commit
         id: changed-files
-        uses: tj-actions/changed-files@v44
+        uses: tj-actions/changed-files@2f7c5bfce28377bc069a65ba478de0a74aa0ca32 # Version 46.0.1
         with:
           files: |
             maas-region/**
@@ -34,7 +34,7 @@ jobs:
     name: Release MAAS Region charm to edge
     needs: detect-region-changes
     if: needs.detect-region-changes.outputs.any_changed == 'true'
-    uses: canonical/observability/.github/workflows/charm-release.yaml@main
+    uses: canonical/observability/.github/workflows/charm-release.yaml@v0
     secrets: inherit
     with:
       charm-path: maas-region
@@ -55,7 +55,7 @@ jobs:
           fetch-depth: 0
       - name: Determine changed files in the commit
         id: changed-files
-        uses: tj-actions/changed-files@v44
+        uses: tj-actions/changed-files@2f7c5bfce28377bc069a65ba478de0a74aa0ca32 # Version 46.0.1
         with:
           files: |
             maas-agent/**
@@ -70,7 +70,7 @@ jobs:
     name: Release MAAS Agent charm to edge
     needs: detect-agent-changes
     if: needs.detect-agent-changes.outputs.any_changed == 'true'
-    uses: canonical/observability/.github/workflows/charm-release.yaml@main
+    uses: canonical/observability/.github/workflows/charm-release.yaml@v0
     secrets: inherit
     with:
       charm-path: maas-agent

@@ -9,7 +9,7 @@ on:
 jobs:
   update-lib-region:
     name: Check libraries
-    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@main
+    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@v0
     secrets: inherit
     with:
       charm-path: maas-region
@@ -19,7 +19,7 @@ jobs:
   update-lib-agent:
     name: Check libraries
     needs: update-lib-region
-    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@main
+    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@v0
     secrets: inherit
     with:
       charm-path: maas-agent
