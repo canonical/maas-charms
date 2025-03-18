@@ -13,6 +13,7 @@ jobs:
     secrets: inherit
     with:
       charm-path: maas-region
+      juju-channel: 3.6/stable
       provider: lxd
 
   pull-request-agent:
@@ -21,4 +22,5 @@ jobs:
     secrets: inherit
     with:
       charm-path: maas-agent
+      juju-channel: 3.6/stable
       provider: lxd

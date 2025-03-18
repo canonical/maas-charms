@@ -7,8 +7,8 @@ Create some environment variables to facilitate this tutorial
 ```bash
 # LaunchPad ID
 export LP_ID="my-lp-id"
-export MAAS_REGION_CHARM=./maas-region/maas-region_ubuntu-22.04-amd64.charm
-export MAAS_AGENT_CHARM=./maas-agent/maas-agent_ubuntu-22.04-amd64.charm
+export MAAS_REGION_CHARM=./maas-region/maas-region_ubuntu-24.04-amd64.charm
+export MAAS_AGENT_CHARM=./maas-agent/maas-agent_ubuntu-24.04-amd64.charm
 ```
 
 ## Install required packages
@@ -162,7 +162,7 @@ EOF
 
 ```shell
 for h in $(seq 1 3); do \
-    lxc launch ubuntu:jammy "m$h" --vm -p juju-host;\
+    lxc launch ubuntu:noble "m$h" --vm -p juju-host;\
 done;\
 sleep 5;\
 for h in $(seq 1 3); do \
@@ -198,7 +198,7 @@ juju controllers --refresh
 Deploy DB using the charm
 
 ```shell
-juju deploy -m controller postgresql --channel 14/stable --series jammy --to 0
+juju deploy -m controller postgresql --channel 16/edge --series noble --to 0
 juju add-unit -m controller postgresql -n 2 --to 1,2
 ```
 
@@ -207,7 +207,7 @@ juju add-unit -m controller postgresql -n 2 --to 1,2
 Deploy HAProxy using the charm
 
 ```shell
-juju deploy -m controller haproxy --series jammy --to 0
+juju deploy -m controller haproxy --series noble --to 0
 juju add-unit -m controller haproxy -n 2 --to 1,2
 ```
 
