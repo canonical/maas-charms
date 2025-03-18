@@ -146,6 +146,13 @@ parts:
 
 config:
   options:
+    maas_url:
+      default: ""
+      description: |
+        The maas_url to set. If not provided, the maas_url is formulated by the IP of maas-region
+        leader and MAAS API port. If application is related to HAProxy, the proxy port is used
+        instead.
+      type: string
     tls_mode:
       default: "disabled"
       description: Whether to enable TLS termination at HA Proxy ('termination'), at MAAS ('passthrough'), or no TLS ('disabled')
