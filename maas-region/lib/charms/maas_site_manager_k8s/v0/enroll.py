@@ -1,6 +1,6 @@
 """MAAS Site Manager operator library.
 
-Allows MAAS clusters to enrol with Site Manager
+Allows MAAS clusters to enroll with Site Manager
 """
 
 import dataclasses
@@ -11,31 +11,31 @@ from typing import Any, Dict, List, MutableMapping, Union
 import ops
 
 # The unique Charmhub library identifier, never change it
-LIBID = "c232507f53c34b929e1e7c2bb030d2ce"
+LIBID = "f20c42b02ae6418bb92ce56f8159aea8"
 
 # Increment this major API version when introducing breaking changes
 LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 2
+LIBPATCH = 1
 
 DEFAULT_ENDPOINT_NAME = "maas-site-manager"
-TOKEN_SECRET_KEY = "enrol-token"
+TOKEN_SECRET_KEY = "enroll-token"
 
 log = logging.getLogger(__name__)
 
 
-class SiteManagerEnrolInterfaceError(Exception):
-    """Common ancestor for Enrol interface related exceptions."""
+class SiteManagerEnrollInterfaceError(Exception):
+    """Common ancestor for Enroll interface related exceptions."""
 
 
 @dataclasses.dataclass
-class EnrolDatabag:
-    """Base class from Enrol databags."""
+class EnrollDatabag:
+    """Base class from Enroll databags."""
 
     @classmethod
-    def load(cls, data: Dict[str, str]) -> "EnrolDatabag":
+    def load(cls, data: Dict[str, str]) -> "EnrollDatabag":
         """Load from dictionary."""
         init_vals = {}
         for f in dataclasses.fields(cls):
@@ -55,20 +55,20 @@ class EnrolDatabag:
 
 
 @dataclasses.dataclass
-class EnrolRequirerAppData(EnrolDatabag):
+class EnrollRequirerAppData(EnrollDatabag):
     """The schema for the Requirer side of this relation."""
 
     uuid: str
 
 
 @dataclasses.dataclass
-class EnrolProviderAppData(EnrolDatabag):
+class EnrollProviderAppData(EnrollDatabag):
     """The schema for the Provider side of this relation."""
 
     token_id: str
 
     def get_token(self, model: ops.Model) -> str:
-        """Retrieve enrolment token.
+        """Retrieve enrollment token.
 
         Returns:
             str: the token
@@ -108,7 +108,7 @@ class TokenWithdrawEvent(ops.EventBase):
     """
 
 
-class EnrolRequirerEvents(ops.CharmEvents):
+class EnrollRequirerEvents(ops.CharmEvents):
     """MAAS events."""
 
     token_issued = ops.EventSource(TokenIssuedEvent)
@@ -116,10 +116,10 @@ class EnrolRequirerEvents(ops.CharmEvents):
     removed = ops.EventSource(TokenWithdrawEvent)
 
 
-class EnrolRequirer(ops.Object):
-    """Requires-side of the Enrolment relation."""
+class EnrollRequirer(ops.Object):
+    """Requires-side of the Enrollment relation."""
 
-    on = EnrolRequirerEvents()  # type: ignore
+    on = EnrollRequirerEvents()  # type: ignore
 
     def __init__(
         self,
@@ -152,7 +152,7 @@ class EnrolRequirer(ops.Object):
 
     def _on_relation_changed(self, event: ops.RelationChangedEvent) -> None:
         if self._charm.unit.is_leader() and self._relation:
-            if data := self.get_enrol_data():
+            if data := self.get_enroll_data():
                 token = data.get_token(self.model)
                 self.on.token_issued.emit(token)
             elif self.is_published():
@@ -164,14 +164,14 @@ class EnrolRequirer(ops.Object):
     def _on_relation_broken(self, _event: ops.RelationBrokenEvent) -> None:
         self.on.removed.emit()
 
-    def get_enrol_data(self) -> Union[EnrolProviderAppData, None]:
-        """Get enrolment data from databag."""
+    def get_enroll_data(self) -> Union[EnrollProviderAppData, None]:
+        """Get enrollment data from databag."""
         relation = self._relation
         if relation:
             assert relation.app is not None
             try:
                 databag = relation.data[relation.app]
-                return EnrolProviderAppData.load(databag)  # type: ignore
+                return EnrollProviderAppData.load(databag)  # type: ignore
             except TypeError:
                 log.debug(f"invalid databag contents: {databag}")  # type: ignore
         return None
@@ -183,16 +183,16 @@ class EnrolRequirer(ops.Object):
             return False
         app_data = relation.data[self._charm.app]
         try:
-            EnrolRequirerAppData.load(app_data)  # type: ignore
+            EnrollRequirerAppData.load(app_data)  # type: ignore
             return True
         except TypeError:
             return False
 
-    def request_enrol(self, cluster_uuid: str) -> None:
-        """Request enrolment."""
+    def request_enroll(self, cluster_uuid: str) -> None:
+        """Request enrollment."""
         if not self._charm.unit.is_leader():
             return
-        databag_model = EnrolRequirerAppData(
+        databag_model = EnrollRequirerAppData(
             uuid=cluster_uuid,
         )
         if relation := self._relation:
@@ -200,8 +200,8 @@ class EnrolRequirer(ops.Object):
             databag_model.dump(app_databag)
 
 
-class EnrolProvider(ops.Object):
-    """Provides-side of the Enrol relation."""
+class EnrollProvider(ops.Object):
+    """Provides-side of the Enroll relation."""
 
     def __init__(
         self,
@@ -218,7 +218,7 @@ class EnrolProvider(ops.Object):
         return self.model.relations[self._endpoint]
 
     def _update_secret(self, relation: ops.Relation, content: Dict[str, str]) -> str:
-        label = f"enrol-{relation.name}-{relation.id}.secret"
+        label = f"enroll-{relation.name}-{relation.id}.secret"
         try:
             secret = self.model.get_secret(label=label)
             secret.set_content(content)
@@ -230,13 +230,13 @@ class EnrolProvider(ops.Object):
             secret.grant(relation)
         return secret.get_info().id
 
-    def publish_enrol_token(self, relation: ops.Relation, token: str) -> None:
-        """Publish enrolment data.
+    def publish_enroll_token(self, relation: ops.Relation, token: str) -> None:
+        """Publish enrollment data.
 
         Args:
             relation (Relation): the Relation
-            token (str): Enrolment token
+            token (str): Enrollment token
         """
         secret_id = self._update_secret(relation, {TOKEN_SECRET_KEY: token})
-        local_app_databag = EnrolProviderAppData(token_id=secret_id)
+        local_app_databag = EnrollProviderAppData(token_id=secret_id)
         local_app_databag.dump(relation.data[self.model.app])

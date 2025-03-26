@@ -13,7 +13,7 @@ import ops
 import ops.testing
 import yaml
 from charms.maas_region.v0 import maas
-from charms.maas_site_manager_k8s.v0 import enrol
+from charms.maas_site_manager_k8s.v0 import enroll
 
 from charm import (
     MAAS_API_RELATION,
@@ -111,10 +111,10 @@ class TestMsmEnroll(unittest.TestCase):
         self.addCleanup(self.harness.cleanup)
 
     def _enroll(self, rel_id: int, jwt: str):
-        secret_id = self.harness.add_model_secret(self.REMOTE_APP, {enrol.TOKEN_SECRET_KEY: jwt})
+        secret_id = self.harness.add_model_secret(self.REMOTE_APP, {enroll.TOKEN_SECRET_KEY: jwt})
         self.harness.grant_secret(secret_id, self.harness.model.app)
         databag = {}
-        app_data = enrol.EnrolProviderAppData(secret_id)
+        app_data = enroll.EnrollProviderAppData(secret_id)
         app_data.dump(databag)
         self.harness.update_relation_data(rel_id, self.REMOTE_APP, databag)
 
@@ -125,7 +125,7 @@ class TestMsmEnroll(unittest.TestCase):
         self.harness.begin()
 
         # send enrollment request
-        rel_id = self.harness.add_relation(enrol.DEFAULT_ENDPOINT_NAME, self.REMOTE_APP)
+        rel_id = self.harness.add_relation(enroll.DEFAULT_ENDPOINT_NAME, self.REMOTE_APP)
 
         self.assertEqual(
             self.harness.get_relation_data(rel_id, self.harness.model.app),
@@ -137,8 +137,8 @@ class TestMsmEnroll(unittest.TestCase):
         data = self.harness.get_relation_data(rel_id, self.REMOTE_APP)
         self.assertIn("token_id", data)  # codespell:ignore
         token = self.harness.model.get_secret(id=data["token_id"]).get_content()
-        self.assertEqual(token["enrol-token"], "TOKEN")
-        mock_helper.msm_enroll.assert_called_once_with(token["enrol-token"])
+        self.assertEqual(token["enroll-token"], "TOKEN")
+        mock_helper.msm_enroll.assert_called_once_with(token["enroll-token"])
 
     @patch("charm.MaasHelper", autospec=True)
     def test_enroll_only_leader(self, mock_helper):
@@ -146,7 +146,7 @@ class TestMsmEnroll(unittest.TestCase):
         self.harness.begin()
 
         # other unit send enrollment request
-        rel_id = self.harness.add_relation(enrol.DEFAULT_ENDPOINT_NAME, self.REMOTE_APP)
+        rel_id = self.harness.add_relation(enroll.DEFAULT_ENDPOINT_NAME, self.REMOTE_APP)
 
         self.assertEqual(
             self.harness.get_relation_data(rel_id, self.harness.model.app),
@@ -453,16 +453,13 @@ class TestCharmActions(unittest.TestCase):
         err = e.exception
         self.assertEqual(err.message, "Failed to create user my_user")
 
-
     @patch("charm.MaasHelper", autospec=True)
     def test_get_api_key_action(self, mock_helper):
         self.harness.set_leader(True)
         self.harness.begin()
         mock_helper.get_api_key.return_value = "aaa.bb.cccc\n"
 
-        output = self.harness.run_action(
-            "get-api-key", {"username": "my_user"}
-        )
+        output = self.harness.run_action("get-api-key", {"username": "my_user"})
 
         self.assertEqual(output.results["api-key"], "aaa.bb.cccc")
         mock_helper.get_api_key.assert_called_once_with("my_user")
@@ -473,9 +470,7 @@ class TestCharmActions(unittest.TestCase):
         self.harness.begin()
         mock_helper.get_api_key.side_effect = subprocess.CalledProcessError(1, "maas")
         with self.assertRaises(ops.testing.ActionFailed) as e:
-            self.harness.run_action(
-                "get-api-key", {"username": "my_user"}
-            )
+            self.harness.run_action("get-api-key", {"username": "my_user"})
         err = e.exception
         self.assertEqual(err.message, "Failed to get key for user my_user")
 
