@@ -51,7 +51,7 @@ requires:
     interface: tracing
     limit: 1
   maas-site-manager:
-    interface: site_manager_enrol
+    interface: site_manager_enroll
     limit: 1
 
 peers:
