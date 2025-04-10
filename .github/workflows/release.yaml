@@ -38,6 +38,7 @@ jobs:
     secrets: inherit
     with:
       charm-path: maas-region
+      juju-channel: 3.6/stable
       release-tag-prefix: maas-region
       provider: lxd
 
@@ -74,5 +75,6 @@ jobs:
     secrets: inherit
     with:
       charm-path: maas-agent
+      juju-channel: 3.6/stable
       release-tag-prefix: maas-agent
       provider: lxd
