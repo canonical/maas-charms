@@ -31,14 +31,8 @@ links:
   issues:
     - https://github.com/canonical/maas-charms/issues
 
-# (Required for 'charm' type)
-bases:
-  - build-on:
-      - name: ubuntu
-        channel: "22.04"
-    run-on:
-      - name: ubuntu
-        channel: "22.04"
+platforms:
+  ubuntu@24.04:amd64:
 
 requires:
   maas-region:
@@ -51,3 +45,8 @@ requires:
 provides:
   cos-agent:
     interface: cos_agent
+
+parts:
+  charm:
+    plugin: charm
+    source: .
