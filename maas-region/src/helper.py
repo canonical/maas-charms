@@ -105,7 +105,7 @@ class MaasHelper:
         """
         try:
             with MAAS_CONF.open() as file:
-                return yaml.safe_load(file)
+                return yaml.safe_load(file) or {}
         except (OSError, yaml.YAMLError):
             return {}
 
