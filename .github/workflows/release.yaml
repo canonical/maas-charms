@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 0
       - name: Determine changed files in the commit
         id: changed-files
-        uses: tj-actions/changed-files@2f7c5bfce28377bc069a65ba478de0a74aa0ca32 # Version 46.0.1
+        uses: tj-actions/changed-files@9934ab3fdf63239da75d9e0fbd339c48620c72c4 # Version 46.0.1
         with:
           files: |
             maas-region/**
@@ -56,7 +56,7 @@ jobs:
           fetch-depth: 0
       - name: Determine changed files in the commit
         id: changed-files
-        uses: tj-actions/changed-files@2f7c5bfce28377bc069a65ba478de0a74aa0ca32 # Version 46.0.1
+        uses: tj-actions/changed-files@9934ab3fdf63239da75d9e0fbd339c48620c72c4 # Version 46.0.1
         with:
           files: |
             maas-agent/**
