@@ -41,6 +41,7 @@ jobs:
       juju-channel: 3.6/stable
       release-tag-prefix: maas-region
       provider: lxd
+      build-for-arm: true
 
   detect-agent-changes:
     name: Detect changes to maas-agent charm
@@ -78,3 +79,4 @@ jobs:
       juju-channel: 3.6/stable
       release-tag-prefix: maas-agent
       provider: lxd
+      build-for-arm: true
