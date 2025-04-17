@@ -1,9 +1,6 @@
 name: maas-agent
-
 type: charm
-
 title: MAAS Agent
-
 summary: Charmed MAAS Agent
 
 description: |

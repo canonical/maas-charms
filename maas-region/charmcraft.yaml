@@ -1,9 +1,6 @@
 name: maas-region
-
 type: charm
-
 title: MAAS Region Controller
-
 summary: Charmed MAAS region controller
 
 description: |
