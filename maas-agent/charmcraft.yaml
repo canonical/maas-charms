@@ -1,19 +1,14 @@
 # This file configures Charmcraft.
 # See https://juju.is/docs/sdk/charmcraft-config for guidance.
 
-# (Required)
 name: maas-agent
 
-# (Required)
 type: charm
 
-# (Recommended)
 title: MAAS Agent
 
-# (Required)
 summary: Charmed MAAS Agent
 
-# (Required)
 description: |
   The MAAS agent (previously maas-rackd) provides highly available, fast
   and local broadcast services to the machines provisioned by MAAS. You
