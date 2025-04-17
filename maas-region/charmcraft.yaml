@@ -1,19 +1,14 @@
 # This file configures Charmcraft.
 # See https://juju.is/docs/sdk/charmcraft-config for guidance.
 
-# (Required)
 name: maas-region
 
-# (Required)
 type: charm
 
-# (Recommended)
 title: MAAS Region Controller
 
-# (Required)
 summary: Charmed MAAS region controller
 
-# (Required)
 description: |
   MAAS runs a software-defined data centre - it turns a collection of physical
   servers and switches into a bare metal cloud with full open source IP address
