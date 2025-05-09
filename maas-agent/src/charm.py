@@ -35,7 +35,7 @@ MAAS_RACK_PORTS = [
     ops.Port("tcp", 5248),
     ops.Port("tcp", MAAS_RACK_METRICS_PORT),
 ]
-MAAS_SNAP_CHANNEL = "3.6/candidate"
+MAAS_SNAP_CHANNEL = "3.6/stable"
 
 
 @trace_charm(
