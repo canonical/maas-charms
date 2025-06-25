@@ -53,6 +53,8 @@ async def test_database_integration(ops_test: OpsTest):
             trust=True,
             # workaround for https://bugs.launchpad.net/maas/+bug/2097079
             config={"plugin_audit_enable": False},
+            # workaround for https://bugs.launchpad.net/maas/+bug/2097079, https://github.com/canonical/postgresql-operator/issues/1001
+            revision=758,
         ),
         ops_test.model.wait_for_idle(
             apps=["postgresql"], status="active", raise_on_blocked=True, timeout=1000
