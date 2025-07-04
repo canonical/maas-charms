@@ -603,14 +603,15 @@ class MaasRegionCharm(ops.CharmBase):
         endpoint = data.get("endpoint")
         access_key = data.get("access-key")
         secret_key = data.get("secret-key")
-        ca_chain = data.get("tls-ca-chain")
+
+        _ = data.get("tls-ca-chain")
 
         required = [bucket, access_key, secret_key, region, endpoint]
         if not all(required):
             event.defer()
             return
 
-        self.unit.status("S3 configuration set")
+        self.unit.status = ops.ActiveStatus("S3 configuration set")
 
         # And then something MAASey happens
         pass
