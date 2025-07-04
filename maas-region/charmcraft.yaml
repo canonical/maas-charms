@@ -37,6 +37,10 @@ requires:
   maas-site-manager:
     interface: site_manager_enroll
     limit: 1
+  s3-parameters:
+    interface: s3
+    limit: 1
+    optional: true
 
 peers:
   maas-cluster:

@@ -138,6 +138,10 @@ class MaasRegionCharm(ops.CharmBase):
         self.tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
         self.charm_tracing_endpoint, _ = charm_tracing_config(self.tracing, None)
 
+        # S3
+        s3 = self.on["s3-parameters"]
+        self.framework.observe(s3.relation_changed, self._on_s3_parameters_changed)
+
         # Charm actions
         self.framework.observe(self.on.create_admin_action, self._on_create_admin_action)
         self.framework.observe(self.on.get_api_key_action, self._on_get_api_key_action)
@@ -589,6 +593,28 @@ class MaasRegionCharm(ops.CharmBase):
             logger.info("enrolled to MAAS Site Manager")
         except subprocess.CalledProcessError as e:
             logger.error(f"failed to enroll: {e}")
+
+    def _on_s3_parameters_changed(self, event: ops.RelationEvent):
+        relation = event.relation
+
+        data = relation.data[relation.app]
+        bucket = data.get("bucket")
+        region = data.get("region")
+        endpoint = data.get("endpoint")
+        access_key = data.get("access-key")
+        secret_key = data.get("secret-key")
+
+        _ = data.get("tls-ca-chain")
+
+        required = [bucket, access_key, secret_key, region, endpoint]
+        if not all(required):
+            event.defer()
+            return
+
+        self.unit.status = ops.ActiveStatus("S3 configuration set")
+
+        # And then something MAASey happens
+        pass
 
 
 if __name__ == "__main__":  # pragma: nocover
