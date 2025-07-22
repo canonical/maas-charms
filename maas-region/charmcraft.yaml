@@ -84,6 +84,12 @@ actions:
     description: List charmed MAAS controllers
   get-api-endpoint:
     description: Get MAAS API URL
+  create-backup-action:
+    description: Create a MAAS backup
+  restore_from_backup_action:
+    description: Restore from a MAAS backup
+  list_backups_action:
+    description: List available MAAS backups
 
 parts:
   charm:

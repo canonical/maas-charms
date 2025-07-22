@@ -148,6 +148,12 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.list_controllers_action, self._on_list_controllers_action)
         self.framework.observe(self.on.get_api_endpoint_action, self._on_get_api_endpoint_action)
 
+        self.framework.observe(self.on.create_backup_action, self._on_create_backup_action)
+        self.framework.observe(
+            self.on.restore_from_backup_action, self._on_restore_from_backup_action
+        )
+        self.framework.observe(self.on.list_backups_action, self._on_list_backups_action)
+
         # Charm configuration
         self.framework.observe(self.on.config_changed, self._on_config_changed)
 
@@ -614,6 +620,15 @@ class MaasRegionCharm(ops.CharmBase):
         self.unit.status = ops.ActiveStatus("S3 configuration set")
 
         # And then something MAASey happens
+        pass
+
+    def _on_create_backup_action(self, event: ops.ActionEvent) -> None:
+        pass
+
+    def _on_restore_from_backup_action(self, event: ops.ActionEvent) -> None:
+        pass
+
+    def _on_list_backups_action(self, event: ops.ActionEvent) -> None:
         pass
 
 
