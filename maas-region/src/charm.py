@@ -623,13 +623,53 @@ class MaasRegionCharm(ops.CharmBase):
         pass
 
     def _on_create_backup_action(self, event: ops.ActionEvent) -> None:
-        pass
+        """Create a MAAS backup, returning the backup-id."""
+        backup_type = event.params["type"]
+
+        logger.info(event)
+        logger.info(f"A backup with type {backup_type} has been requested")
+
+        try:
+            self.unit.status = ops.MaintenanceStatus("Creating backup...")
+
+            # TODO: Create a backup here
+            # And generate the new backup id
+            backup_id = "backup-id"
+            event.set_results({"backup-id": backup_id})
+
+            self.unit.status = ops.ActiveStatus()
+
+        except subprocess.CalledProcessError:
+            event.fail(f"Failed to generate {backup_type} backup")
 
     def _on_restore_from_backup_action(self, event: ops.ActionEvent) -> None:
-        pass
+        """Restore MAAS from a backup."""
+        backup_id = event.params["backup-id"]
+
+        logger.info(event)
+        logger.info(f"A restore with backup-id {backup_id} has been requested")
+
+        try:
+            self.unit.status = ops.MaintenanceStatus("Restoring from backup...")
+            # TODO: Restore from backup here
+
+            self.unit.status = ops.ActiveStatus()
+
+        except subprocess.CalledProcessError:
+            event.fail(f"Failed to restore from {backup_id}")
 
     def _on_list_backups_action(self, event: ops.ActionEvent) -> None:
-        pass
+        """List all backups MAAS knows about."""
+        logger.info(event)
+
+        # TODO: Generate the list of backups
+        backups = {"backup-id": {"timestamp": "backup-time", "type": "backup-type"}}
+
+        event.set_results(
+            {
+                "backups": backups,
+            }
+        )
 
 
 if __name__ == "__main__":  # pragma: nocover

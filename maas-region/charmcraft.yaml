@@ -84,11 +84,23 @@ actions:
     description: List charmed MAAS controllers
   get-api-endpoint:
     description: Get MAAS API URL
-  create-backup-action:
+  create-backup:
     description: Create a MAAS backup
-  restore_from_backup_action:
+    params:
+      type:
+        type: string
+        description: Backup type, default is full.
+          Full backup takes a copy of all data,
+          differential takes a copy of only changed data since the last full backup,
+          and increemental is a copy of data changed since the last backup.
+          possible values - full, differential, incremental.
+  restore-from-backup:
     description: Restore from a MAAS backup
-  list_backups_action:
+    params:
+      backup-id:
+        type: string
+        description: The id of the backup to restore from. See `list-backup` for a list of backup ids
+  list-backups:
     description: List available MAAS backups
 
 parts:
