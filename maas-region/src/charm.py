@@ -61,6 +61,8 @@ MAAS_REGION_PORTS = [
 MAAS_ADMIN_SECRET_LABEL = "maas-admin"
 MAAS_ADMIN_SECRET_KEY = "maas-admin-secret-uri"
 
+MAAS_BACKUP_TYPES = ["full", "differential", "incremental"]
+
 
 @trace_charm(
     tracing_endpoint="charm_tracing_endpoint",
@@ -147,6 +149,12 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.get_api_key_action, self._on_get_api_key_action)
         self.framework.observe(self.on.list_controllers_action, self._on_list_controllers_action)
         self.framework.observe(self.on.get_api_endpoint_action, self._on_get_api_endpoint_action)
+
+        self.framework.observe(self.on.create_backup_action, self._on_create_backup_action)
+        self.framework.observe(
+            self.on.restore_from_backup_action, self._on_restore_from_backup_action
+        )
+        self.framework.observe(self.on.list_backups_action, self._on_list_backups_action)
 
         # Charm configuration
         self.framework.observe(self.on.config_changed, self._on_config_changed)
@@ -615,6 +623,57 @@ class MaasRegionCharm(ops.CharmBase):
 
         # And then something MAASey happens
         pass
+
+    def _on_create_backup_action(self, event: ops.ActionEvent) -> None:
+        """Create a MAAS backup, returning the backup-id."""
+        backup_type = event.params["type"]
+        if backup_type not in MAAS_BACKUP_TYPES:
+            event.fail(f"Unknown backup type: '{backup_type}'")
+
+        logger.info(event)
+        logger.info(f"A backup with type {backup_type} has been requested")
+
+        try:
+            self.unit.status = ops.MaintenanceStatus("Creating backup...")
+
+            # TODO: Create a backup here
+            # And generate the new backup id
+            backup_id = "backup-id"
+            event.set_results({"backup-id": backup_id})
+
+            self.unit.status = ops.ActiveStatus()
+
+        except subprocess.CalledProcessError:
+            event.fail(f"Failed to generate {backup_type} backup")
+
+    def _on_restore_from_backup_action(self, event: ops.ActionEvent) -> None:
+        """Restore MAAS from a backup."""
+        backup_id = event.params["backup-id"]
+
+        logger.info(event)
+        logger.info(f"A restore with backup-id {backup_id} has been requested")
+
+        try:
+            self.unit.status = ops.MaintenanceStatus("Restoring from backup...")
+            # TODO: Restore from backup here
+
+            self.unit.status = ops.ActiveStatus()
+
+        except subprocess.CalledProcessError:
+            event.fail(f"Failed to restore from {backup_id}")
+
+    def _on_list_backups_action(self, event: ops.ActionEvent) -> None:
+        """List all backups MAAS knows about."""
+        logger.info(event)
+
+        # TODO: Generate the list of backups
+        backups = {"backup-id": {"timestamp": "backup-time", "type": "backup-type"}}
+
+        event.set_results(
+            {
+                "backups": backups,
+            }
+        )
 
 
 if __name__ == "__main__":  # pragma: nocover
