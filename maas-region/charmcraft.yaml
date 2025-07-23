@@ -86,6 +86,7 @@ actions:
     description: Get MAAS API URL
   create-backup:
     description: Create a MAAS backup
+      NOTE - This is a noop action, and serves only as a placeholder
     params:
       type:
         type: string
@@ -94,7 +95,6 @@ actions:
           differential takes a copy of only changed data since the last full backup,
           and incremental is a copy of data changed since the last backup.
           possible values - full, differential, incremental.
-          NOTE - This is a noop action, and serves only as a placeholder
   restore-from-backup:
     description: Restore from a MAAS backup
       NOTE - This is a noop action, and serves only as a placeholder
