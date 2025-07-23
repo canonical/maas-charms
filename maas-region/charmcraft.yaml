@@ -92,16 +92,19 @@ actions:
         description: Backup type, default is full.
           Full backup takes a copy of all data,
           differential takes a copy of only changed data since the last full backup,
-          and increemental is a copy of data changed since the last backup.
+          and incremental is a copy of data changed since the last backup.
           possible values - full, differential, incremental.
+          NOTE - This is a noop action, and serves only as a placeholder
   restore-from-backup:
     description: Restore from a MAAS backup
+      NOTE - This is a noop action, and serves only as a placeholder
     params:
       backup-id:
         type: string
         description: The id of the backup to restore from. See `list-backup` for a list of backup ids
   list-backups:
     description: List available MAAS backups
+      NOTE - This is a noop action, and serves only as a placeholder
 
 parts:
   charm:
