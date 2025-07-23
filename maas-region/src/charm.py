@@ -61,6 +61,8 @@ MAAS_REGION_PORTS = [
 MAAS_ADMIN_SECRET_LABEL = "maas-admin"
 MAAS_ADMIN_SECRET_KEY = "maas-admin-secret-uri"
 
+MAAS_BACKUP_TYPES = ["full", "differential", "incremental"]
+
 
 @trace_charm(
     tracing_endpoint="charm_tracing_endpoint",
@@ -625,6 +627,8 @@ class MaasRegionCharm(ops.CharmBase):
     def _on_create_backup_action(self, event: ops.ActionEvent) -> None:
         """Create a MAAS backup, returning the backup-id."""
         backup_type = event.params["type"]
+        if backup_type not in MAAS_BACKUP_TYPES:
+            event.fail(f"Unknown backup type: '{backup_type}'")
 
         logger.info(event)
         logger.info(f"A backup with type {backup_type} has been requested")
