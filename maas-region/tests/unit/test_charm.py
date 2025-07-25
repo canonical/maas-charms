@@ -14,6 +14,7 @@ import ops.testing
 import yaml
 from charms.maas_region.v0 import maas
 from charms.maas_site_manager_k8s.v0 import enroll
+from charms.operator_libs_linux.v2.snap import SnapError
 
 from charm import (
     MAAS_API_RELATION,
@@ -100,6 +101,20 @@ class TestDBRelation(unittest.TestCase):
         )
         credentials = self.harness.model.get_secret(label="maas-admin").get_content()
         self.assertEqual(credentials["username"], "maas-admin-internal")
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_database_removed(self, mock_helper):
+        self.harness.begin()
+        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
+        self.harness.remove_relation(db_rel)
+        mock_helper.stop.assert_called_once()
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_database_removed_error(self, mock_helper):
+        mock_helper.stop.side_effect = SnapError()
+        self.harness.begin()
+        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
+        self.harness.remove_relation(db_rel)
 
 
 class TestMsmEnroll(unittest.TestCase):
