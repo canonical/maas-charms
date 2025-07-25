@@ -51,6 +51,13 @@ class MaasHelper:
             maas.ensure(SnapState.Absent)
 
     @staticmethod
+    def stop() -> None:
+        """Stop snap."""
+        maas = SnapCache()[MAAS_SNAP_NAME]
+        if maas.present:
+            maas.stop()
+
+    @staticmethod
     def get_installed_version() -> Union[str, None]:
         """Get installed version.
 

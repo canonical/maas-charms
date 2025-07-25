@@ -18,6 +18,7 @@ from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region.v0 import maas
 from charms.maas_site_manager_k8s.v0 import enroll
+from charms.operator_libs_linux.v2.snap import SnapError
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
 from ops.model import SecretNotFoundError
@@ -113,6 +114,9 @@ class MaasRegionCharm(ops.CharmBase):
         self.maasdb = db.DatabaseRequires(self, MAAS_DB_NAME, self.maasdb_name)
         self.framework.observe(self.maasdb.on.database_created, self._on_maasdb_created)
         self.framework.observe(self.maasdb.on.endpoints_changed, self._on_maasdb_endpoints_changed)
+        self.framework.observe(
+            self.on[MAAS_DB_NAME].relation_broken, self._on_maasdb_relation_broken
+        )
 
         # MAAS Site Manager relation
         self.msm = enroll.EnrollRequirer(self)
@@ -452,7 +456,7 @@ class MaasRegionCharm(ops.CharmBase):
         """
         logger.info(f"MAAS database credentials received for user '{event.username}'")
         if self.connection_string:
-            self.unit.status = ops.MaintenanceStatus("Initialising the MAAS database")
+            self.unit.status = ops.MaintenanceStatus("Initializing the MAAS database")
             self._initialize_maas()
 
     def _on_maasdb_endpoints_changed(self, event: db.DatabaseEndpointsChangedEvent) -> None:
@@ -465,6 +469,18 @@ class MaasRegionCharm(ops.CharmBase):
         if self.connection_string:
             self.unit.status = ops.MaintenanceStatus("Updating database connection")
             self._initialize_maas()
+
+    def _on_maasdb_relation_broken(self, event: ops.RelationBrokenEvent):
+        """Stop MAAS snap when database is no longer available.
+
+        Args:
+            event (ops.RelationBrokenEvent): Event from ops framework
+        """
+        logger.info("Stopping MAAS because database is no longer available")
+        try:
+            MaasHelper.stop()
+        except SnapError as e:
+            logger.exception("An exception occurred when stopping maas. Reason: %s", e.message)
 
     def _on_api_endpoint_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
