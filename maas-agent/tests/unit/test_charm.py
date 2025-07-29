@@ -47,7 +47,7 @@ class TestCharm(unittest.TestCase):
 class TestEnrollment(unittest.TestCase):
     def setUp(self):
         self.remote_app = "maas-region"
-        self.agent_name = socket.getfqdn()
+        self.agent_name = socket.gethostname()
         self.maas_secret = "my_secret"
         self.api_url = "http://region:5240/MAAS"
         self.harness = ops.testing.Harness(MaasRackCharm)

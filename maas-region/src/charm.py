@@ -245,7 +245,7 @@ class MaasRegionCharm(ops.CharmBase):
         Returns:
             str: either `region` of `region+rack`
         """
-        has_agent = self.maas_region.gather_rack_units().get(socket.getfqdn())
+        has_agent = self.maas_region.gather_rack_units().get(socket.gethostname())
         return "region+rack" if has_agent else "region"
 
     def set_peer_data(
@@ -491,7 +491,7 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_maas_peer_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
-        self.set_peer_data(self.unit, "system-name", socket.getfqdn())
+        self.set_peer_data(self.unit, "system-name", socket.gethostname())
         if self.unit.is_leader():
             self._publish_tokens()
 
