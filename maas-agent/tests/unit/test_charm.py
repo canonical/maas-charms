@@ -80,7 +80,7 @@ class TestEnrollment(unittest.TestCase):
         )
         mock_helper.setup_rack.assert_not_called()
         # mock enrollment data from region
-        self._enroll(rel_id, ["region.local"])
+        self._enroll(rel_id, ["region-0"])
         mock_helper.setup_rack.assert_called_once_with(self.api_url, self.maas_secret)
         self.assertCountEqual(self.harness.model.unit.opened_ports(), MAAS_RACK_PORTS)
 

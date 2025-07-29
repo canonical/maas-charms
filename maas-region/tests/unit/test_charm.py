@@ -513,20 +513,20 @@ class TestCharmActions(unittest.TestCase):
         )
         self.harness.add_relation_unit(rel_id, "maas-region/1")
         self.harness.update_relation_data(
-            rel_id, "maas-region/1", {"system-name": json.dumps("other.host.local")}
+            rel_id, "maas-region/1", {"system-name": json.dumps("other-host")}
         )
         self.harness.add_relation(
             maas.DEFAULT_ENDPOINT_NAME,
             "maas-agent",
-            unit_data={"unit": "maas-agent/0", "hostname": "agent.local"},
+            unit_data={"unit": "maas-agent/0", "hostname": "agent-0"},
         )
         self.harness.begin()
         output = self.harness.run_action("list-controllers")
         self.assertEqual(
             json.loads(output.results["controllers"]),
             {
-                "regions": sorted([socket.gethostname(), "other.host.local"]),
-                "agents": ["agent.local"],
+                "regions": sorted([socket.gethostname(), "other-host"]),
+                "agents": ["agent-0"],
             },
         )
 
