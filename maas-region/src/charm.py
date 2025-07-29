@@ -332,7 +332,7 @@ class MaasRegionCharm(ops.CharmBase):
         return False
 
     def _get_regions(self) -> List[str]:
-        eps = [socket.getfqdn()]
+        eps = [socket.gethostname()]
         if peers := self.peers:
             for u in peers.units:
                 if addr := self.get_peer_data(u, "system-name"):
@@ -547,12 +547,12 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_list_controllers_action(self, event: ops.ActionEvent):
         """Handle the list-controllers action."""
-        event.set_results(
-            {
-                "regions": json.dumps(self._get_regions()),
-                "agents": json.dumps(list(self.maas_region.gather_rack_units().keys())),
-            }
-        )
+        event.set_results({
+            "controllers": json.dumps({
+                "regions": sorted(self._get_regions()),
+                "agents": sorted(list(self.maas_region.gather_rack_units().keys())),
+            }),
+        })
 
     def _on_get_api_endpoint_action(self, event: ops.ActionEvent):
         """Handle the get-api-endpoint action."""

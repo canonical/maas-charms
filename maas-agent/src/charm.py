@@ -161,14 +161,14 @@ class MaasRackCharm(ops.CharmBase):
 
     def _on_maas_config_received(self, event: maas.MaasConfigReceivedEvent) -> None:
         self.unit.status = ops.MaintenanceStatus("enrolling...")
-        if socket.getfqdn() not in event.config["regions"]:
+        if socket.gethostname() not in event.config["regions"]:
             self._initialize_maas()
             self._setup_network(True)
         else:
             self._setup_network(False)
 
     def _on_maas_created(self, event: ops.RelationCreatedEvent):
-        self.maas_region.publish_unit_url(socket.getfqdn())
+        self.maas_region.publish_unit_hostname(socket.gethostname())
 
 
 if __name__ == "__main__":  # pragma: nocover

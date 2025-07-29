@@ -76,7 +76,7 @@ class TestEnrollment(unittest.TestCase):
         rel_id = self.harness.add_relation(maas.DEFAULT_ENDPOINT_NAME, self.remote_app)
         self.assertEqual(
             self.harness.get_relation_data(rel_id, self.harness._unit_name),
-            {"unit": "maas-agent/0", "url": self.agent_name},
+            {"unit": "maas-agent/0", "hostname": self.agent_name},
         )
         mock_helper.setup_rack.assert_not_called()
         # mock enrollment data from region
@@ -90,7 +90,7 @@ class TestEnrollment(unittest.TestCase):
         rel_id = self.harness.add_relation(maas.DEFAULT_ENDPOINT_NAME, self.remote_app)
         self.assertEqual(
             self.harness.get_relation_data(rel_id, self.harness._unit_name),
-            {"unit": "maas-agent/0", "url": self.agent_name},
+            {"unit": "maas-agent/0", "hostname": self.agent_name},
         )
         mock_helper.setup_rack.assert_not_called()
         # mock enrollment data from region
