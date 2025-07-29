@@ -621,7 +621,7 @@ class MaasRegionCharm(ops.CharmBase):
     def _on_s3_parameters_changed(self, event: ops.RelationEvent):
         relation = event.relation
 
-        data = relation.data[relation.app]
+        data = relation.data.get(relation.app, {})
         bucket = data.get("bucket")
         region = data.get("region")
         endpoint = data.get("endpoint")
