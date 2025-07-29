@@ -499,12 +499,17 @@ class TestCharmActions(unittest.TestCase):
         self.harness.set_leader(True)
         self.harness.begin()
         output = self.harness.run_action("list-controllers")
-        self.assertEqual(json.loads(output.results["controllers"]), {"regions": [socket.gethostname()], "agents": []})
+        self.assertEqual(
+            json.loads(output.results["controllers"]),
+            {"regions": [socket.gethostname()], "agents": []},
+        )
 
     def test_list_controllers_action_complex(self):
         self.harness.set_leader(True)
         rel_id = self.harness.add_relation(
-            MAAS_PEER_NAME, "maas-region", unit_data={"system-name": json.dumps(socket.gethostname())}
+            MAAS_PEER_NAME,
+            "maas-region",
+            unit_data={"system-name": json.dumps(socket.gethostname())},
         )
         self.harness.add_relation_unit(rel_id, "maas-region/1")
         self.harness.update_relation_data(
@@ -518,7 +523,11 @@ class TestCharmActions(unittest.TestCase):
         self.harness.begin()
         output = self.harness.run_action("list-controllers")
         self.assertEqual(
-            json.loads(output.results["controllers"]), {"regions": sorted([socket.gethostname(), "other.host.local"]), "agents": ["agent.local"]}
+            json.loads(output.results["controllers"]),
+            {
+                "regions": sorted([socket.gethostname(), "other.host.local"]),
+                "agents": ["agent.local"],
+            },
         )
 
     def test_create_backup_action(self) -> None:

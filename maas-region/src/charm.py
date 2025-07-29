@@ -547,12 +547,16 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_list_controllers_action(self, event: ops.ActionEvent):
         """Handle the list-controllers action."""
-        event.set_results({
-            "controllers": json.dumps({
-                "regions": sorted(self._get_regions()),
-                "agents": sorted(list(self.maas_region.gather_rack_units().keys())),
-            }),
-        })
+        event.set_results(
+            {
+                "controllers": json.dumps(
+                    {
+                        "regions": sorted(self._get_regions()),
+                        "agents": sorted(self.maas_region.gather_rack_units().keys()),
+                    }
+                ),
+            }
+        )
 
     def _on_get_api_endpoint_action(self, event: ops.ActionEvent):
         """Handle the get-api-endpoint action."""
