@@ -47,7 +47,7 @@ class TestCharm(unittest.TestCase):
 class TestEnrollment(unittest.TestCase):
     def setUp(self):
         self.remote_app = "maas-region"
-        self.agent_name = socket.getfqdn()
+        self.agent_name = socket.gethostname()
         self.maas_secret = "my_secret"
         self.api_url = "http://region:5240/MAAS"
         self.harness = ops.testing.Harness(MaasRackCharm)
@@ -76,11 +76,11 @@ class TestEnrollment(unittest.TestCase):
         rel_id = self.harness.add_relation(maas.DEFAULT_ENDPOINT_NAME, self.remote_app)
         self.assertEqual(
             self.harness.get_relation_data(rel_id, self.harness._unit_name),
-            {"unit": "maas-agent/0", "url": self.agent_name},
+            {"unit": "maas-agent/0", "hostname": self.agent_name},
         )
         mock_helper.setup_rack.assert_not_called()
         # mock enrollment data from region
-        self._enroll(rel_id, ["region.local"])
+        self._enroll(rel_id, ["region-0"])
         mock_helper.setup_rack.assert_called_once_with(self.api_url, self.maas_secret)
         self.assertCountEqual(self.harness.model.unit.opened_ports(), MAAS_RACK_PORTS)
 
@@ -90,7 +90,7 @@ class TestEnrollment(unittest.TestCase):
         rel_id = self.harness.add_relation(maas.DEFAULT_ENDPOINT_NAME, self.remote_app)
         self.assertEqual(
             self.harness.get_relation_data(rel_id, self.harness._unit_name),
-            {"unit": "maas-agent/0", "url": self.agent_name},
+            {"unit": "maas-agent/0", "hostname": self.agent_name},
         )
         mock_helper.setup_rack.assert_not_called()
         # mock enrollment data from region
