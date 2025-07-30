@@ -23,6 +23,7 @@ from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
 from ops.model import SecretNotFoundError
 
+from backups import MAASBackups
 from helper import MaasHelper
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,7 @@ MAAS_BACKUP_TYPES = ["full", "differential", "incremental"]
         maas.MaasRegionProvider,
         db.DatabaseRequires,
         MaasHelper,
+        MAASBackups,
     ],
 )
 class MaasRegionCharm(ops.CharmBase):
@@ -145,20 +147,13 @@ class MaasRegionCharm(ops.CharmBase):
         self.charm_tracing_endpoint, _ = charm_tracing_config(self.tracing, None)
 
         # S3
-        s3 = self.on["s3-parameters"]
-        self.framework.observe(s3.relation_changed, self._on_s3_parameters_changed)
+        self.backup = MAASBackups(self, "s3-parameters")
 
         # Charm actions
         self.framework.observe(self.on.create_admin_action, self._on_create_admin_action)
         self.framework.observe(self.on.get_api_key_action, self._on_get_api_key_action)
         self.framework.observe(self.on.list_controllers_action, self._on_list_controllers_action)
         self.framework.observe(self.on.get_api_endpoint_action, self._on_get_api_endpoint_action)
-
-        self.framework.observe(self.on.create_backup_action, self._on_create_backup_action)
-        self.framework.observe(
-            self.on.restore_from_backup_action, self._on_restore_from_backup_action
-        )
-        self.framework.observe(self.on.list_backups_action, self._on_list_backups_action)
 
         # Charm configuration
         self.framework.observe(self.on.config_changed, self._on_config_changed)
@@ -199,7 +194,7 @@ class MaasRegionCharm(ops.CharmBase):
         """Reports the enrollment token.
 
         Returns:
-            str: the otken, or None if not available
+            str: the token, or None if not available
         """
         return MaasHelper.get_maas_secret()
 
@@ -621,79 +616,6 @@ class MaasRegionCharm(ops.CharmBase):
             logger.info("enrolled to MAAS Site Manager")
         except subprocess.CalledProcessError as e:
             logger.error(f"failed to enroll: {e}")
-
-    def _on_s3_parameters_changed(self, event: ops.RelationEvent):
-        relation = event.relation
-
-        data = relation.data.get(relation.app, {})
-        bucket = data.get("bucket")
-        region = data.get("region")
-        endpoint = data.get("endpoint")
-        access_key = data.get("access-key")
-        secret_key = data.get("secret-key")
-
-        _ = data.get("tls-ca-chain")
-
-        required = [bucket, access_key, secret_key, region, endpoint]
-        if not all(required):
-            event.defer()
-            return
-
-        self.unit.status = ops.ActiveStatus("S3 configuration set")
-
-        # And then something MAASey happens
-        pass
-
-    def _on_create_backup_action(self, event: ops.ActionEvent) -> None:
-        """Create a MAAS backup, returning the backup-id."""
-        backup_type = event.params["type"]
-        if backup_type not in MAAS_BACKUP_TYPES:
-            event.fail(f"Unknown backup type: '{backup_type}'")
-
-        logger.info(event)
-        logger.info(f"A backup with type {backup_type} has been requested")
-
-        try:
-            self.unit.status = ops.MaintenanceStatus("Creating backup...")
-
-            # TODO: Create a backup here
-            # And generate the new backup id
-            backup_id = "backup-id"
-            event.set_results({"backup-id": backup_id})
-
-            self.unit.status = ops.ActiveStatus()
-
-        except subprocess.CalledProcessError:
-            event.fail(f"Failed to generate {backup_type} backup")
-
-    def _on_restore_from_backup_action(self, event: ops.ActionEvent) -> None:
-        """Restore MAAS from a backup."""
-        backup_id = event.params["backup-id"]
-
-        logger.info(event)
-        logger.info(f"A restore with backup-id {backup_id} has been requested")
-
-        try:
-            self.unit.status = ops.MaintenanceStatus("Restoring from backup...")
-            # TODO: Restore from backup here
-
-            self.unit.status = ops.ActiveStatus()
-
-        except subprocess.CalledProcessError:
-            event.fail(f"Failed to restore from {backup_id}")
-
-    def _on_list_backups_action(self, event: ops.ActionEvent) -> None:
-        """List all backups MAAS knows about."""
-        logger.info(event)
-
-        # TODO: Generate the list of backups
-        backups = {"backup-id": {"timestamp": "backup-time", "type": "backup-type"}}
-
-        event.set_results(
-            {
-                "backups": backups,
-            }
-        )
 
 
 if __name__ == "__main__":  # pragma: nocover
