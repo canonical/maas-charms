@@ -245,7 +245,7 @@ class MaasRegionCharm(ops.CharmBase):
         Returns:
             str: either `region` of `region+rack`
         """
-        has_agent = self.maas_region.gather_rack_units().get(socket.getfqdn())
+        has_agent = self.maas_region.gather_rack_units().get(socket.gethostname())
         return "region+rack" if has_agent else "region"
 
     def set_peer_data(
@@ -332,7 +332,7 @@ class MaasRegionCharm(ops.CharmBase):
         return False
 
     def _get_regions(self) -> List[str]:
-        eps = [socket.getfqdn()]
+        eps = [socket.gethostname()]
         if peers := self.peers:
             for u in peers.units:
                 if addr := self.get_peer_data(u, "system-name"):
@@ -491,7 +491,7 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_maas_peer_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
-        self.set_peer_data(self.unit, "system-name", socket.getfqdn())
+        self.set_peer_data(self.unit, "system-name", socket.gethostname())
         if self.unit.is_leader():
             self._publish_tokens()
 
@@ -549,8 +549,12 @@ class MaasRegionCharm(ops.CharmBase):
         """Handle the list-controllers action."""
         event.set_results(
             {
-                "regions": json.dumps(self._get_regions()),
-                "agents": json.dumps(list(self.maas_region.gather_rack_units().keys())),
+                "controllers": json.dumps(
+                    {
+                        "regions": sorted(self._get_regions()),
+                        "agents": sorted(self.maas_region.gather_rack_units().keys()),
+                    }
+                ),
             }
         )
 

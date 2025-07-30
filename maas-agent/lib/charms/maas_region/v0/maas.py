@@ -21,7 +21,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 2
+LIBPATCH = 3
 
 
 DEFAULT_ENDPOINT_NAME = "maas-region"
@@ -64,7 +64,7 @@ class MaasRequirerUnitData(MaasDatabag):
     """The schema for the Requirer side of this relation."""
 
     unit: str
-    url: str
+    hostname: str
 
 
 @dataclasses.dataclass
@@ -202,11 +202,11 @@ class MaasRegionRequirer(Object):
         except TypeError:
             return False
 
-    def publish_unit_url(self, url: str) -> None:
-        """Publish unit url in the databag."""
+    def publish_unit_hostname(self, hostname: str) -> None:
+        """Publish unit hostname in the databag."""
         databag_model = MaasRequirerUnitData(
             unit=self._charm.unit.name,
-            url=url,
+            hostname=hostname,
         )
         if relation := self._relation:
             unit_databag = relation.data[self.model.unit]
@@ -274,9 +274,9 @@ class MaasRegionProvider(Object):
             for worker_unit in relation.units:
                 try:
                     worker_data = MaasRequirerUnitData.load(relation.data[worker_unit])  # type: ignore
-                    url = worker_data.url
+                    hostname = worker_data.hostname
                 except TypeError as e:
                     log.debug(f"invalid databag contents: {e}")
                     continue
-                data[url] = worker_unit
+                data[hostname] = worker_unit
         return data
