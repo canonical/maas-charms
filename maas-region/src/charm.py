@@ -159,6 +159,11 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.config_changed, self._on_config_changed)
 
     @property
+    def is_blocked(self) -> bool:
+        """If the unit is in a blocked state."""
+        return isinstance(self.unit.status, ops.BlockedStatus)
+
+    @property
     def peers(self) -> ops.Relation | None:
         """Fetch the peer relation."""
         return self.model.get_relation(MAAS_PEER_NAME)
