@@ -39,6 +39,7 @@ jobs:
     with:
       charm-path: maas-region
       juju-channel: 3.6/stable
+      python-version: "3.10"
       release-tag-prefix: maas-region
       provider: lxd
       build-for-arm: true
@@ -77,6 +78,7 @@ jobs:
     with:
       charm-path: maas-agent
       juju-channel: 3.6/stable
+      python-version: "3.10"
       release-tag-prefix: maas-agent
       provider: lxd
       build-for-arm: true

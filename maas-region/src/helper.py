@@ -7,7 +7,6 @@ import logging
 import subprocess
 from os import remove
 from pathlib import Path
-from typing import Dict, Union
 
 import yaml
 from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
@@ -58,7 +57,7 @@ class MaasHelper:
             maas.stop()
 
     @staticmethod
-    def get_installed_version() -> Union[str, None]:
+    def get_installed_version() -> str | None:
         """Get installed version.
 
         Returns:
@@ -68,7 +67,7 @@ class MaasHelper:
         return maas.revision if maas.present else None
 
     @staticmethod
-    def get_installed_channel() -> Union[str, None]:
+    def get_installed_channel() -> str | None:
         """Get installed channel.
 
         Returns:
@@ -78,7 +77,7 @@ class MaasHelper:
         return maas.channel if maas.present else None
 
     @staticmethod
-    def get_maas_id() -> Union[str, None]:
+    def get_maas_id() -> str | None:
         """Get MAAS system ID.
 
         Returns:
@@ -91,7 +90,7 @@ class MaasHelper:
             return None
 
     @staticmethod
-    def get_maas_uuid() -> Union[str, None]:
+    def get_maas_uuid() -> str | None:
         """Get MAAS deployment UUID.
 
         Returns:
@@ -104,7 +103,7 @@ class MaasHelper:
             return None
 
     @staticmethod
-    def get_maas_mode() -> Union[str, None]:
+    def get_maas_mode() -> str | None:
         """Get MAAS operation mode.
 
         Returns:
@@ -117,7 +116,7 @@ class MaasHelper:
             return None
 
     @staticmethod
-    def get_maas_details() -> Dict[str, str]:
+    def get_maas_details() -> dict[str, str]:
         """Get MAAS operation mode.
 
         Returns:
@@ -155,7 +154,7 @@ class MaasHelper:
 
     @staticmethod
     def create_admin_user(
-        username: str, password: str, email: str, ssh_import: Union[str, None]
+        username: str, password: str, email: str, ssh_import: str | None
     ) -> None:
         """Create an Admin user.
 
@@ -267,7 +266,7 @@ class MaasHelper:
         subprocess.check_call(set_cmd)
 
     @staticmethod
-    def is_tls_enabled() -> Union[bool, None]:
+    def is_tls_enabled() -> bool | None:
         """Check whether MAAS currently has TLS enabled.
 
         Returns:
@@ -354,7 +353,7 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
-    def get_maas_secret() -> Union[str, None]:
+    def get_maas_secret() -> str | None:
         """Get MAAS enrollment secret token.
 
         Returns:
