@@ -38,10 +38,6 @@ S3_BLOCK_MESSAGES = [
 ]
 
 
-class ListBackupsError(Exception):
-    """Raised when pgBackRest fails to list backups."""
-
-
 class MAASBackups(Object):
     """In this class, we manage MAASBackups backups."""
 
@@ -278,7 +274,7 @@ class MAASBackups(Object):
                 ca_file.write(ca.encode())
                 ca_file.flush()
 
-                s3 = self._get_s3_session_client(s3_parameters, ca_file)
+                s3 = self._get_s3_session_client(s3_parameters, ca_file.name)
             else:
                 s3 = self._get_s3_session_client(s3_parameters, None)
 
@@ -329,7 +325,7 @@ class MAASBackups(Object):
                 ca_file.write(ca.encode())
                 ca_file.flush()
 
-                s3 = self._get_s3_session_client(s3_parameters, ca_file)
+                s3 = self._get_s3_session_client(s3_parameters, ca_file.name)
             else:
                 s3 = self._get_s3_session_client(s3_parameters, None)
 
@@ -491,7 +487,7 @@ Stderr:
         else:
             try:
                 backup_id = self._list_backups(s3_parameters)[-1]
-            except ListBackupsError as e:
+            except BotoCoreError as e:
                 logger.exception(e)
                 error_message = "Failed to retrieve backup id"
                 logger.error(f"Backup failed: {error_message}")
@@ -542,7 +538,7 @@ Stderr:
         try:
             formatted_list = self._generate_backup_list_output()
             event.set_results({"backups": formatted_list})
-        except ListBackupsError as e:
+        except BotoCoreError as e:
             logger.exception(e)
             event.fail(f"Failed to list MAAS backups with error: {e!s}")
 
@@ -564,7 +560,7 @@ Stderr:
                 logger.error(f"Restore failed: {error_message}")
                 event.fail(error_message)
                 return
-        except ListBackupsError as e:
+        except BotoCoreError as e:
             logger.exception(e)
             error_message = "Failed to retrieve backups list"
             logger.error(f"Restore failed: {error_message}")
