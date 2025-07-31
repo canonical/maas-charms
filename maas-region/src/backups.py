@@ -136,7 +136,7 @@ class MAASBackups(Object):
                 ca_file.write(ca.encode())
                 ca_file.flush()
 
-                s3 = self._get_s3_session_resource(s3_parameters, ca_file)
+                s3 = self._get_s3_session_resource(s3_parameters, ca_file.name)
             else:
                 s3 = self._get_s3_session_resource(s3_parameters, None)
 
@@ -365,7 +365,7 @@ class MAASBackups(Object):
                 ca_file.write(ca.encode())
                 ca_file.flush()
 
-                s3 = self._get_s3_session_resource(s3_parameters, ca_file)
+                s3 = self._get_s3_session_resource(s3_parameters, ca_file.name)
             else:
                 s3 = self._get_s3_session_resource(s3_parameters, None)
 
@@ -413,7 +413,7 @@ Juju Version: {self.charm.model.juju_version!s}
                 ca_file.write(ca.encode())
                 ca_file.flush()
 
-                s3 = self._get_s3_session_resource(s3_parameters, ca_file)
+                s3 = self._get_s3_session_resource(s3_parameters, ca_file.name)
             else:
                 s3 = self._get_s3_session_resource(s3_parameters, None)
 
@@ -428,11 +428,11 @@ Juju Version: {self.charm.model.juju_version!s}
                 event.fail(error_message)
                 return
 
-        self.charm.set_unit_status(MaintenanceStatus("creating backup"))
+        self.charm.unit.status(MaintenanceStatus("creating backup"))
 
         self._run_backup(event, s3_parameters, datetime_backup_requested)
 
-        self.charm.set_unit_status(ActiveStatus())
+        self.charm.unit.status(ActiveStatus())
 
     def _run_backup(
         self,
@@ -472,7 +472,7 @@ Stderr:
                     ca_file.write(ca.encode())
                     ca_file.flush()
 
-                    s3 = self._get_s3_session_resource(s3_parameters, ca_file)
+                    s3 = self._get_s3_session_resource(s3_parameters, ca_file.name)
                 else:
                     s3 = self._get_s3_session_resource(s3_parameters, None)
 
@@ -512,7 +512,7 @@ Stderr:
                     ca_file.write(ca.encode())
                     ca_file.flush()
 
-                    s3 = self._get_s3_session_resource(s3_parameters, ca_file)
+                    s3 = self._get_s3_session_resource(s3_parameters, ca_file.name)
                 else:
                     s3 = self._get_s3_session_resource(s3_parameters, None)
 
@@ -571,7 +571,7 @@ Stderr:
             event.fail(error_message)
             return
 
-        self.charm.set_unit_status(MaintenanceStatus("restoring backup"))
+        self.charm.unit.status(MaintenanceStatus("restoring backup"))
 
         # Step 1
         logger.info("Step 1")
@@ -584,7 +584,7 @@ Stderr:
 
     def _generate_fake_backup_id(self) -> str:
         """Create a backup id for failed backup operations (to store log file)."""
-        return datetime.strftime(datetime.now(), "%Y%m%d-%H%M%SF")
+        return datetime.strftime(datetime.now(), BACKUP_ID_FORMAT)
 
     def _pre_restore_checks(self, event: ActionEvent) -> bool:
         """Run some checks before starting the restore.
