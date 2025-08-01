@@ -248,9 +248,7 @@ class MaasRegionCharm(ops.CharmBase):
         has_agent = self.maas_region.gather_rack_units().get(socket.gethostname())
         return "region+rack" if has_agent else "region"
 
-    def set_peer_data(
-        self, app_or_unit: ops.Application | ops.Unit, key: str, data: Any
-    ) -> None:
+    def set_peer_data(self, app_or_unit: ops.Application | ops.Unit, key: str, data: Any) -> None:
         """Put information into the peer data bucket."""
         if not self.peers:
             return
