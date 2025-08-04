@@ -5,7 +5,6 @@
 
 import subprocess
 from pathlib import Path
-from typing import Union
 
 from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
 
@@ -39,7 +38,7 @@ class MaasHelper:
             maas.ensure(SnapState.Absent)
 
     @staticmethod
-    def get_installed_version() -> Union[str, None]:
+    def get_installed_version() -> str | None:
         """Get installed version.
 
         Returns:
@@ -49,7 +48,7 @@ class MaasHelper:
         return maas.revision if maas.present else None
 
     @staticmethod
-    def get_installed_channel() -> Union[str, None]:
+    def get_installed_channel() -> str | None:
         """Get installed channel.
 
         Returns:
@@ -59,7 +58,7 @@ class MaasHelper:
         return maas.channel if maas.present else None
 
     @staticmethod
-    def get_maas_id() -> Union[str, None]:
+    def get_maas_id() -> str | None:
         """Get MAAS system ID.
 
         Returns:
@@ -72,7 +71,7 @@ class MaasHelper:
             return None
 
     @staticmethod
-    def get_maas_mode() -> Union[str, None]:
+    def get_maas_mode() -> str | None:
         """Get MAAS operation mode.
 
         Returns:
