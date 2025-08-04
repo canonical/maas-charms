@@ -15,7 +15,13 @@ from typing import Any
 from boto3.session import Session
 from botocore import loaders
 from botocore.client import Config
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import (
+    BotoCoreError,
+    ClientError,
+    ConnectTimeoutError,
+    ParamValidationError,
+    SSLError,
+)
 from botocore.regions import EndpointResolver
 from charms.data_platform_libs.v0.s3 import (
     CredentialsChangedEvent,
@@ -23,7 +29,7 @@ from charms.data_platform_libs.v0.s3 import (
 )
 from ops.charm import ActionEvent
 from ops.framework import Object
-from ops.model import ActiveStatus, MaintenanceStatus
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +128,7 @@ class MAASBackups(Object):
 
         return self._are_backup_settings_ok()
 
-    def can_use_s3_repository(self) -> tuple[bool, str]:
+    def _can_use_s3_repository(self) -> tuple[bool, str]:
         """Return whether the charm was configured to use another cluster repository."""
         # Check model uuid
         s3_parameters, _ = self._retrieve_s3_parameters()
@@ -160,6 +166,71 @@ class MAASBackups(Object):
             endpoint = f"{endpoint.split('://')[0]}://{endpoint_data['hostname']}"
 
         return endpoint
+
+    def _create_bucket_if_not_exists(self, s3_parameters: dict[str, str]) -> None:
+        bucket_name = s3_parameters["bucket"]
+        region = s3_parameters.get("region")
+
+        ca_chain = s3_parameters.get("tls-ca-chain", [])
+        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
+            if ca_file:
+                ca = "\n".join(ca_chain)
+                ca_file.write(ca.encode())
+                ca_file.flush()
+
+                s3 = self._get_s3_session_resource(s3_parameters, ca_file.name)
+            else:
+                s3 = self._get_s3_session_resource(s3_parameters, None)
+
+            bucket = s3.Bucket(bucket_name)
+            try:
+                bucket.meta.client.head_bucket(Bucket=bucket_name)
+                logger.info("Bucket %s exists.", bucket_name)
+                exists = True
+            except ConnectTimeoutError as e:
+                # Re-raise the error if the connection timeouts, so the user has the possibility to
+                # fix network issues and call juju resolve to re-trigger the hook that calls
+                # this method.
+                logger.error(
+                    f"error: {e!s} - please fix the error and call juju resolve on this unit"
+                )
+                raise e
+            except ClientError:
+                logger.warning(
+                    "Bucket %s doesn't exist or you don't have access to it.", bucket_name
+                )
+                exists = False
+            except SSLError as e:
+                logger.error(f"error: {e!s} - Is TLS enabled and CA chain set on S3?")
+                raise e
+            if exists:
+                return
+
+            try:
+                bucket.create(CreateBucketConfiguration={"LocationConstraint": region})
+
+                bucket.wait_until_exists()
+                logger.info("Created bucket '%s' in region=%s", bucket_name, region)
+            except ClientError as error:
+                if error.response["Error"]["Code"] == "InvalidLocationConstraint":
+                    logger.info(
+                        "Specified location-constraint is not valid, trying create without it"
+                    )
+                    try:
+                        bucket.create()
+
+                        bucket.wait_until_exists()
+                        logger.info("Created bucket '%s', ignored region=%s", bucket_name, region)
+                    except ClientError as error:
+                        logger.exception(
+                            "Couldn't create bucket named '%s' in region=%s.", bucket_name, region
+                        )
+                        raise error
+                else:
+                    logger.exception(
+                        "Couldn't create bucket named '%s' in region=%s.", bucket_name, region
+                    )
+                    raise error
 
     def _execute_command(
         self,
@@ -279,6 +350,17 @@ class MAASBackups(Object):
         s3_parameters, _ = self._retrieve_s3_parameters()
         if not s3_parameters:
             event.defer()
+            return
+
+        try:
+            self._create_bucket_if_not_exists(s3_parameters)
+        except (ClientError, ValueError, ParamValidationError, SSLError):
+            self.charm.unit.status = BlockedStatus(FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE)
+            return
+
+        can_use_s3_repository, validation_message = self._can_use_s3_repository()
+        if not can_use_s3_repository:
+            self.charm.unit.status = BlockedStatus(validation_message)
             return
 
         self._upload_content_to_s3(
