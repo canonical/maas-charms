@@ -1,7 +1,7 @@
 # Linting tools configuration
 
 [tool.ruff]
-target-version = "py38"
+target-version = "py310"
 line-length = 99
 extend-exclude = [ "*.egg_info", "__pycache__" ]
 
