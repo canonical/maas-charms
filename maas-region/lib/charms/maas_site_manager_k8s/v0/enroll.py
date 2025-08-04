@@ -6,7 +6,8 @@ Allows MAAS clusters to enroll with Site Manager
 import dataclasses
 import json
 import logging
-from typing import Any, Dict, List, MutableMapping, Union
+from collections.abc import MutableMapping
+from typing import Any
 
 import ops
 
@@ -18,7 +19,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 1
+LIBPATCH = 2
 
 DEFAULT_ENDPOINT_NAME = "maas-site-manager"
 TOKEN_SECRET_KEY = "enroll-token"
@@ -35,7 +36,7 @@ class EnrollDatabag:
     """Base class from Enroll databags."""
 
     @classmethod
-    def load(cls, data: Dict[str, str]) -> "EnrollDatabag":
+    def load(cls, data: dict[str, str]) -> "EnrollDatabag":
         """Load from dictionary."""
         init_vals = {}
         for f in dataclasses.fields(cls):
@@ -43,7 +44,7 @@ class EnrollDatabag:
             init_vals[f.name] = val if f.type == str else json.loads(val)  # type: ignore  # noqa: E721
         return cls(**init_vals)
 
-    def dump(self, databag: Union[MutableMapping[str, str], None] = None) -> None:
+    def dump(self, databag: MutableMapping[str, str] | None = None) -> None:
         """Write the contents of this model to Juju databag."""
         if databag is None:
             databag = {}
@@ -84,7 +85,7 @@ class TokenIssuedEvent(ops.EventBase):
         super().__init__(handle)
         self._token: str = token
 
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         """Serialize the event to disk.
 
         Not meant to be called by charm code.
@@ -93,7 +94,7 @@ class TokenIssuedEvent(ops.EventBase):
         data.update({"token": self._token})
         return data
 
-    def restore(self, snapshot: Dict[str, Any]):
+    def restore(self, snapshot: dict[str, Any]):
         """Deserialize the event from disk.
 
         Not meant to be called by charm code.
@@ -124,7 +125,7 @@ class EnrollRequirer(ops.Object):
     def __init__(
         self,
         charm: ops.CharmBase,
-        key: Union[str, None] = None,
+        key: str | None = None,
         endpoint: str = DEFAULT_ENDPOINT_NAME,
     ):
         super().__init__(charm, key or endpoint)
@@ -145,7 +146,7 @@ class EnrollRequirer(ops.Object):
         )
 
     @property
-    def _relation(self) -> Union[ops.Relation, None]:
+    def _relation(self) -> ops.Relation | None:
         # filter out common unhappy relation states
         relation = self.model.get_relation(self._endpoint)
         return relation if relation and relation.app and relation.data else None
@@ -164,7 +165,7 @@ class EnrollRequirer(ops.Object):
     def _on_relation_broken(self, _event: ops.RelationBrokenEvent) -> None:
         self.on.removed.emit()
 
-    def get_enroll_data(self) -> Union[EnrollProviderAppData, None]:
+    def get_enroll_data(self) -> EnrollProviderAppData | None:
         """Get enrollment data from databag."""
         relation = self._relation
         if relation:
@@ -206,7 +207,7 @@ class EnrollProvider(ops.Object):
     def __init__(
         self,
         charm: ops.CharmBase,
-        key: Union[str, None] = None,
+        key: str | None = None,
         endpoint: str = DEFAULT_ENDPOINT_NAME,
     ):
         super().__init__(charm, key or endpoint)
@@ -214,10 +215,10 @@ class EnrollProvider(ops.Object):
         self._endpoint = endpoint
 
     @property
-    def _relations(self) -> List[ops.Relation]:
+    def _relations(self) -> list[ops.Relation]:
         return self.model.relations[self._endpoint]
 
-    def _update_secret(self, relation: ops.Relation, content: Dict[str, str]) -> str:
+    def _update_secret(self, relation: ops.Relation, content: dict[str, str]) -> str:
         label = f"enroll-{relation.name}-{relation.id}.secret"
         try:
             secret = self.model.get_secret(label=label)
