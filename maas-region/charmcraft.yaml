@@ -85,8 +85,7 @@ actions:
   get-api-endpoint:
     description: Get MAAS API URL
   create-backup:
-    description: Create a MAAS backup
-      NOTE - This is a noop action, and serves only as a placeholder
+    description: Create a backup of MAAS data not stored in the database.
     params:
       username:
         type: string
