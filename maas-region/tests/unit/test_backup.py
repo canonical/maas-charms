@@ -23,7 +23,7 @@ class TestMAASBackups(unittest.TestCase):
 
     @patch("boto3.session.Session.resource")
     @patch("backups.Config")
-    def test__get_s3_session_resource(self, _config, _resource):
+    def test_get_s3_session_resource(self, _config, _resource):
         self.harness.begin()
 
         s3_parameters = {
@@ -51,7 +51,7 @@ class TestMAASBackups(unittest.TestCase):
 
     @patch("boto3.session.Session.client")
     @patch("backups.Config")
-    def test__get_s3_session_client(self, _config, _client):
+    def test_get_s3_session_client(self, _config, _client):
         self.harness.begin()
 
         s3_parameters = {
@@ -78,14 +78,14 @@ class TestMAASBackups(unittest.TestCase):
         )
 
     @patch("backups.MAASBackups._retrieve_s3_parameters")
-    def test__are_backup_settings_ok(self, s3_parameters):
+    def test_are_backup_settings_ok(self, s3_parameters):
         self.harness.begin()
         self.harness.add_relation("s3-parameters", "s3-integrator")
         s3_parameters.return_value = {}, []
         self.assertEqual(self.harness.charm.backup._are_backup_settings_ok(), (True, ""))
 
     @patch("backups.MAASBackups._retrieve_s3_parameters")
-    def test__are_backup_settings_ok__missing_relation(self, s3_parameters):
+    def test_are_backup_settings_ok__missing_relation(self, s3_parameters):
         self.harness.begin()
         s3_parameters.return_value = {}, []
         self.assertEqual(
@@ -94,7 +94,7 @@ class TestMAASBackups(unittest.TestCase):
         )
 
     @patch("backups.MAASBackups._retrieve_s3_parameters")
-    def test__are_backup_settings__missing_parameters(self, s3_parameters):
+    def test_are_backup_settings__missing_parameters(self, s3_parameters):
         self.harness.begin()
         self.harness.add_relation("s3-parameters", "s3-integrator")
         s3_parameters.return_value = {}, ["bucket"]
@@ -104,26 +104,31 @@ class TestMAASBackups(unittest.TestCase):
         )
 
     @patch("backups.MAASBackups._are_backup_settings_ok")
-    def test__can_unit_perform_backup(self, backup_settings):
+    def test_can_unit_perform_backup(self, backup_settings):
         self.harness.begin()
         self.harness.set_leader(True)
         backup_settings.return_value = (True, "")
         self.assertEqual(self.harness.charm.backup._can_unit_perform_backup(), (True, ""))
 
-    def test__can_unit_perform_backup__no_leader(self):
+    def test_can_unit_perform_backup__no_leader(self):
         self.harness.begin()
         self.harness.set_leader(False)
-        self.assertTrue(self.harness.charm.backup._can_unit_perform_backup())
+        self.assertEqual(
+            self.harness.charm.backup._can_unit_perform_backup(), (False, "Unit is not the leader")
+        )
 
-    def test__can_unit_perform_backup__blocker(self):
+    def test_can_unit_perform_backup__blocker(self):
         self.harness.begin()
         self.harness.set_leader(True)
         self.harness.charm.unit.status = ops.BlockedStatus("fake blocked state")
-        self.assertTrue(self.harness.charm.backup._can_unit_perform_backup())
+        self.assertEqual(
+            self.harness.charm.backup._can_unit_perform_backup(),
+            (False, "Unit is in a blocking state"),
+        )
 
     @patch("backups.MAASBackups._retrieve_s3_parameters")
     @patch("backups.MAASBackups._read_content_from_s3")
-    def test__can_use_s3_repository(self, read_content, s3_parameters):
+    def test_can_use_s3_repository(self, read_content, s3_parameters):
         s3_parameters.return_value = {}, []
         read_content.return_value = "123-456"
         self.harness.set_model_uuid("123-456")
@@ -132,7 +137,7 @@ class TestMAASBackups(unittest.TestCase):
 
     @patch("backups.MAASBackups._retrieve_s3_parameters")
     @patch("backups.MAASBackups._read_content_from_s3")
-    def test__can_use_s3_repository__incompatible(self, read_content, s3_parameters):
+    def test_can_use_s3_repository__incompatible(self, read_content, s3_parameters):
         s3_parameters.return_value = {}, []
         read_content.return_value = "456-789"
         self.harness.set_model_uuid("123-456")
@@ -142,14 +147,14 @@ class TestMAASBackups(unittest.TestCase):
             (False, "the S3 repository has backups from another cluster"),
         )
 
-    def test__construct_endpoint(self):
+    def test_construct_endpoint(self):
         s3_parameters = {"endpoint": "https://10.10.10.10:9000", "region": ""}
         self.harness.begin()
         self.assertEqual(
             self.harness.charm.backup._construct_endpoint(s3_parameters), s3_parameters["endpoint"]
         )
 
-    def test__construct_endpoint__aws(self):
+    def test_construct_endpoint__aws(self):
         s3_parameters = {"endpoint": "https://s3.amazonaws.com", "region": "us-east-1"}
         self.harness.begin()
         self.assertEqual(
@@ -158,7 +163,7 @@ class TestMAASBackups(unittest.TestCase):
         )
 
     @patch("backups.MAASBackups._get_s3_session_resource")
-    def test__create_bucket_if_not_exists(self, _resource):
+    def test_create_bucket_if_not_exists(self, _resource):
         s3_parameters = {
             "endpoint": "https://s3.amazonaws.com",
             "region": "us-east-1",
@@ -341,8 +346,8 @@ backup-id            | action              | status   | backup-path
 2023-01-01T11:00:00Z | restore             | finished | n/a""",
         )
 
-    @patch("charm.MAASBackups._retrieve_s3_parameters")
-    @patch("charm.MAASBackups._list_backups")
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    @patch("backups.MAASBackups._list_backups")
     def test_generate_backup_list_output(self, list_backups, s3_parameters):
         self.harness.begin()
 
@@ -372,7 +377,7 @@ backup-id            | action              | status   | backup-path
         )
 
     @patch("backups.MAASBackups._get_s3_session_client")
-    def test__list_backups(self, _client):
+    def test_list_backups(self, _client):
         self.harness.begin()
 
         s3_parameters = {
@@ -394,11 +399,11 @@ backup-id            | action              | status   | backup-path
             self.harness.charm.backup._list_backups(s3_parameters), [{"id": "123-456"}]
         )
 
-    @patch("charm.MAASBackups._retrieve_s3_parameters")
-    @patch("charm.MAASBackups._create_bucket_if_not_exists")
-    @patch("charm.MAASBackups._can_use_s3_repository")
-    @patch("charm.MAASBackups._upload_content_to_s3")
-    def test__on_s3_credential_changed(
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    @patch("backups.MAASBackups._create_bucket_if_not_exists")
+    @patch("backups.MAASBackups._can_use_s3_repository")
+    @patch("backups.MAASBackups._upload_content_to_s3")
+    def test_on_s3_credential_changed(
         self, upload_to_s3, can_use_s3, create_bucket, s3_parameters
     ):
         s3_parameters_dict = {
@@ -418,7 +423,7 @@ backup-id            | action              | status   | backup-path
         create_bucket.assert_called_once_with(s3_parameters_dict)
         upload_to_s3.assert_called_once_with("123-456", "model-uuid.txt", s3_parameters_dict)
 
-    def test__on_s3_credential_changed__no_leader(self):
+    def test_on_s3_credential_changed__no_leader(self):
         self.harness.begin()
         self.harness.set_leader(False)
         rel = self.harness.add_relation("s3-parameters", "s3-integrator")
@@ -431,9 +436,9 @@ backup-id            | action              | status   | backup-path
             },
         )
 
-    @patch("charm.MAASBackups._retrieve_s3_parameters")
-    @patch("charm.MAASBackups._create_bucket_if_not_exists")
-    def test__on_s3_credential_changed__bucket_error(self, create_bucket, s3_parameters):
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    @patch("backups.MAASBackups._create_bucket_if_not_exists")
+    def test_on_s3_credential_changed__bucket_error(self, create_bucket, s3_parameters):
         s3_parameters_dict = {
             "bucket": "test-bucket",
             "region": "test-region",
@@ -447,16 +452,16 @@ backup-id            | action              | status   | backup-path
         self.harness.begin()
         self.harness.set_leader(True)
         self.harness.add_relation("s3-parameters", "s3-integrator")
-        # create_bucket.assert_called_once_with(s3_parameters_dict)
+        create_bucket.assert_called_once_with(s3_parameters_dict)
         self.assertEqual(
             self.harness.charm.unit.status,
             ops.BlockedStatus(FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE),
         )
 
-    @patch("charm.MAASBackups._retrieve_s3_parameters")
-    @patch("charm.MAASBackups._create_bucket_if_not_exists")
-    @patch("charm.MAASBackups._can_use_s3_repository")
-    def test__on_s3_credential_changed__cannot_use_s3(
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    @patch("backups.MAASBackups._create_bucket_if_not_exists")
+    @patch("backups.MAASBackups._can_use_s3_repository")
+    def test_on_s3_credential_changed__cannot_use_s3(
         self, can_use_s3, create_bucket, s3_parameters
     ):
         s3_parameters_dict = {
@@ -472,19 +477,19 @@ backup-id            | action              | status   | backup-path
         self.harness.begin()
         self.harness.set_leader(True)
         self.harness.add_relation("s3-parameters", "s3-integrator")
-        # create_bucket.assert_called_once_with(s3_parameters_dict)
+        create_bucket.assert_called_once_with(s3_parameters_dict)
         self.assertEqual(
             self.harness.charm.unit.status,
             ops.BlockedStatus("validation"),
         )
 
-    def test__on_s3_credential_gone(self):
+    def test_on_s3_credential_gone(self):
         rel = self.harness.add_relation("s3-parameters", "s3-integrator")
         self.harness.begin()
         self.harness.charm.unit.status = ops.ActiveStatus()
         self.harness.remove_relation(rel)
 
-    def test__on_s3_credential_gone__set_active(self):
+    def test_on_s3_credential_gone__set_active(self):
         rel = self.harness.add_relation("s3-parameters", "s3-integrator")
         self.harness.begin()
         self.harness.charm.unit.status = ops.BlockedStatus(
@@ -492,17 +497,17 @@ backup-id            | action              | status   | backup-path
         )
         self.harness.remove_relation(rel)
 
-    def test__on_create_backup_action(self):
+    def test_on_create_backup_action(self):
         # TODO: implement this
         pass
 
-    def test__run_backup(self):
+    def test_run_backup(self):
         # TODO: implement this
         pass
 
-    @patch("charm.MAASBackups._are_backup_settings_ok")
-    @patch("charm.MAASBackups._generate_backup_list_output")
-    def test__on_list_backups_action(self, list_output, settings_ok):
+    @patch("backups.MAASBackups._are_backup_settings_ok")
+    @patch("backups.MAASBackups._generate_backup_list_output")
+    def test_on_list_backups_action(self, list_output, settings_ok):
         settings_ok.return_value = True, ""
         list_output_value = "list output"
         list_output.return_value = list_output_value
@@ -510,8 +515,8 @@ backup-id            | action              | status   | backup-path
         output = self.harness.run_action("list-backups")
         self.assertEqual(output.results["backups"], list_output_value)
 
-    @patch("charm.MAASBackups._are_backup_settings_ok")
-    def test__on_list_backups_action__settings_not_ok(self, settings_ok):
+    @patch("backups.MAASBackups._are_backup_settings_ok")
+    def test_on_list_backups_action__settings_not_ok(self, settings_ok):
         settings_ok.return_value = False, "explanation"
         self.harness.begin()
         with self.assertRaises(ops.testing.ActionFailed) as e:
@@ -519,9 +524,9 @@ backup-id            | action              | status   | backup-path
         err = e.exception
         self.assertEqual(err.message, "explanation")
 
-    @patch("charm.MAASBackups._are_backup_settings_ok")
-    @patch("charm.MAASBackups._generate_backup_list_output")
-    def test__on_list_backups_action__boto_error(self, list_output, settings_ok):
+    @patch("backups.MAASBackups._are_backup_settings_ok")
+    @patch("backups.MAASBackups._generate_backup_list_output")
+    def test_on_list_backups_action__boto_error(self, list_output, settings_ok):
         settings_ok.return_value = True, ""
         list_output.side_effect = BotoCoreError()
         self.harness.begin()
@@ -532,11 +537,11 @@ backup-id            | action              | status   | backup-path
             err.message, "Failed to list MAAS backups with error: An unspecified error occurred"
         )
 
-    def test__on_restore_from_backup_action(self):
+    def test_on_restore_from_backup_action(self):
         # TODO: implement this
         pass
 
-    def test__pre_restore_checks(self):
+    def test_pre_restore_checks(self):
         # TODO: implement this
         pass
 
@@ -610,7 +615,7 @@ backup-id            | action              | status   | backup-path
 
     @patch("tempfile.NamedTemporaryFile")
     @patch("backups.MAASBackups._get_s3_session_resource")
-    def test__upload_content_to_s3(self, _resource, _named_temporary_file):
+    def test_upload_content_to_s3(self, _resource, _named_temporary_file):
         self.harness.begin()
 
         # Set some parameters.
@@ -650,7 +655,7 @@ backup-id            | action              | status   | backup-path
     @patch("tempfile.NamedTemporaryFile")
     @patch("backups.MAASBackups._get_s3_session_resource")
     @patch("backups.BytesIO")
-    def test__read_content_from_s3(self, _buf, _resource, _named_temporary_file):
+    def test_read_content_from_s3(self, _buf, _resource, _named_temporary_file):
         self.harness.begin()
 
         # Set some parameters.
