@@ -451,23 +451,13 @@ Juju Version: {self.charm.model.juju_version!s}
         backup_id = self._generate_backup_id()
         s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
 
-        ca_chain = s3_parameters.get("tls-ca-chain", [])
-        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
-            if ca_file:
-                ca = "\n".join(ca_chain)
-                ca_file.write(ca.encode())
-                ca_file.flush()
-                client = self._get_s3_session_client(s3_parameters, ca_file.name)
-            else:
-                client = self._get_s3_session_client(s3_parameters, None)
-
-            succeeded = self._archive_and_upload_to_s3(
-                event=event,
-                client=client,
-                username=username,
-                s3_path=s3_path,
-                bucket_name=s3_parameters["bucket"],
-            )
+        succeeded = self._archive_and_upload_to_s3(
+            event=event,
+            s3_parameters=s3_parameters,
+            username=username,
+            s3_path=s3_path,
+            bucket_name=s3_parameters["bucket"],
+        )
         if not succeeded:
             # TODO: upload logs using backup_id and fail the action if it doesn't succeed.
             error_message = "Failed to archive and upload MAAS files to S3. Please check the juju debug-log for more details."
@@ -482,71 +472,73 @@ Juju Version: {self.charm.model.juju_version!s}
     def _archive_and_upload_to_s3(
         self,
         event: ActionEvent,
-        client: Any,
+        s3_parameters: dict[str, str],
         username: str,
         s3_path: str,
         bucket_name: str,
     ) -> bool:
-        # get regions
-        event.log("Retrieving region ids from MAAS...")
-        success, regions = self._get_region_ids(username=username)
-        if not success:
-            logger.error(
-                "Failed to get region ids for S3 backup. Please check the juju debug-log for more details."
-            )
-            event.fail(
-                "Failed to get region ids for S3 backup. Please check the juju debug-log for more details."
-            )
-            return False
+        ca_chain = s3_parameters.get("tls-ca-chain", [])
+        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
+            if ca_file:
+                ca = "\n".join(ca_chain)
+                ca_file.write(ca.encode())
+                ca_file.flush()
+                client = self._get_s3_session_client(s3_parameters, ca_file.name)
+            else:
+                client = self._get_s3_session_client(s3_parameters, None)
 
-        # upload regions
-        try:
-            region_path = os.path.join(s3_path, "controllers.txt")
-            with tempfile.NamedTemporaryFile(suffix=".txt") as f:
-                f.write("\n".join(regions).encode("utf-8"))
-                f.flush()
-                event.log("Uploading region ids to S3...")
-                client.upload_file(
-                    f.name,
-                    bucket_name,
-                    region_path,
-                    Callback=ProgressPercentage(f.name, log_label="region ids"),
-                )
-        except Exception as e:
-            logger.exception(
-                f"Failed to upload region ids to S3 bucket={bucket_name}, path={s3_path}",
-                exc_info=e,
-            )
-            event.fail(
-                "Failed to upload region ids to S3 backup. Please check the juju debug-log for more details."
-            )
-            return False
-
-        # archive and upload images
-        try:
-            image_path = os.path.join(s3_path, "images-storage.tar.gz")
-            with tempfile.NamedTemporaryFile(suffix=".tar.gz") as f:
-                event.log("Creating image archive for S3 backup...")
-                with tarfile.open(fileobj=f, mode="w:gz") as tar:
-                    tar.add(
-                        SNAP_PATH_TO_IMAGES,
-                        arcname="images-storage",
+            try:
+                # get region ids
+                event.log("Retrieving region ids from MAAS...")
+                success, regions = self._get_region_ids(username=username)
+                if not success:
+                    logger.error(
+                        "Failed to get region ids for S3 backup. Please check the juju debug-log for more details."
                     )
-                f.flush()
-                event.log("Uploading image archive to S3...")
-                client.upload_file(
-                    f.name,
-                    bucket_name,
-                    image_path,
-                    Callback=ProgressPercentage(f.name, "image archive"),
+                    event.fail(
+                        "Failed to get region ids for S3 backup. Please check the juju debug-log for more details."
+                    )
+                    return False
+
+                # upload regions
+                region_path = os.path.join(s3_path, "controllers.txt")
+                with tempfile.NamedTemporaryFile(suffix=".txt") as f:
+                    f.write("\n".join(regions).encode("utf-8"))
+                    f.flush()
+                    event.log("Uploading region ids to S3...")
+                    client.upload_file(
+                        f.name,
+                        bucket_name,
+                        region_path,
+                        Callback=ProgressPercentage(f.name, log_label="region ids"),
+                    )
+
+                # archive and upload images
+                image_path = os.path.join(s3_path, "images-storage.tar.gz")
+                with tempfile.NamedTemporaryFile(suffix=".tar.gz") as f:
+                    event.log("Creating image archive for S3 backup...")
+                    with tarfile.open(fileobj=f, mode="w:gz") as tar:
+                        tar.add(
+                            SNAP_PATH_TO_IMAGES,
+                            arcname="images-storage",
+                        )
+                    f.flush()
+                    event.log("Uploading image archive to S3...")
+                    client.upload_file(
+                        f.name,
+                        bucket_name,
+                        image_path,
+                        Callback=ProgressPercentage(f.name, "image archive"),
+                    )
+            except Exception as e:
+                logger.exception(
+                    f"Failed to backup to S3 bucket={bucket_name}, path={s3_path}",
+                    exc_info=e,
                 )
-        except Exception as e:
-            logger.exception(
-                f"Failed to create image archive for S3 backup in bucket={bucket_name}, path={s3_path}",
-                exc_info=e,
-            )
-            event.fail("Failed to create image archive for S3 backup")
-            return False
+                event.fail(
+                    "Failed to backup to S3 backup. Please check the juju debug-log for more details."
+                )
+                return False
 
         return True
 
