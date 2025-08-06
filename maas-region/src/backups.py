@@ -427,7 +427,7 @@ Juju Version: {self.charm.model.juju_version!s}
         s3_parameters, _ = self._retrieve_s3_parameters()
         if not self._upload_content_to_s3(
             metadata,
-            os.path.join(s3_parameters["path"], METADATA_PATH).lstrip("/"),
+            METADATA_PATH,
             s3_parameters,
         ):
             error_message = "Failed to upload metadata to provided S3. Please check the juju debug-log for more details."
