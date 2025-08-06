@@ -432,7 +432,7 @@ Juju Version: {self.charm.model.juju_version!s}
         backup_id = self._generate_backup_id()
         s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
 
-        succeeded = self._archive_and_upload_to_s3(
+        succeeded = self._execute_backup_to_s3(
             event=event,
             s3_parameters=s3_parameters,
             username=username,
@@ -449,7 +449,7 @@ Juju Version: {self.charm.model.juju_version!s}
             logger.info(f"Backup succeeded: with backup-id {datetime_backup_requested}")
             event.set_results({"backups": f"backup created with id {backup_id}"})
 
-    def _archive_and_upload_to_s3(
+    def _execute_backup_to_s3(
         self,
         event: ActionEvent,
         s3_parameters: dict[str, str],
