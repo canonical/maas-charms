@@ -560,7 +560,7 @@ backup-id            | action              | status   | backup-path
             "access-key": "test-access-key",
             "secret-key": "test-secret-key",
             # to check that the strip does not apply to values that are not type string
-            "dummy": 1,
+            "sample": 1,
         }
         self.assertEqual(
             self.harness.charm.backup._retrieve_s3_parameters(),
@@ -574,7 +574,7 @@ backup-id            | action              | status   | backup-path
                     "region": "",
                     "s3-uri-style": "host",
                     "secret-key": "test-secret-key",
-                    "dummy": 1,
+                    "sample": 1,
                 },
                 [],
             ),
