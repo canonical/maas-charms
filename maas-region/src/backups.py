@@ -462,14 +462,13 @@ Juju Version: {self.charm.model.juju_version!s}
                 ca = "\n".join(ca_chain)
                 ca_file.write(ca.encode())
                 ca_file.flush()
-                s3 = self._get_s3_session_resource(s3_parameters, ca_file.name)
+                client = self._get_s3_session_client(s3_parameters, ca_file.name)
             else:
-                s3 = self._get_s3_session_resource(s3_parameters, None)
+                client = self._get_s3_session_client(s3_parameters, None)
 
             bucket_name = s3_parameters["bucket"]
 
             try:
-                bucket = s3.Bucket(bucket_name)
                 # get region ids
                 event.log("Retrieving region ids from MAAS...")
                 success, regions = self._get_region_ids(username=username)
@@ -488,8 +487,9 @@ Juju Version: {self.charm.model.juju_version!s}
                     f.write("\n".join(regions).encode("utf-8"))
                     f.flush()
                     event.log("Uploading region ids to S3...")
-                    bucket.upload_file(
+                    client.upload_file(
                         f.name,
+                        bucket_name,
                         region_path,
                         Callback=ProgressPercentage(f.name, log_label="region ids"),
                     )
@@ -505,8 +505,9 @@ Juju Version: {self.charm.model.juju_version!s}
                         )
                     f.flush()
                     event.log("Uploading image archive to S3...")
-                    bucket.upload_file(
+                    client.upload_file(
                         f.name,
+                        bucket_name,
                         image_path,
                         Callback=ProgressPercentage(f.name, "image archive"),
                     )
