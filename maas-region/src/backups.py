@@ -386,9 +386,6 @@ class MAASBackups(Object):
             self.charm.unit.status = ActiveStatus()
 
     def _on_create_backup_action(self, event) -> None:
-        credentials = self.charm._create_or_get_internal_admin()
-        username = credentials["username"]
-
         can_unit_perform_backup, validation_message = self._can_unit_perform_backup()
         if not can_unit_perform_backup:
             logger.error(f"Backup failed: {validation_message}")
@@ -418,7 +415,7 @@ Juju Version: {self.charm.model.juju_version!s}
 
         self.charm.unit.status = MaintenanceStatus("creating backup")
 
-        self._run_backup(event, s3_parameters, datetime_backup_requested, username)
+        self._run_backup(event, s3_parameters, datetime_backup_requested)
 
         self.charm.unit.status = ActiveStatus()
 
@@ -427,7 +424,6 @@ Juju Version: {self.charm.model.juju_version!s}
         event: ActionEvent,
         s3_parameters: dict,
         datetime_backup_requested: str,
-        username: str,
     ) -> None:
         backup_id = self._generate_backup_id()
         s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
@@ -435,7 +431,6 @@ Juju Version: {self.charm.model.juju_version!s}
         succeeded = self._execute_backup_to_s3(
             event=event,
             s3_parameters=s3_parameters,
-            username=username,
             s3_path=s3_path,
         )
         if not succeeded:
@@ -453,7 +448,6 @@ Juju Version: {self.charm.model.juju_version!s}
         self,
         event: ActionEvent,
         s3_parameters: dict[str, str],
-        username: str,
         s3_path: str,
     ) -> bool:
         ca_chain = s3_parameters.get("tls-ca-chain", [])
@@ -473,7 +467,6 @@ Juju Version: {self.charm.model.juju_version!s}
                     event=event,
                     client=client,
                     bucket_name=bucket_name,
-                    username=username,
                     s3_path=s3_path,
                 )
             except Exception as e:
@@ -493,12 +486,11 @@ Juju Version: {self.charm.model.juju_version!s}
         event: ActionEvent,
         client: Any,
         bucket_name: str,
-        username: str,
         s3_path: str,
     ):
         # get region ids
         event.log("Retrieving region ids from MAAS...")
-        success, regions = self._get_region_ids(username=username)
+        success, regions = self._get_region_ids()
         if not success:
             logger.error(
                 "Failed to get region ids for S3 backup. Please check the juju debug-log for more details."
@@ -539,10 +531,11 @@ Juju Version: {self.charm.model.juju_version!s}
                 Callback=ProgressPercentage(f.name, "image archive"),
             )
 
-    def _get_region_ids(self, username: str) -> tuple[bool, set[str]]:
+    def _get_region_ids(self) -> tuple[bool, set[str]]:
+        credentials = self.charm._create_or_get_internal_admin()
         try:
             return True, MaasHelper.get_regions(
-                admin_username=username, maas_ip=self.charm.bind_address
+                admin_username=credentials["username"], maas_ip=self.charm.bind_address
             )
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to get region ids: {e}")
