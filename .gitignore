@@ -26,6 +26,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+pytestdebug.log
 cover/
 
 # Translations
@@ -74,3 +75,7 @@ cython_debug/
 
 # Tracing
 .charm_tracing_buffer.raw
+
+# Other
+*.egg-info
+build/
