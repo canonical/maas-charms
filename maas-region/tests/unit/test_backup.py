@@ -4,7 +4,6 @@
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
 import unittest
-from subprocess import CompletedProcess
 from unittest.mock import call, patch
 
 import ops

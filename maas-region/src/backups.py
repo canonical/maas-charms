@@ -532,8 +532,8 @@ Juju Version: {self.charm.model.juju_version!s}
             )
 
     def _get_region_ids(self) -> tuple[bool, set[str]]:
-        credentials = self.charm._create_or_get_internal_admin()
         try:
+            credentials = self.charm._create_or_get_internal_admin()
             return True, MaasHelper.get_regions(
                 admin_username=credentials["username"], maas_ip=self.charm.bind_address
             )
