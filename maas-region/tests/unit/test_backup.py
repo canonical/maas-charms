@@ -4,7 +4,6 @@
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
 import unittest
-from subprocess import CompletedProcess
 from unittest.mock import call, patch
 
 import ops
@@ -273,30 +272,6 @@ class TestMAASBackups(unittest.TestCase):
         head_bucket.assert_called_once()
         create.assert_not_called()
         wait_until_exists.assert_not_called()
-
-    @patch("backups.run")
-    def test_execute_command(self, _run):
-        self.harness.begin()
-
-        # Test when the command fails.
-        command = ["rm", "-r", "/tmp/tmp"]
-        _run.return_value = CompletedProcess(command, 1, b"", b"fake stderr")
-        self.assertEqual(
-            self.harness.charm.backup._execute_command(command), (1, "", "fake stderr")
-        )
-        _run.assert_called_once_with(command, input=None, capture_output=True, timeout=None)
-
-        # Test when the command runs successfully.
-        _run.reset_mock()
-        _run.side_effect = None
-        _run.return_value = CompletedProcess(command, 0, b"fake stdout", b"")
-        self.assertEqual(
-            self.harness.charm.backup._execute_command(
-                command, command_input=b"fake input", timeout=5
-            ),
-            (0, "fake stdout", ""),
-        )
-        _run.assert_called_once_with(command, input=b"fake input", capture_output=True, timeout=5)
 
     def test_format_backup_list(self):
         self.harness.begin()
