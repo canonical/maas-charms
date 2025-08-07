@@ -423,7 +423,8 @@ backup-id            | action              | status   | backup-path
         create_bucket.assert_called_once_with(s3_parameters_dict)
         upload_to_s3.assert_called_once_with("123-456", "model-uuid.txt", s3_parameters_dict)
 
-    def test_on_s3_credential_changed__no_leader(self):
+    @patch("backups.MAASBackups._create_bucket_if_not_exists")
+    def test_on_s3_credential_changed__no_leader(self, create_bucket):
         self.harness.begin()
         self.harness.set_leader(False)
         rel = self.harness.add_relation("s3-parameters", "s3-integrator")
@@ -435,6 +436,7 @@ backup-id            | action              | status   | backup-path
                 "secret-key": "admin",
             },
         )
+        create_bucket.assert_not_called()
 
     @patch("backups.MAASBackups._retrieve_s3_parameters")
     @patch("backups.MAASBackups._create_bucket_if_not_exists")
@@ -488,6 +490,10 @@ backup-id            | action              | status   | backup-path
         self.harness.begin()
         self.harness.charm.unit.status = ops.ActiveStatus()
         self.harness.remove_relation(rel)
+        self.assertEqual(
+            self.harness.charm.unit.status,
+            ops.ActiveStatus(),
+        )
 
     def test_on_s3_credential_gone__set_active(self):
         rel = self.harness.add_relation("s3-parameters", "s3-integrator")
@@ -496,6 +502,10 @@ backup-id            | action              | status   | backup-path
             FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE
         )
         self.harness.remove_relation(rel)
+        self.assertEqual(
+            self.harness.charm.unit.status,
+            ops.ActiveStatus(),
+        )
 
     def test_on_create_backup_action(self):
         # TODO: implement this
