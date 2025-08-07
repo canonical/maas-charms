@@ -748,7 +748,12 @@ Juju Version: {self.charm.model.juju_version!s}
 
                 with tempfile.NamedTemporaryFile(suffix=".tar.gz") as f:
                     event.log("Downloading image archive from S3...")
-                    client.download_file(bucket, f.name, path)
+                    client.download_file(
+                        bucket,
+                        f.name,
+                        path,
+                        Callback=ProgressPercentage(f.name, "image archive"),
+                    )
 
                     event.log("Extracting images from image archive...")
                     with tarfile.open(fileobj=f, mode="r:gz") as tar:
