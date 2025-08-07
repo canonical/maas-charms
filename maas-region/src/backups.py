@@ -648,48 +648,19 @@ Juju Version: {self.charm.model.juju_version!s}
     def _run_restore(
         self, event: ActionEvent, s3_parameters: dict[str, str], backup_id: str
     ) -> None:
-        # Remove relation between maas-region and postgresql. This will stop the maas-region charm based on https://github.com/canonical/maas-charms/pull/511 .
-        if not self._relation_exists("maas-db"):
-            event.fail(
-                "PostgreSQL relation still exists, please run:\n"
-                "juju remove-relation maas-region postgresql\n"
-                "then retry this action"
-            )
-            return
-
-        # Ensure there are the same number of maas-region units as there are controllers in controllers.txt. i.e. 1 for non ha mode, or 3 for ha.
         path = f"/backup/{backup_id}"
-        controllers_content = self._read_content_from_s3(f"{path}/controllers.txt", s3_parameters)
-        if not controllers_content:
-            event.fail("Restore failed: Could not fetch controllers list")
-            return
-
-        controllers = controllers_content.strip("\n").split("\n")
-        relation = self.model.get_relation("maas-cluster")
-        if relation is None:
-            event.fail("Restore failed: could not fetch MAAS regions list")
-            return
-        regions = relation.units
-
-        if len(controllers) != len(regions):
+        if not self._update_controller_ids(event=event, path=path, s3_parameters=s3_parameters):
             event.fail(
-                f"Restore failed: the number of MAAS-Region units ({len(regions)}) "
-                f"does not match the expected value from the backup ({len(controllers)})."
+                "Failed to update MAAS-Region IDs from S3 backup. Check the juju debug-log for more detail."
             )
+            return
 
-        # For each region id in controllers.txt, add the region id to /var/snap/maas/common/maas/maas_id in a relevant maas-region unit.#
-        for region, controller in zip(regions, sorted(controllers)):
-            logger.debug(f"Assigning {controller} to {self.model.name}")
-            relation.data[self.model.app][f"{region.name}_id"] = json.dumps(controller)
-
-        # Remove the existing image-storage i.e. sudo rm -rf /var/snap/maas/common/maas/image-storage
         image_storage = Path(SNAP_PATH_TO_IMAGES)
         shutil.rmtree(image_storage, ignore_errors=True)
         if image_storage.exists():
             event.fail("Could not remove existing image-storage")
             return
 
-        # Unpack image-storage.tar.gz into that directory, i.e. sudo tar -zxvf /image-archive.tar.gz -C /
         if not self._download_and_unarchive_from_s3(
             event=event,
             s3_path=f"{path}/image-strorage.tar.gz",
@@ -701,12 +672,42 @@ Juju Version: {self.charm.model.juju_version!s}
             )
             return
 
-        # Reintegrate maas-region and postgresql. This should restart maas.
         event.log(
             "Backup complete, please run:\n"
             "juju add-relation maas-region postgresql\n"
             "to restart MAAS"
         )
+
+    def _update_controller_ids(
+        self, event: ActionEvent, path: str, s3_parameters: dict[str, str]
+    ) -> bool:
+        # Fetch the controllers from S3 and the regions from the relation
+        controllers_content = self._read_content_from_s3(f"{path}/controllers.txt", s3_parameters)
+        if not controllers_content:
+            event.fail("Restore failed: Could not fetch controllers list")
+            return False
+
+        controllers = controllers_content.strip("\n").split("\n")
+        relation = self.model.get_relation("maas-cluster")
+        if relation is None:
+            event.fail("Restore failed: could not fetch MAAS regions list")
+            return False
+
+        regions = relation.units
+
+        if len(controllers) != len(regions):
+            event.fail(
+                f"Restore failed: the number of MAAS-Region units ({len(regions)}) "
+                f"does not match the expected value from the backup ({len(controllers)})."
+            )
+            return False
+
+        # Push the corresponding controller ID to each region, to be updated
+        for region, controller in zip(regions, sorted(controllers)):
+            logger.debug(f"Assigning {controller} to {self.model.name}")
+            relation.data[self.model.app][f"{region.name}_id"] = json.dumps(controller)
+
+        return True
 
     def _download_and_unarchive_from_s3(
         self,
@@ -741,6 +742,7 @@ Juju Version: {self.charm.model.juju_version!s}
                 # check the storage path exists and contains something
                 if image_storage.exists() and any(image_storage.iterdir()):
                     return True
+
                 logger.error("Image archive from S3 did not contain any files.")
                 event.fail("Empty image archive downloaded from S3")
                 return False
@@ -799,6 +801,18 @@ Juju Version: {self.charm.model.juju_version!s}
         logger.info("Checking that this unit was already elected the leader unit")
         if not self.charm.unit.is_leader():
             error_message = "Unit cannot restore backup as it was not elected the leader unit yet"
+            logger.error(f"Restore failed: {error_message}")
+            event.fail(error_message)
+            return False
+
+        # from https://github.com/canonical/maas-charms/pull/511 .
+        logger.info("Checking that the PostgreSQL relation has been removed")
+        if not self._relation_exists("maas-db"):
+            error_message = (
+                "PostgreSQL relation still exists, please run:\n"
+                "juju remove-relation maas-region postgresql\n"
+                "then retry this action"
+            )
             logger.error(f"Restore failed: {error_message}")
             event.fail(error_message)
             return False
