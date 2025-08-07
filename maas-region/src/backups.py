@@ -498,7 +498,7 @@ Juju Version: {self.charm.model.juju_version!s}
     ):
         # get region ids
         event.log("Retrieving region ids from MAAS...")
-        regions = self._get_region_ids()
+        regions = self.charm._get_region_system_ids()
 
         # upload regions
         region_path = os.path.join(s3_path, "controllers.txt")
@@ -591,16 +591,6 @@ Juju Version: {self.charm.model.juju_version!s}
             "unit_name": self.charm.unit.name,
             "juju_version": str(self.charm.model.juju_version),
         }
-
-    def _get_region_ids(self) -> set[str]:
-        try:
-            credentials = self.charm._create_or_get_internal_admin()
-            return MaasHelper.get_regions(
-                admin_username=credentials["username"], maas_ip=self.charm.bind_address
-            )
-        except Exception as e:
-            logger.exception(e)
-            raise e
 
     def _generate_backup_id(self) -> str:
         """Create a backup id for failed backup operations (to store log file)."""

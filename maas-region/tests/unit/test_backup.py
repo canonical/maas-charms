@@ -537,6 +537,18 @@ backup-id            | action              | status   | backup-path
             "Failed to upload metadata to provided S3. Please check the juju debug-log for more details.",
         )
 
+    def test_generate_backup_id(self):
+        self.harness.begin()
+        result = self.harness.charm.backup._generate_backup_id()
+        datetime_now_pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
+        self.assertRegex(result, datetime_now_pattern)
+
+    @patch("backups.MaasRegionCharm._create_or_get_internal_admin")
+    def test_get_region_ids(self, admin):
+        self.harness.begin()
+        self.harness.charm._get_region_ids()
+        admin.assert_called_once()
+
     def test_run_backup(self):
         # TODO: implement this
         pass
