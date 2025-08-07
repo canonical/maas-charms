@@ -44,7 +44,6 @@ FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE = (
 S3_BLOCK_MESSAGES = [
     FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
 ]
-SNAP_COMMON = Path("/var/snap/maas/common/maas")
 SNAP_PATH_TO_IMAGES = "/var/snap/maas/common/maas/image-storage"
 SNAP_PATH_TO_PRESEEDS = "/var/snap/maas/current/preseeds"
 METADATA_PATH = "backup/latest"
@@ -679,10 +678,11 @@ Juju Version: {self.charm.model.juju_version!s}
             return
 
         controllers = controllers_content.strip("\n").split("\n")
-        regions = relation.units if (relation := self.model.get_relation("maas-cluster")) else None
-        if regions is None:
+        relation = self.model.get_relation("maas-cluster")
+        if relation is None:
             event.fail("Restore failed: could not fetch MAAS regions list")
             return
+        regions = relation.units
 
         if len(controllers) != len(regions):
             event.fail(
@@ -692,12 +692,11 @@ Juju Version: {self.charm.model.juju_version!s}
 
         # For each region id in controllers.txt, add the region id to /var/snap/maas/common/maas/maas_id in a relevant maas-region unit.#
         for region, controller in zip(regions, sorted(controllers)):
-            if self.model.name == region.name:
-                logger.debug(f"Assigning {controller} to {self.model.name}")
-                self._write_region_id(controller)
+            logger.debug(f"Assigning {controller} to {self.model.name}")
+            relation.data[self.model.app][f"{region.name}_id"] = json.dumps(controller)
 
         # Remove the existing image-storage i.e. sudo rm -rf /var/snap/maas/common/maas/image-storage
-        image_storage = SNAP_COMMON / "image-storage"
+        image_storage = Path(SNAP_PATH_TO_IMAGES)
         shutil.rmtree(image_storage, ignore_errors=True)
         if image_storage.exists():
             event.fail("Could not remove existing image-storage")
@@ -796,9 +795,6 @@ Juju Version: {self.charm.model.juju_version!s}
 
     def _relation_exists(self, relation_name: str) -> bool:
         return self.model.get_relation(relation_name=relation_name) is not None
-
-    def _write_region_id(self, controller_id: str) -> None:
-        (SNAP_COMMON / "maas_id").write_text(f"{controller_id}\n")
 
     def _pre_restore_checks(self, event: ActionEvent) -> bool:
         """Run some checks before starting the restore.
