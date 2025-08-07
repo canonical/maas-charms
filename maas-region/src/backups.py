@@ -3,15 +3,19 @@
 
 """Backups implementation."""
 
+import json
 import logging
 import os
+import shutil
 import subprocess
 import tarfile
 import tempfile
 import threading
-from contextlib import nullcontext
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 from boto3.session import Session
@@ -132,6 +136,36 @@ class MAASBackups(Object):
             ),
         )
 
+    @contextmanager
+    def _s3_resource(self, s3_parameters: dict[str, str]) -> Iterator[Any]:
+        ca_chain = s3_parameters.get("tls-ca-chain", [])
+        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
+            if ca_file:
+                ca = "\n".join(ca_chain)
+                ca_file.write(ca.encode())
+                ca_file.flush()
+
+                s3 = self._get_s3_session_resource(s3_parameters, ca_file.name)
+            else:
+                s3 = self._get_s3_session_resource(s3_parameters, None)
+
+            yield s3
+
+    @contextmanager
+    def _s3_client(self, s3_parameters: dict[str, str]) -> Iterator[Any]:
+        ca_chain = s3_parameters.get("tls-ca-chain", [])
+        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
+            if ca_file:
+                ca = "\n".join(ca_chain)
+                ca_file.write(ca.encode())
+                ca_file.flush()
+
+                s3 = self._get_s3_session_client(s3_parameters, ca_file.name)
+            else:
+                s3 = self._get_s3_session_client(s3_parameters, None)
+
+            yield s3
+
     def _are_backup_settings_ok(self) -> tuple[bool, str]:
         """Validate whether backup settings are OK."""
         if self.model.get_relation(self.relation_name) is None:
@@ -199,17 +233,7 @@ class MAASBackups(Object):
         bucket_name = s3_parameters["bucket"]
         region = s3_parameters.get("region")
 
-        ca_chain = s3_parameters.get("tls-ca-chain", [])
-        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
-            if ca_file:
-                ca = "\n".join(ca_chain)
-                ca_file.write(ca.encode())
-                ca_file.flush()
-
-                s3 = self._get_s3_session_resource(s3_parameters, ca_file.name)
-            else:
-                s3 = self._get_s3_session_resource(s3_parameters, None)
-
+        with self._s3_resource(s3_parameters) as s3:
             bucket = s3.Bucket(bucket_name)
             try:
                 bucket.meta.client.head_bucket(Bucket=bucket_name)
@@ -326,17 +350,7 @@ class MAASBackups(Object):
                 bucket.
         """
         backups = []
-        ca_chain = s3_parameters.get("tls-ca-chain", [])
-        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
-            if ca_file:
-                ca = "\n".join(ca_chain)
-                ca_file.write(ca.encode())
-                ca_file.flush()
-
-                s3 = self._get_s3_session_client(s3_parameters, ca_file.name)
-            else:
-                s3 = self._get_s3_session_client(s3_parameters, None)
-
+        with self._s3_client(s3_parameters) as s3:
             paginator = s3.get_paginator("list_objects_v2")
             page_iterator = paginator.paginate(
                 Bucket=s3_parameters["bucket"],
@@ -450,16 +464,7 @@ Juju Version: {self.charm.model.juju_version!s}
         s3_parameters: dict[str, str],
         s3_path: str,
     ) -> bool:
-        ca_chain = s3_parameters.get("tls-ca-chain", [])
-        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
-            if ca_file:
-                ca = "\n".join(ca_chain)
-                ca_file.write(ca.encode())
-                ca_file.flush()
-                client = self._get_s3_session_client(s3_parameters, ca_file.name)
-            else:
-                client = self._get_s3_session_client(s3_parameters, None)
-
+        with self._s3_client(s3_parameters) as client:
             bucket_name = s3_parameters["bucket"]
 
             try:
@@ -560,11 +565,11 @@ Juju Version: {self.charm.model.juju_version!s}
             logger.exception(e)
             event.fail(f"Failed to list MAAS backups with error: {e!s}")
 
-    def _on_restore_from_backup_action(self, event):
+    def _on_restore_from_backup_action(self, event: ActionEvent) -> None:
         if not self._pre_restore_checks(event):
             return
 
-        backup_id = event.params.get("backup-id")
+        backup_id: str = event.params.get("backup-id", "")
         logger.info(f"A restore with backup-id {backup_id} has been requested on the unit")
 
         # Validate the provided backup id
@@ -587,14 +592,143 @@ Juju Version: {self.charm.model.juju_version!s}
 
         self.charm.unit.status = MaintenanceStatus("restoring backup")
 
-        # Step 1
-        logger.info("Step 1")
-        # ...
-        # ...
-        # Step N
-        logger.info("Step N")
+        self._run_restore(event, s3_parameters, backup_id)
 
+        self.charm.unit.status = ActiveStatus()
         event.set_results({"restore-status": "restore finished"})
+
+    def _run_restore(
+        self, event: ActionEvent, s3_parameters: dict[str, str], backup_id: str
+    ) -> None:
+        path = f"/backup/{backup_id}"
+        if not self._update_controller_ids(event=event, path=path, s3_parameters=s3_parameters):
+            event.fail(
+                "Failed to update MAAS-Region IDs from S3 backup. Check the juju debug-log for more detail."
+            )
+            return
+
+        image_storage = Path(SNAP_PATH_TO_IMAGES)
+        shutil.rmtree(image_storage, ignore_errors=True)
+        if image_storage.exists():
+            event.fail("Could not remove existing image-storage")
+            return
+
+        if not self._download_and_unarchive_from_s3(
+            event=event,
+            s3_path=f"{path}/image-strorage.tar.gz",
+            s3_parameters=s3_parameters,
+            image_storage=image_storage,
+        ):
+            event.fail(
+                "Failed to download and extract images from S3 backup. Check the juju debug-log for more detail."
+            )
+            return
+
+        event.log(
+            "Backup complete, please run:\n"
+            "juju add-relation maas-region postgresql\n"
+            "to restart MAAS"
+        )
+
+    def _update_controller_ids(
+        self, event: ActionEvent, path: str, s3_parameters: dict[str, str]
+    ) -> bool:
+        # Fetch the controllers from S3 and the regions from the relation
+        controllers_content = self._read_content_from_s3(f"{path}/controllers.txt", s3_parameters)
+        if not controllers_content:
+            event.fail("Restore failed: Could not fetch controllers list")
+            return False
+
+        controllers = controllers_content.strip("\n").split("\n")
+        relation = self.model.get_relation("maas-cluster")
+        if relation is None:
+            event.fail("Restore failed: could not fetch MAAS regions list")
+            return False
+
+        regions = relation.units
+
+        if len(controllers) != len(regions):
+            event.fail(
+                f"Restore failed: the number of MAAS-Region units ({len(regions)}) "
+                f"does not match the expected value from the backup ({len(controllers)})."
+            )
+            return False
+
+        # Push the corresponding controller ID to each region, to be updated
+        for region, controller in zip(regions, sorted(controllers)):
+            logger.debug(f"Assigning {controller} to {self.model.name}")
+            relation.data[self.model.app][f"{region.name}_id"] = json.dumps(controller)
+
+        return True
+
+    def _download_and_unarchive_from_s3(
+        self,
+        event: ActionEvent,
+        s3_path: str,
+        s3_parameters: dict[str, str],
+        image_storage: Path,
+    ) -> bool:
+        bucket = s3_parameters["bucket"]
+        path = os.path.join(s3_parameters["path"], s3_path).lstrip("/")
+        with self._s3_client(s3_parameters) as client:
+            try:
+                if (
+                    (size := client.head_object(Bucket=bucket, ey=path)["ContentLenght"])
+                    and (free := shutil.disk_usage(image_storage).free)
+                    and (size >= free)
+                ):
+                    logger.exception(
+                        f"Not enough free storage to extract image archive, required {size} but has {free}"
+                    )
+                    event.fail("Not enough space to download image archive from S3.")
+                    return False
+
+                with tempfile.NamedTemporaryFile(suffix=".tar.gz") as f:
+                    event.log("Downloading image archive from S3...")
+                    client.download_file(
+                        bucket,
+                        f.name,
+                        path,
+                        Callback=ProgressPercentage(f.name, "image archive"),
+                    )
+
+                    event.log("Extracting images from image archive...")
+                    with tarfile.open(fileobj=f, mode="r:gz") as tar:
+                        tar.extractall(path="/")
+
+                # check the storage path exists and contains something
+                if image_storage.exists() and any(image_storage.iterdir()):
+                    return True
+
+                logger.error("Image archive from S3 did not contain any files.")
+                event.fail("Empty image archive downloaded from S3")
+                return False
+
+            except ClientError as e:
+                if e.response["Error"]["Code"] == "404":
+                    logger.error(f"Could not find object in {bucket}:{path}")
+                    event.fail("Failed to download image archive from S3.")
+
+                else:
+                    logger.exception(f"Could not read object from {bucket}:{path}", exc_info=e)
+                    event.fail("Failed to download image archive from S3.")
+
+            except (FileNotFoundError, OSError) as e:
+                logger.exception("Filesystem error while extracting archive", exc_info=e)
+                event.fail("Failed to untar image archive from S3.")
+
+            except tarfile.TarError as e:
+                logger.exception("Corrupted or invalid tar archive", exc_info=e)
+                event.fail("Image archive is not a valid .tar.gz file or is corrupted.")
+
+            except Exception as e:
+                logger.exception(f"Could not read content from {bucket}:{path}", exc_info=e)
+                event.fail("Failed to download image archive from S3.")
+
+        return False
+
+    def _relation_exists(self, relation_name: str) -> bool:
+        return self.model.get_relation(relation_name=relation_name) is not None
 
     def _pre_restore_checks(self, event: ActionEvent) -> bool:
         """Run some checks before starting the restore.
@@ -624,6 +758,18 @@ Juju Version: {self.charm.model.juju_version!s}
         logger.info("Checking that this unit was already elected the leader unit")
         if not self.charm.unit.is_leader():
             error_message = "Unit cannot restore backup as it was not elected the leader unit yet"
+            logger.error(f"Restore failed: {error_message}")
+            event.fail(error_message)
+            return False
+
+        # from https://github.com/canonical/maas-charms/pull/511 .
+        logger.info("Checking that the PostgreSQL relation has been removed")
+        if not self._relation_exists("maas-db"):
+            error_message = (
+                "PostgreSQL relation still exists, please run:\n"
+                "juju remove-relation maas-region postgresql\n"
+                "then retry this action"
+            )
             logger.error(f"Restore failed: {error_message}")
             event.fail(error_message)
             return False
@@ -680,17 +826,7 @@ Juju Version: {self.charm.model.juju_version!s}
         Returns:
             a boolean indicating success.
         """
-        ca_chain = s3_parameters.get("tls-ca-chain", [])
-        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
-            if ca_file:
-                ca = "\n".join(ca_chain)
-                ca_file.write(ca.encode())
-                ca_file.flush()
-
-                s3 = self._get_s3_session_resource(s3_parameters, ca_file.name)
-            else:
-                s3 = self._get_s3_session_resource(s3_parameters, None)
-
+        with self._s3_resource(s3_parameters) as s3:
             path = os.path.join(s3_parameters["path"], s3_path).lstrip("/")
 
             try:
@@ -721,17 +857,7 @@ Juju Version: {self.charm.model.juju_version!s}
             a string with the content if object is successfully downloaded and None if file is not existing or error
             occurred during download.
         """
-        ca_chain = s3_parameters.get("tls-ca-chain", [])
-        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
-            if ca_file:
-                ca = "\n".join(ca_chain)
-                ca_file.write(ca.encode())
-                ca_file.flush()
-
-                s3 = self._get_s3_session_resource(s3_parameters, ca_file.name)
-            else:
-                s3 = self._get_s3_session_resource(s3_parameters, None)
-
+        with self._s3_resource(s3_parameters) as s3:
             path = os.path.join(s3_parameters["path"], s3_path).lstrip("/")
 
             try:
