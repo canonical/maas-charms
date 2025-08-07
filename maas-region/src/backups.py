@@ -371,7 +371,7 @@ class MAASBackups(Object):
 
     def _on_s3_credential_gone(self, event) -> None:
         if self.charm.is_blocked and self.charm.unit.status.message in S3_BLOCK_MESSAGES:
-            self.charm.unit.status(ActiveStatus())
+            self.charm.unit.status = ActiveStatus()
 
     def _on_create_backup_action(self, event) -> None:
         logger.info("A backup has been requested on unit")
@@ -403,11 +403,11 @@ Juju Version: {self.charm.model.juju_version!s}
             event.fail(error_message)
             return
 
-        self.charm.unit.status(MaintenanceStatus("creating backup"))
+        self.charm.unit.status = MaintenanceStatus("creating backup")
 
         self._run_backup(event, s3_parameters, datetime_backup_requested)
 
-        self.charm.unit.status(ActiveStatus())
+        self.charm.unit.status = ActiveStatus()
 
     def _run_backup(
         self,
@@ -487,7 +487,7 @@ Stderr:
             event.fail(error_message)
             return
 
-        self.charm.unit.status(MaintenanceStatus("restoring backup"))
+        self.charm.unit.status = MaintenanceStatus("restoring backup")
 
         # Step 1
         logger.info("Step 1")
