@@ -631,7 +631,7 @@ Juju Version: {self.charm.model.juju_version!s}
         if not self._pre_restore_checks(event):
             return
 
-        backup_id = event.params.get("backup-id")
+        backup_id: str = event.params.get("backup-id", "")
         logger.info(f"A restore with backup-id {backup_id} has been requested on the unit")
 
         # Validate the provided backup id
@@ -665,9 +665,9 @@ Juju Version: {self.charm.model.juju_version!s}
         # Remove relation between maas-region and postgresql. This will stop the maas-region charm based on https://github.com/canonical/maas-charms/pull/511 .
         if not self._relation_exists("maas-db"):
             event.fail(
-                "PostgreSQL relation still exists, please run:\n",
-                "juju remove-relation maas-region postgresql\n",
-                "then retry this action",
+                "PostgreSQL relation still exists, please run:\n"
+                "juju remove-relation maas-region postgresql\n"
+                "then retry this action"
             )
             return
 
@@ -679,7 +679,11 @@ Juju Version: {self.charm.model.juju_version!s}
             return
 
         controllers = controllers_content.strip("\n").split("\n")
-        regions = self.model.get_relation("maas-cluster").units
+        regions = relation.units if (relation := self.model.get_relation("maas-cluster")) else None
+        if regions is None:
+            event.fail("Restore failed: could not fetch MAAS regions list")
+            return
+
         if len(controllers) != len(regions):
             event.fail(
                 f"Restore failed: the number of MAAS-Region units ({len(regions)}) "
@@ -725,9 +729,9 @@ Juju Version: {self.charm.model.juju_version!s}
 
         # Reintegrate maas-region and postgresql. This should restart maas.
         event.log(
-            "Backup complete, please run:\n",
-            "juju add-relation maas-region postgresql\n",
-            "to restart MAAS",
+            "Backup complete, please run:\n"
+            "juju add-relation maas-region postgresql\n"
+            "to restart MAAS"
         )
 
     def _download_and_unarchive_from_s3(
@@ -750,7 +754,7 @@ Juju Version: {self.charm.model.juju_version!s}
                     f"Not enough free storage to extract image archive, required {size} but has {free}"
                 )
                 event.fail("Not enough space to download image archive from S3.")
-                return
+                return False
 
             with tempfile.NamedTemporaryFile(suffix=".tar.gz") as f:
                 event.log("Downloading image archive from S3...")
