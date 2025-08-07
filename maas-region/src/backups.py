@@ -11,7 +11,7 @@ import subprocess
 import tarfile
 import tempfile
 import threading
-from collections.abc import Generator
+from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
 from datetime import datetime
 from io import BytesIO
@@ -142,7 +142,7 @@ class MAASBackups(Object):
         )
 
     @contextmanager
-    def _s3_client(self, s3_parameters: dict[str, str]) -> Generator[Any, None, None]:
+    def _s3_resource(self, s3_parameters: dict[str, str]) -> Iterator[Any]:
         ca_chain = s3_parameters.get("tls-ca-chain", [])
         with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
             if ca_file:
@@ -153,6 +153,21 @@ class MAASBackups(Object):
                 s3 = self._get_s3_session_resource(s3_parameters, ca_file.name)
             else:
                 s3 = self._get_s3_session_resource(s3_parameters, None)
+
+            yield s3
+
+    @contextmanager
+    def _s3_client(self, s3_parameters: dict[str, str]) -> Iterator[Any]:
+        ca_chain = s3_parameters.get("tls-ca-chain", [])
+        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
+            if ca_file:
+                ca = "\n".join(ca_chain)
+                ca_file.write(ca.encode())
+                ca_file.flush()
+
+                s3 = self._get_s3_session_client(s3_parameters, ca_file.name)
+            else:
+                s3 = self._get_s3_session_client(s3_parameters, None)
 
             yield s3
 
@@ -223,7 +238,7 @@ class MAASBackups(Object):
         bucket_name = s3_parameters["bucket"]
         region = s3_parameters.get("region")
 
-        with self._s3_client(s3_parameters) as s3:
+        with self._s3_resource(s3_parameters) as s3:
             bucket = s3.Bucket(bucket_name)
             try:
                 bucket.meta.client.head_bucket(Bucket=bucket_name)
@@ -721,7 +736,7 @@ Juju Version: {self.charm.model.juju_version!s}
         with self._s3_client(s3_parameters) as client:
             try:
                 if (
-                    (size := client.head_object(Bucket=bucket, key=path)["ContentLenght"])
+                    (size := client.head_object(Bucket=bucket, ey=path)["ContentLenght"])
                     and (free := shutil.disk_usage(image_storage).free)
                     and (size >= free)
                 ):
@@ -869,7 +884,7 @@ Juju Version: {self.charm.model.juju_version!s}
         Returns:
             a boolean indicating success.
         """
-        with self._s3_client(s3_parameters) as s3:
+        with self._s3_resource(s3_parameters) as s3:
             path = os.path.join(s3_parameters["path"], s3_path).lstrip("/")
 
             try:
@@ -900,7 +915,7 @@ Juju Version: {self.charm.model.juju_version!s}
             a string with the content if object is successfully downloaded and None if file is not existing or error
             occurred during download.
         """
-        with self._s3_client(s3_parameters) as s3:
+        with self._s3_resource(s3_parameters) as s3:
             path = os.path.join(s3_parameters["path"], s3_path).lstrip("/")
 
             try:
