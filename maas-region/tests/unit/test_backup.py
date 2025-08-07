@@ -482,9 +482,60 @@ backup-id            | action              | status   | backup-path
             ops.ActiveStatus(),
         )
 
-    def test_on_create_backup_action(self):
-        # TODO: implement this
-        pass
+    @patch("backups.MAASBackups._run_backup")
+    @patch("backups.MAASBackups._upload_content_to_s3")
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    @patch("backups.MAASBackups._can_unit_perform_backup")
+    @patch("charm.MaasRegionCharm._create_or_get_internal_admin")
+    def test_on_create_backup_action(
+        self, admin, can_unit_backup, s3_params, upload_content, run_backup
+    ):
+        admin.return_value = {"username": "admin", "password": "password"}
+        can_unit_backup.return_value = True, ""
+        s3_params.return_value = ({}, None)
+        self.harness.begin()
+        self.harness.run_action("create-backup")
+        admin.assert_called_once()
+        can_unit_backup.assert_called_once()
+        s3_params.assert_called_once()
+        run_backup.assert_called_once()
+        upload_content.assert_called_once()
+        self.assertIsInstance(self.harness.charm.unit.status, ops.ActiveStatus)
+
+    @patch("backups.MAASBackups._can_unit_perform_backup")
+    @patch("charm.MaasRegionCharm._create_or_get_internal_admin")
+    def test_on_create_backup_action_cannot_perform_backup(
+        self, admin, can_unit_backup
+    ):
+        admin.return_value = {"username": "admin", "password": "password"}
+        can_unit_backup.return_value = False, "error msg"
+        self.harness.begin()
+        with self.assertRaises(ops.testing.ActionFailed) as e:
+            self.harness.run_action("create-backup")
+        self.assertEqual(e.exception.message, "error msg")
+
+    @patch("backups.MAASBackups._upload_content_to_s3")
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    @patch("backups.MAASBackups._can_unit_perform_backup")
+    @patch("charm.MaasRegionCharm._create_or_get_internal_admin")
+    def test_on_create_backup_action_upload_metadata_fail(
+        self,
+        admin,
+        can_unit_backup,
+        s3_params,
+        upload_content,
+    ):
+        admin.return_value = {"username": "admin", "password": "password"}
+        can_unit_backup.return_value = True, ""
+        upload_content.return_value = False
+        s3_params.return_value = ({}, None)
+        self.harness.begin()
+        with self.assertRaises(ops.testing.ActionFailed) as e:
+            self.harness.run_action("create-backup")
+        self.assertEqual(
+            e.exception.message,
+            "Failed to upload metadata to provided S3. Please check the juju debug-log for more details.",
+        )
 
     def test_run_backup(self):
         # TODO: implement this
