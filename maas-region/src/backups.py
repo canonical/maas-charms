@@ -30,8 +30,6 @@ from ops.charm import ActionEvent
 from ops.framework import Object
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 
-from helper import MaasHelper
-
 logger = logging.getLogger(__name__)
 
 BACKUP_ID_FORMAT = "%Y-%m-%dT%H:%M:%SZ"

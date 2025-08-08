@@ -4,7 +4,7 @@
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
 import unittest
-from unittest.mock import call, patch
+from unittest.mock import MagicMock, call, patch
 
 import ops
 import ops.testing
@@ -537,6 +537,53 @@ backup-id            | action              | status   | backup-path
             "Failed to upload metadata to provided S3. Please check the juju debug-log for more details.",
         )
 
+    @patch("backups.MAASBackups._generate_backup_id")
+    @patch("backups.MAASBackups._execute_backup_to_s3")
+    def test_run_backup(self, execute_backup, generate_id):
+        backup_id = "2025-01-01T10:10:10Z"
+        generate_id.return_value = backup_id
+        execute_backup.return_value = True
+        self.harness.begin()
+        s3_parameters_dict = {
+            "bucket": "test-bucket",
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
+        action_event = MagicMock(spec=ops.ActionEvent)
+        self.harness.charm.backup._run_backup(
+            event=action_event,
+            s3_parameters=s3_parameters_dict,
+            datetime_backup_requested="2025-01-01T10:10:05Z",
+        )
+        generate_id.assert_called_once()
+        execute_backup.assert_called_once()
+        action_event.set_results.assert_called_once_with(
+            {"backups": f"backup created with id {backup_id}"}
+        )
+        action_event.fail.assert_not_called()
+
+        # Test when the backup fails
+        action_event.reset_mock()
+        execute_backup.reset_mock()
+        generate_id.reset_mock()
+        execute_backup.return_value = False
+        generate_id.return_value = "2025-01-01T10:10:10Z"
+        self.harness.charm.backup._run_backup(
+            event=action_event,
+            s3_parameters=s3_parameters_dict,
+            datetime_backup_requested="2025-01-01T10:10:05Z",
+        )
+        generate_id.assert_called_once()
+        execute_backup.assert_called_once()
+        action_event.set_results.assert_not_called()
+        action_event.fail.assert_called_once()
+        action_event.fail.assert_called_once_with(
+            "Failed to archive and upload MAAS files to S3. Please check the juju debug-log for more details."
+        )
+
     def test_generate_backup_id(self):
         self.harness.begin()
         result = self.harness.charm.backup._generate_backup_id()
@@ -548,10 +595,6 @@ backup-id            | action              | status   | backup-path
         self.harness.begin()
         self.harness.charm._get_region_ids()
         admin.assert_called_once()
-
-    def test_run_backup(self):
-        # TODO: implement this
-        pass
 
     @patch("backups.MAASBackups._are_backup_settings_ok")
     @patch("backups.MAASBackups._generate_backup_list_output")
