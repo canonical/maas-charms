@@ -3,6 +3,7 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import logging
 import unittest
 from unittest.mock import MagicMock, call, patch
 
@@ -12,7 +13,7 @@ from boto3.exceptions import S3UploadFailedError
 from botocore.client import BaseClient
 from botocore.exceptions import BotoCoreError, ClientError, ConnectTimeoutError, SSLError
 
-from backups import FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE
+from backups import FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE, ProgressPercentage
 from charm import MaasRegionCharm
 
 
@@ -908,3 +909,37 @@ backup-id            | action              | status   | backup-path
         )
         _named_temporary_file.assert_called_once()
         download_file.assert_called_once_with("test-path/test-file", buf_obj)
+
+
+class TestProgressPercentage(unittest.TestCase):
+
+    @patch("backups.logger", spec=logging.Logger)
+    @patch("backups.os.path.getsize")
+    def test_progress_percentage(self, _getsize, logger):
+        _getsize.return_value = 50
+
+        # Test creation and initial call
+        progress_percentage = ProgressPercentage(
+            "test-file", "test-label", update_interval=10
+        )
+        progress_percentage(25)
+        self.assertEqual(progress_percentage._last_percentage, 50)
+        logger.info.assert_called_once_with("uploading test-label to s3: 50.00%")
+
+        # Test less than update interval
+        logger.reset_mock()
+        progress_percentage(1)
+        self.assertEqual(progress_percentage._last_percentage, 50)
+        logger.info.assert_not_called()
+
+        # Test cumulative progress greater than update interval
+        logger.reset_mock()
+        progress_percentage(24)
+        self.assertEqual(progress_percentage._last_percentage, 100)
+        logger.info.assert_called_once_with("uploading test-label to s3: 100.00%")
+
+        # Test over 100% - unlikely but possible!
+        logger.reset_mock()
+        progress_percentage(25)
+        self.assertEqual(progress_percentage._last_percentage, 150)
+        logger.info.assert_called_once_with("uploading test-label to s3: 150.00%")
