@@ -653,8 +653,9 @@ backup-id            | action              | status   | backup-path
         get_client.assert_called_once_with(s3_parameters, "/tmp/test-file")
         _named_temporary_file.assert_called_once()
 
+    @patch("tarfile.open")
     @patch("charm.MaasRegionCharm._get_region_system_ids")
-    def test_backup_maas_to_s3(self, get_region_ids):
+    def test_backup_maas_to_s3(self, get_region_ids, _tar_open):
         event_mock = MagicMock(spec=ops.ActionEvent)
         client_mock = MagicMock()
         self.harness.begin()
@@ -688,7 +689,30 @@ backup-id            | action              | status   | backup-path
             )
 
         # Test fails to upload
-        ...
+        get_region_ids.return_value = True, set()
+        event_mock.reset_mock()
+        client_mock.reset_mock()
+        client_mock.upload_file.side_effect = [None, S3UploadFailedError("Failure")]
+        with self.assertRaises(S3UploadFailedError):
+            self.harness.charm.backup._backup_maas_to_s3(
+                event=event_mock,
+                client=client_mock,
+                bucket_name="test-bucket",
+                s3_path="/test-path/test-dir",
+            )
+
+        # Test successful backup
+        get_region_ids.return_value = True, set()
+        event_mock.reset_mock()
+        client_mock.reset_mock()
+        client_mock.upload_file.side_effect = None
+        self.harness.charm.backup._backup_maas_to_s3(
+            event=event_mock,
+            client=client_mock,
+            bucket_name="test-bucket",
+            s3_path="/test-path/test-dir",
+        )
+        client_mock.upload_file.assert_called()
 
     def test_generate_backup_id(self):
         self.harness.begin()
