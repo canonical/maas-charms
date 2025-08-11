@@ -564,9 +564,6 @@ Juju Version: {self.charm.model.juju_version!s}
         s3_path: str,
         success: bool,
     ) -> bool:
-        metadata_path = os.path.join(s3_path, "backup_metadata.yaml")
-        metadata = self._get_backup_metadata()
-        metadata["success"] = success
         ca_chain = s3_parameters.get("tls-ca-chain", [])
         with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
             if ca_file:
@@ -580,6 +577,9 @@ Juju Version: {self.charm.model.juju_version!s}
             bucket_name = s3_parameters["bucket"]
 
             try:
+                metadata_path = os.path.join(s3_path, "backup_metadata.yaml")
+                metadata = self._get_backup_metadata()
+                metadata["success"] = success
                 with tempfile.NamedTemporaryFile(suffix=".yaml") as f:
                     f.write(yaml.safe_dump(metadata).encode())
                     f.flush()
