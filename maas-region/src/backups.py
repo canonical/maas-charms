@@ -414,7 +414,7 @@ Juju Version: {self.charm.model.juju_version!s}
 
         self.charm.unit.status = MaintenanceStatus("creating backup")
 
-        self._run_backup(event, s3_parameters, datetime_backup_requested)
+        self._run_backup(event, s3_parameters)
 
         self.charm.unit.status = ActiveStatus()
 
@@ -422,26 +422,36 @@ Juju Version: {self.charm.model.juju_version!s}
         self,
         event: ActionEvent,
         s3_parameters: dict,
-        datetime_backup_requested: str,
     ) -> None:
         backup_id = self._generate_backup_id()
         s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
 
-        succeeded = self._execute_backup_to_s3(
+        backup_success = self._execute_backup_to_s3(
             event=event,
             s3_parameters=s3_parameters,
             s3_path=s3_path,
         )
-        if not succeeded:
-            # TODO: upload logs using backup_id and fail the action if it doesn't succeed.
-            error_message = "Failed to archive and upload MAAS files to S3. Please check the juju debug-log for more details."
+
+        # TODO: upload logs in addition to metadata
+        event.log("Uploading backup metadata to S3...")
+        metadata_success = self._upload_backup_metadata(
+            s3_parameters=s3_parameters,
+            s3_path=s3_path,
+            success=backup_success,
+        )
+        if not metadata_success:
+            error_message = f"Failed to upload backup metadata to S3 for backup-id {backup_id}. Please check the juju debug-log for more details."
             logger.error(f"Backup failed: {error_message}")
             event.fail(error_message)
             return
-        else:
-            # TODO: upload logs using backup_id and fail the action if it doesn't succeed.
-            logger.info(f"Backup succeeded: with backup-id {datetime_backup_requested}")
+
+        if backup_success:
+            event.log(f"Backup succeeded with backup-id {backup_id}")
             event.set_results({"backups": f"backup created with id {backup_id}"})
+        else:
+            error_message = "Failed to archive and upload MAAS files to S3. Please check the juju debug-log for more details."
+            logger.error(f"Backup failed: {error_message}")
+            event.fail(error_message)
 
     def _execute_backup_to_s3(
         self,
@@ -487,19 +497,6 @@ Juju Version: {self.charm.model.juju_version!s}
         bucket_name: str,
         s3_path: str,
     ):
-        # upload version
-        region_path = os.path.join(s3_path, "backup_metadata.yaml")
-        with tempfile.NamedTemporaryFile(suffix=".txt") as f:
-            f.write(yaml.safe_dump(self._get_backup_metadata()).encode())
-            f.flush()
-            event.log("Uploading version to S3...")
-            client.upload_file(
-                f.name,
-                bucket_name,
-                region_path,
-                Callback=ProgressPercentage(f.name, log_label="version"),
-            )
-
         # get region ids
         event.log("Retrieving region ids from MAAS...")
         success, regions = self._get_region_ids()
@@ -560,6 +557,41 @@ Juju Version: {self.charm.model.juju_version!s}
                 preseed_path,
                 Callback=ProgressPercentage(f.name, "preseed archive"),
             )
+
+    def _upload_backup_metadata(
+        self,
+        s3_parameters: dict[str, str],
+        s3_path: str,
+        success: bool,
+    ) -> bool:
+        metadata_path = os.path.join(s3_path, "backup_metadata.yaml")
+        metadata = self._get_backup_metadata()
+        metadata["success"] = success
+        ca_chain = s3_parameters.get("tls-ca-chain", [])
+        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
+            if ca_file:
+                ca = "\n".join(ca_chain)
+                ca_file.write(ca.encode())
+                ca_file.flush()
+                client = self._get_s3_session_client(s3_parameters, ca_file.name)
+            else:
+                client = self._get_s3_session_client(s3_parameters, None)
+
+            bucket_name = s3_parameters["bucket"]
+
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".yaml") as f:
+                    f.write(yaml.safe_dump(metadata).encode())
+                    f.flush()
+                    client.upload_file(
+                        f.name,
+                        bucket_name,
+                        metadata_path,
+                    )
+            except Exception as e:
+                logger.exception(e)
+                return False
+        return True
 
     def _get_backup_metadata(self) -> dict[str, str]:
         return {
