@@ -25,10 +25,7 @@ from botocore.exceptions import (
     SSLError,
 )
 from botocore.regions import EndpointResolver
-from charms.data_platform_libs.v0.s3 import (
-    CredentialsChangedEvent,
-    S3Requirer,
-)
+from charms.data_platform_libs.v0.s3 import CredentialsChangedEvent, S3Requirer
 from ops.charm import ActionEvent
 from ops.framework import Object
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
@@ -45,6 +42,7 @@ S3_BLOCK_MESSAGES = [
     FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
 ]
 SNAP_PATH_TO_IMAGES = "/var/snap/maas/common/maas/image-storage"
+SNAP_PATH_TO_PRESEEDS = "/var/snap/maas/current/preseeds"
 METADATA_PATH = "backup/latest"
 
 
@@ -488,6 +486,20 @@ Juju Version: {self.charm.model.juju_version!s}
         bucket_name: str,
         s3_path: str,
     ):
+        version = self.charm.version
+        # upload version
+        region_path = os.path.join(s3_path, "version.txt")
+        with tempfile.NamedTemporaryFile(suffix=".txt") as f:
+            f.write(version.encode("utf-8"))
+            f.flush()
+            event.log("Uploading version to S3...")
+            client.upload_file(
+                f.name,
+                bucket_name,
+                region_path,
+                Callback=ProgressPercentage(f.name, log_label="version"),
+            )
+
         # get region ids
         event.log("Retrieving region ids from MAAS...")
         success, regions = self._get_region_ids()
@@ -531,6 +543,24 @@ Juju Version: {self.charm.model.juju_version!s}
                 Callback=ProgressPercentage(f.name, "image archive"),
             )
 
+        # archive and upload preseeds
+        preseed_path = os.path.join(s3_path, "preseeds.tar.gz")
+        with tempfile.NamedTemporaryFile(suffix=".tar.gz") as f:
+            event.log("Creating preseed archive for S3 backup...")
+            with tarfile.open(fileobj=f, mode="w:gz") as tar:
+                tar.add(
+                    SNAP_PATH_TO_PRESEEDS,
+                    arcname="preseeds",
+                )
+            f.flush()
+            event.log("Uploading preseed archive to S3...")
+            client.upload_file(
+                f.name,
+                bucket_name,
+                preseed_path,
+                Callback=ProgressPercentage(f.name, "preseed archive"),
+            )
+
     def _get_region_ids(self) -> tuple[bool, set[str]]:
         try:
             credentials = self.charm._create_or_get_internal_admin()
@@ -540,6 +570,7 @@ Juju Version: {self.charm.model.juju_version!s}
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to get region ids: {e}")
             return False, set()
+
 
     def _generate_backup_id(self) -> str:
         """Create a backup id for failed backup operations (to store log file)."""
