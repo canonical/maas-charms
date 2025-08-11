@@ -488,7 +488,7 @@ Juju Version: {self.charm.model.juju_version!s}
     ):
         version = self.charm.version
         # upload version
-        region_path = os.path.join(s3_path, "version.txt")
+        region_path = os.path.join(s3_path, "maas_snap_version.txt")
         with tempfile.NamedTemporaryFile(suffix=".txt") as f:
             f.write(version.encode("utf-8"))
             f.flush()
@@ -570,7 +570,6 @@ Juju Version: {self.charm.model.juju_version!s}
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to get region ids: {e}")
             return False, set()
-
 
     def _generate_backup_id(self) -> str:
         """Create a backup id for failed backup operations (to store log file)."""
