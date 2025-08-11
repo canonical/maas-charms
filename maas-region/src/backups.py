@@ -14,6 +14,7 @@ from datetime import datetime
 from io import BytesIO
 from typing import Any
 
+import yaml
 from boto3.session import Session
 from botocore import loaders
 from botocore.client import Config
@@ -487,10 +488,9 @@ Juju Version: {self.charm.model.juju_version!s}
         s3_path: str,
     ):
         # upload version
-        version = self.charm.version
-        region_path = os.path.join(s3_path, "maas_snap_version.txt")
+        region_path = os.path.join(s3_path, "backup_metadata.yaml")
         with tempfile.NamedTemporaryFile(suffix=".txt") as f:
-            f.write(version.encode("utf-8"))
+            f.write(yaml.safe_dump(self._get_backup_metadata()).encode())
             f.flush()
             event.log("Uploading version to S3...")
             client.upload_file(
@@ -560,6 +560,12 @@ Juju Version: {self.charm.model.juju_version!s}
                 preseed_path,
                 Callback=ProgressPercentage(f.name, "preseed archive"),
             )
+
+    def _get_backup_metadata(self) -> dict[str, str]:
+        return {
+            "maas_snap_revision": self.charm.version,
+            "maas_snap_channel": MaasHelper.get_installed_channel(),
+        }
 
     def _get_region_ids(self) -> tuple[bool, set[str]]:
         try:
