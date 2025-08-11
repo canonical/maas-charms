@@ -486,8 +486,8 @@ Juju Version: {self.charm.model.juju_version!s}
         bucket_name: str,
         s3_path: str,
     ):
-        version = self.charm.version
         # upload version
+        version = self.charm.version
         region_path = os.path.join(s3_path, "maas_snap_version.txt")
         with tempfile.NamedTemporaryFile(suffix=".txt") as f:
             f.write(version.encode("utf-8"))
