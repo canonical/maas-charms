@@ -593,7 +593,7 @@ Juju Version: {self.charm.model.juju_version!s}
                 return False
         return True
 
-    def _get_backup_metadata(self) -> dict[str, str]:
+    def _get_backup_metadata(self) -> dict[str, Any]:
         return {
             "maas_snap_revision": self.charm.version,
             "maas_snap_channel": MaasHelper.get_installed_channel(),
