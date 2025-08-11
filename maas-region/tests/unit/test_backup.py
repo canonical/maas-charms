@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, call, patch
 import ops
 import ops.testing
 from boto3.exceptions import S3UploadFailedError
+from botocore.client import BaseClient
 from botocore.exceptions import BotoCoreError, ClientError, ConnectTimeoutError, SSLError
 
 from backups import FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE
@@ -565,7 +566,7 @@ backup-id            | action              | status   | backup-path
         )
         action_event.fail.assert_not_called()
 
-        # Test when the backup fails
+        # Test backup failure
         action_event.reset_mock()
         execute_backup.reset_mock()
         generate_id.reset_mock()
@@ -583,6 +584,111 @@ backup-id            | action              | status   | backup-path
         action_event.fail.assert_called_once_with(
             "Failed to archive and upload MAAS files to S3. Please check the juju debug-log for more details."
         )
+
+    @patch("backups.MAASBackups._backup_maas_to_s3")
+    @patch("tempfile.NamedTemporaryFile")
+    @patch("backups.MAASBackups._get_s3_session_client")
+    def test_execute_backup_to_s3(
+        self, get_client, _named_temporary_file, backup_maas_to_s3
+    ):
+        # Setup
+        client = MagicMock(spec=BaseClient)
+        get_client.return_value = client
+        s3_path = "/test-path/test-dir"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
+        _named_temporary_file.return_value.__enter__.return_value.name = (
+            "/tmp/test-file"
+        )
+        action_event = MagicMock(spec=ops.ActionEvent)
+        self.harness.begin()
+
+        # Test when any exception happens, with no ca chain.
+        backup_maas_to_s3.side_effect = S3UploadFailedError
+        self.assertFalse(
+            self.harness.charm.backup._execute_backup_to_s3(
+                event=action_event,
+                s3_parameters=s3_parameters,
+                s3_path=s3_path,
+            )
+        )
+        backup_maas_to_s3.assert_called_once_with(
+            event=action_event,
+            client=client,
+            bucket_name="test-bucket",
+            s3_path="/test-path/test-dir",
+        )
+        _named_temporary_file.assert_not_called()
+        get_client.assert_called_once_with(s3_parameters, None)
+
+        action_event.fail.assert_called_once_with(
+            "Failed to backup to S3 backup. Please check the juju debug-log for more details."
+        )
+
+        # Test when success with ca chain.
+        get_client.reset_mock()
+        _named_temporary_file.reset_mock()
+        backup_maas_to_s3.reset_mock()
+        backup_maas_to_s3.side_effect = None
+        s3_parameters["tls-ca-chain"] = ["one", "two"]
+        self.assertTrue(
+            self.harness.charm.backup._execute_backup_to_s3(
+                event=action_event,
+                s3_parameters=s3_parameters,
+                s3_path=s3_path,
+            )
+        )
+        backup_maas_to_s3.assert_called_once_with(
+            event=action_event,
+            client=client,
+            bucket_name="test-bucket",
+            s3_path="/test-path/test-dir",
+        )
+        get_client.assert_called_once_with(s3_parameters, "/tmp/test-file")
+        _named_temporary_file.assert_called_once()
+
+    @patch("charm.MaasRegionCharm._get_region_system_ids")
+    def test_backup_maas_to_s3(self, get_region_ids):
+        event_mock = MagicMock(spec=ops.ActionEvent)
+        client_mock = MagicMock()
+        self.harness.begin()
+
+        # Test fails to get region ids
+        get_region_ids.return_value = False, set()
+        result = self.harness.charm.backup._backup_maas_to_s3(
+            event=event_mock,
+            client=client_mock,
+            bucket_name="test-bucket",
+            s3_path="/test-path/test-dir",
+        )
+        get_region_ids.assert_called_once()
+        event_mock.fail.assert_called_once_with(
+            "Failed to get region ids for S3 backup. Please check the juju debug-log for more details."
+        )
+        self.assertFalse(result)
+
+        # Test fails to upload regions
+        get_region_ids.return_value = True, set()
+        event_mock.reset_mock()
+        client_mock.reset_mock()
+        client_mock.upload_file.side_effect = S3UploadFailedError
+
+        with self.assertRaises(S3UploadFailedError):
+            self.harness.charm.backup._backup_maas_to_s3(
+                event=event_mock,
+                client=client_mock,
+                bucket_name="test-bucket",
+                s3_path="/test-path/test-dir",
+            )
+
+        # Test fails to upload
+        ...
 
     def test_generate_backup_id(self):
         self.harness.begin()
