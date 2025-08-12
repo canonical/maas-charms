@@ -39,6 +39,13 @@ async def test_build_and_deploy(ops_test: OpsTest):
 
 
 @pytest.mark.abort_on_fail
+async def test_charm_version_is_set(ops_test: OpsTest):
+    status = await ops_test.model.get_status()
+    version = status.applications[APP_NAME].charm_version
+    assert version.startswith("3.6.")
+
+
+@pytest.mark.abort_on_fail
 async def test_database_integration(ops_test: OpsTest):
     """Verify that the charm integrates with the database.
 
