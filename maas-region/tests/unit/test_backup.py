@@ -488,9 +488,7 @@ backup-id            | action              | status   | backup-path
     @patch("backups.MAASBackups._upload_content_to_s3")
     @patch("backups.MAASBackups._retrieve_s3_parameters")
     @patch("backups.MAASBackups._can_unit_perform_backup")
-    def test_on_create_backup_action(
-        self, can_unit_backup, s3_params, upload_content, run_backup
-    ):
+    def test_on_create_backup_action(self, can_unit_backup, s3_params, upload_content, run_backup):
         can_unit_backup.return_value = True, ""
         s3_params.return_value = ({}, [])
         self.harness.begin()
@@ -617,9 +615,7 @@ backup-id            | action              | status   | backup-path
     @patch("backups.MAASBackups._backup_maas_to_s3")
     @patch("tempfile.NamedTemporaryFile")
     @patch("backups.MAASBackups._get_s3_session_client")
-    def test_execute_backup_to_s3(
-        self, get_client, _named_temporary_file, backup_maas_to_s3
-    ):
+    def test_execute_backup_to_s3(self, get_client, _named_temporary_file, backup_maas_to_s3):
         # Setup
         client = MagicMock()
         get_client.return_value = client
@@ -632,9 +628,7 @@ backup-id            | action              | status   | backup-path
             "secret-key": " test-secret-key ",
             "path": "/test-path",
         }
-        _named_temporary_file.return_value.__enter__.return_value.name = (
-            "/tmp/test-file"
-        )
+        _named_temporary_file.return_value.__enter__.return_value.name = "/tmp/test-file"
         action_event = MagicMock(spec=ops.ActionEvent)
         self.harness.begin()
 
@@ -744,9 +738,7 @@ backup-id            | action              | status   | backup-path
     @patch("tempfile.NamedTemporaryFile")
     @patch("backups.MAASBackups._get_s3_session_client")
     @patch("backups.MAASBackups._get_backup_metadata")
-    def test_upload_backup_metadata(
-        self, get_backup_metadata, get_client, _named_temporary_file
-    ):
+    def test_upload_backup_metadata(self, get_backup_metadata, get_client, _named_temporary_file):
         self.harness.begin()
 
         # Common mock values
@@ -757,16 +749,12 @@ backup-id            | action              | status   | backup-path
             "tls-ca-chain": ["one", "two"],
         }
         s3_path = "/test-path/test-dir"
-        _named_temporary_file.return_value.__enter__.return_value.name = (
-            "/tmp/test-file"
-        )
+        _named_temporary_file.return_value.__enter__.return_value.name = "/tmp/test-file"
         client = MagicMock()
         get_client.return_value = client
 
         # Test success
-        success = self.harness.charm.backup._upload_backup_metadata(
-            s3_parameters, s3_path, True
-        )
+        success = self.harness.charm.backup._upload_backup_metadata(s3_parameters, s3_path, True)
         self.assertTrue(success)
         get_backup_metadata.assert_called_once()
         client.upload_file.assert_called_once_with(
@@ -780,18 +768,14 @@ backup-id            | action              | status   | backup-path
         client.reset_mock()
         client.upload_file.side_effect = None
         del s3_parameters["tls-ca-chain"]
-        success = self.harness.charm.backup._upload_backup_metadata(
-            s3_parameters, s3_path, True
-        )
+        success = self.harness.charm.backup._upload_backup_metadata(s3_parameters, s3_path, True)
         self.assertTrue(success)
 
         # Test failure
         get_backup_metadata.reset_mock()
         client.reset_mock()
         client.upload_file.side_effect = S3UploadFailedError("Failure")
-        success = self.harness.charm.backup._upload_backup_metadata(
-            s3_parameters, s3_path, True
-        )
+        success = self.harness.charm.backup._upload_backup_metadata(s3_parameters, s3_path, True)
         self.assertFalse(success)
         get_backup_metadata.assert_called_once()
         client.upload_file.assert_called_once_with(
@@ -820,9 +804,7 @@ backup-id            | action              | status   | backup-path
             "unit_name": "maas-region/0",
             "juju_version": "1.0.0",
         }
-        self.assertEqual(
-            self.harness.charm.backup._get_backup_metadata(), expected_metadata
-        )
+        self.assertEqual(self.harness.charm.backup._get_backup_metadata(), expected_metadata)
 
     def test_generate_backup_id(self):
         self.harness.begin()
@@ -1031,16 +1013,13 @@ backup-id            | action              | status   | backup-path
 
 
 class TestProgressPercentage(unittest.TestCase):
-
     @patch("backups.logger", spec=logging.Logger)
     @patch("backups.os.path.getsize")
     def test_progress_percentage(self, _getsize, logger):
         _getsize.return_value = 50
 
         # Test creation and initial call
-        progress_percentage = ProgressPercentage(
-            "test-file", "test-label", update_interval=10
-        )
+        progress_percentage = ProgressPercentage("test-file", "test-label", update_interval=10)
         progress_percentage(25)
         self.assertEqual(progress_percentage._last_percentage, 50)
         logger.info.assert_called_once_with("uploading test-label to s3: 50.00%")

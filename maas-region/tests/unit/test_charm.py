@@ -556,9 +556,7 @@ class TestCharmActions(unittest.TestCase):
     )
     @patch("charm.MaasHelper.get_regions")
     @patch("charm.MaasRegionCharm._create_or_get_internal_admin")
-    def test_get_region_system_ids_get_regions_fail(
-        self, admin, get_regions, _mock_bind_address
-    ):
+    def test_get_region_system_ids_get_regions_fail(self, admin, get_regions, _mock_bind_address):
         admin.return_value = {"username": "admin"}
         get_regions.side_effect = subprocess.CalledProcessError(1, "maas")
         self.harness.begin()
