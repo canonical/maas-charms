@@ -632,7 +632,7 @@ backup-id            | action              | status   | backup-path
         action_event = MagicMock(spec=ops.ActionEvent)
         self.harness.begin()
 
-        # Test when any exception happens, with no ca chain.
+        # Test failure without ca chain.
         backup_maas_to_s3.side_effect = S3UploadFailedError
         self.assertFalse(
             self.harness.charm.backup._execute_backup_to_s3(
@@ -654,7 +654,7 @@ backup-id            | action              | status   | backup-path
             "Failed to backup to S3. Please check the juju debug-log for more details."
         )
 
-        # Test when success with ca chain.
+        # Test success with ca chain.
         get_client.reset_mock()
         _named_temporary_file.reset_mock()
         backup_maas_to_s3.reset_mock()

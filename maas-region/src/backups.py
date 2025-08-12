@@ -44,6 +44,7 @@ S3_BLOCK_MESSAGES = [
 SNAP_PATH_TO_IMAGES = "/var/snap/maas/common/maas/image-storage"
 SNAP_PATH_TO_PRESEEDS = "/var/snap/maas/current/preseeds"
 METADATA_PATH = "backup/latest"
+REFER_TO_DEBUG_LOG = " Please check the juju debug-log for more details."
 
 
 class ProgressPercentage:
@@ -406,9 +407,9 @@ Juju Version: {self.charm.model.juju_version!s}
             METADATA_PATH,
             s3_parameters,
         ):
-            error_message = "Failed to upload metadata to provided S3. Please check the juju debug-log for more details."
+            error_message = "Failed to upload metadata to provided S3."
             logger.error(f"Backup failed: {error_message}")
-            event.fail(error_message)
+            event.fail(error_message + REFER_TO_DEBUG_LOG)
             return
 
         self.charm.unit.status = MaintenanceStatus("creating backup")
@@ -439,18 +440,20 @@ Juju Version: {self.charm.model.juju_version!s}
             success=backup_success,
         )
         if not metadata_success:
-            error_message = f"Failed to upload backup metadata to S3 for backup-id {backup_id}. Please check the juju debug-log for more details."
+            error_message = (
+                f"Failed to upload backup metadata to S3 for backup-id {backup_id}."
+            )
             logger.error(f"Backup failed: {error_message}")
-            event.fail(error_message)
+            event.fail(error_message + REFER_TO_DEBUG_LOG)
             return
 
         if backup_success:
             event.log(f"Backup succeeded with backup-id {backup_id}")
             event.set_results({"backups": f"backup created with id {backup_id}"})
         else:
-            error_message = "Failed to archive and upload MAAS files to S3. Please check the juju debug-log for more details."
+            error_message = "Failed to archive and upload MAAS files to S3."
             logger.error(f"Backup failed: {error_message}")
-            event.fail(error_message)
+            event.fail(error_message + REFER_TO_DEBUG_LOG)
 
     def _execute_backup_to_s3(
         self,
@@ -478,13 +481,9 @@ Juju Version: {self.charm.model.juju_version!s}
                     s3_path=s3_path,
                 )
             except Exception as e:
-                logger.exception(
-                    f"Failed to backup to S3 bucket={bucket_name}, path={s3_path}",
-                    exc_info=e,
-                )
-                event.fail(
-                    "Failed to backup to S3. Please check the juju debug-log for more details."
-                )
+                msg = f"Failed to backup to S3 bucket={bucket_name}, path={s3_path}"
+                logger.exception(msg, exc_info=e)
+                event.fail(msg + REFER_TO_DEBUG_LOG)
                 return False
 
         return True
