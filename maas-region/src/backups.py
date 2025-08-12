@@ -3,9 +3,9 @@
 
 """Backups implementation."""
 
+import json
 import logging
 import os
-import subprocess
 import tarfile
 import tempfile
 import threading
@@ -25,10 +25,7 @@ from botocore.exceptions import (
     SSLError,
 )
 from botocore.regions import EndpointResolver
-from charms.data_platform_libs.v0.s3 import (
-    CredentialsChangedEvent,
-    S3Requirer,
-)
+from charms.data_platform_libs.v0.s3 import CredentialsChangedEvent, S3Requirer
 from ops.charm import ActionEvent
 from ops.framework import Object
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
@@ -45,6 +42,7 @@ S3_BLOCK_MESSAGES = [
     FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
 ]
 SNAP_PATH_TO_IMAGES = "/var/snap/maas/common/maas/image-storage"
+SNAP_PATH_TO_PRESEEDS = "/var/snap/maas/current/preseeds"
 METADATA_PATH = "backup/latest"
 
 
@@ -415,7 +413,7 @@ Juju Version: {self.charm.model.juju_version!s}
 
         self.charm.unit.status = MaintenanceStatus("creating backup")
 
-        self._run_backup(event, s3_parameters, datetime_backup_requested)
+        self._run_backup(event, s3_parameters)
 
         self.charm.unit.status = ActiveStatus()
 
@@ -423,26 +421,36 @@ Juju Version: {self.charm.model.juju_version!s}
         self,
         event: ActionEvent,
         s3_parameters: dict,
-        datetime_backup_requested: str,
     ) -> None:
         backup_id = self._generate_backup_id()
         s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
 
-        succeeded = self._execute_backup_to_s3(
+        backup_success = self._execute_backup_to_s3(
             event=event,
             s3_parameters=s3_parameters,
             s3_path=s3_path,
         )
-        if not succeeded:
-            # TODO: upload logs using backup_id and fail the action if it doesn't succeed.
-            error_message = "Failed to archive and upload MAAS files to S3. Please check the juju debug-log for more details."
+
+        # TODO: upload logs in addition to metadata
+        event.log("Uploading backup metadata to S3...")
+        metadata_success = self._upload_backup_metadata(
+            s3_parameters=s3_parameters,
+            s3_path=s3_path,
+            success=backup_success,
+        )
+        if not metadata_success:
+            error_message = f"Failed to upload backup metadata to S3 for backup-id {backup_id}. Please check the juju debug-log for more details."
             logger.error(f"Backup failed: {error_message}")
             event.fail(error_message)
             return
-        else:
-            # TODO: upload logs using backup_id and fail the action if it doesn't succeed.
-            logger.info(f"Backup succeeded: with backup-id {datetime_backup_requested}")
+
+        if backup_success:
+            event.log(f"Backup succeeded with backup-id {backup_id}")
             event.set_results({"backups": f"backup created with id {backup_id}"})
+        else:
+            error_message = "Failed to archive and upload MAAS files to S3. Please check the juju debug-log for more details."
+            logger.error(f"Backup failed: {error_message}")
+            event.fail(error_message)
 
     def _execute_backup_to_s3(
         self,
@@ -490,15 +498,7 @@ Juju Version: {self.charm.model.juju_version!s}
     ):
         # get region ids
         event.log("Retrieving region ids from MAAS...")
-        success, regions = self._get_region_ids()
-        if not success:
-            logger.error(
-                "Failed to get region ids for S3 backup. Please check the juju debug-log for more details."
-            )
-            event.fail(
-                "Failed to get region ids for S3 backup. Please check the juju debug-log for more details."
-            )
-            return False
+        regions = self._get_region_ids()
 
         # upload regions
         region_path = os.path.join(s3_path, "controllers.txt")
@@ -531,15 +531,76 @@ Juju Version: {self.charm.model.juju_version!s}
                 Callback=ProgressPercentage(f.name, "image archive"),
             )
 
-    def _get_region_ids(self) -> tuple[bool, set[str]]:
+        # archive and upload preseeds
+        preseed_path = os.path.join(s3_path, "preseeds.tar.gz")
+        with tempfile.NamedTemporaryFile(suffix=".tar.gz") as f:
+            event.log("Creating preseed archive for S3 backup...")
+            with tarfile.open(fileobj=f, mode="w:gz") as tar:
+                tar.add(
+                    SNAP_PATH_TO_PRESEEDS,
+                    arcname="preseeds",
+                )
+            f.flush()
+            event.log("Uploading preseed archive to S3...")
+            client.upload_file(
+                f.name,
+                bucket_name,
+                preseed_path,
+                Callback=ProgressPercentage(f.name, "preseed archive"),
+            )
+
+    def _upload_backup_metadata(
+        self,
+        s3_parameters: dict[str, str],
+        s3_path: str,
+        success: bool,
+    ) -> bool:
+        ca_chain = s3_parameters.get("tls-ca-chain", [])
+        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
+            if ca_file:
+                ca = "\n".join(ca_chain)
+                ca_file.write(ca.encode())
+                ca_file.flush()
+                client = self._get_s3_session_client(s3_parameters, ca_file.name)
+            else:
+                client = self._get_s3_session_client(s3_parameters, None)
+
+            bucket_name = s3_parameters["bucket"]
+
+            try:
+                metadata_path = os.path.join(s3_path, "backup_metadata.json")
+                metadata = self._get_backup_metadata()
+                metadata["success"] = success
+                with tempfile.NamedTemporaryFile(suffix=".yaml") as f:
+                    f.write(json.dumps(metadata).encode())
+                    f.flush()
+                    client.upload_file(
+                        f.name,
+                        bucket_name,
+                        metadata_path,
+                    )
+            except Exception as e:
+                logger.exception(e)
+                return False
+        return True
+
+    def _get_backup_metadata(self) -> dict[str, Any]:
+        return {
+            "maas_snap_version": self.charm.version,
+            "maas_snap_channel": MaasHelper.get_installed_channel(),
+            "unit_name": self.charm.unit.name,
+            "juju_version": str(self.charm.model.juju_version),
+        }
+
+    def _get_region_ids(self) -> set[str]:
         try:
             credentials = self.charm._create_or_get_internal_admin()
-            return True, MaasHelper.get_regions(
+            return MaasHelper.get_regions(
                 admin_username=credentials["username"], maas_ip=self.charm.bind_address
             )
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to get region ids: {e}")
-            return False, set()
+        except Exception as e:
+            logger.exception(e)
+            raise e
 
     def _generate_backup_id(self) -> str:
         """Create a backup id for failed backup operations (to store log file)."""
