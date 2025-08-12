@@ -6,7 +6,7 @@
 import logging
 import subprocess
 import unittest
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import ops
 import ops.testing
@@ -531,14 +531,17 @@ backup-id            | action              | status   | backup-path
             "Failed to upload metadata to provided S3. Please check the juju debug-log for more details.",
         )
 
-    @pytest.mark.skip()
     @patch("backups.MAASBackups._generate_backup_id")
+    @patch("backups.MAASBackups._upload_backup_metadata")
     @patch("backups.MAASBackups._execute_backup_to_s3")
-    def test_run_backup(self, execute_backup, generate_id):
+    def test_run_backup(self, execute_backup, upload_backup_metadata, generate_id):
         backup_id = "2025-01-01T10:10:10Z"
+        self.harness.begin()
+
+        # Test backup success
         generate_id.return_value = backup_id
         execute_backup.return_value = True
-        self.harness.begin()
+        upload_backup_metadata.return_value = True
         s3_parameters_dict = {
             "bucket": "test-bucket",
             "region": "test-region",
@@ -559,12 +562,13 @@ backup-id            | action              | status   | backup-path
         )
         action_event.fail.assert_not_called()
 
-        # Test backup failure
+        # Test backup failure with metadata success
         action_event.reset_mock()
         execute_backup.reset_mock()
         generate_id.reset_mock()
         execute_backup.return_value = False
-        generate_id.return_value = "2025-01-01T10:10:10Z"
+        upload_backup_metadata.return_value = True
+        generate_id.return_value = backup_id
         self.harness.charm.backup._run_backup(
             event=action_event,
             s3_parameters=s3_parameters_dict,
@@ -577,6 +581,42 @@ backup-id            | action              | status   | backup-path
             "Failed to archive and upload MAAS files to S3. Please check the juju debug-log for more details."
         )
 
+        # Test success with upload metadata failure
+        action_event.reset_mock()
+        execute_backup.reset_mock()
+        generate_id.reset_mock()
+        execute_backup.return_value = True
+        upload_backup_metadata.return_value = False
+        generate_id.return_value = backup_id
+        self.harness.charm.backup._run_backup(
+            event=action_event,
+            s3_parameters=s3_parameters_dict,
+        )
+        generate_id.assert_called_once()
+        execute_backup.assert_called_once()
+        action_event.set_results.assert_not_called()
+        action_event.fail.assert_called_once_with(
+            f"Failed to upload backup metadata to S3 for backup-id {backup_id}. Please check the juju debug-log for more details."
+        )
+
+        # Test backup failure with upload metadata failure
+        action_event.reset_mock()
+        execute_backup.reset_mock()
+        generate_id.reset_mock()
+        execute_backup.return_value = False
+        upload_backup_metadata.return_value = False
+        generate_id.return_value = backup_id
+        self.harness.charm.backup._run_backup(
+            event=action_event,
+            s3_parameters=s3_parameters_dict,
+        )
+        generate_id.assert_called_once()
+        execute_backup.assert_called_once()
+        action_event.set_results.assert_not_called()
+        action_event.fail.assert_called_once_with(
+            f"Failed to upload backup metadata to S3 for backup-id {backup_id}. Please check the juju debug-log for more details."
+        )
+
     @patch("backups.MAASBackups._backup_maas_to_s3")
     @patch("tempfile.NamedTemporaryFile")
     @patch("backups.MAASBackups._get_s3_session_client")
@@ -584,7 +624,7 @@ backup-id            | action              | status   | backup-path
         self, get_client, _named_temporary_file, backup_maas_to_s3
     ):
         # Setup
-        client = MagicMock(spec=BaseClient)
+        client = MagicMock()
         get_client.return_value = client
         s3_path = "/test-path/test-dir"
         s3_parameters = {
@@ -703,6 +743,89 @@ backup-id            | action              | status   | backup-path
             s3_path="/test-path/test-dir",
         )
         client_mock.upload_file.assert_called()
+
+    @patch("tempfile.NamedTemporaryFile")
+    @patch("backups.MAASBackups._get_s3_session_client")
+    @patch("backups.MAASBackups._get_backup_metadata")
+    def test_upload_backup_metadata(
+        self, get_backup_metadata, get_client, _named_temporary_file
+    ):
+        self.harness.begin()
+
+        # Common mock values
+        get_backup_metadata.return_value = {"metadata": "data"}
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "path": "/not-used",
+            "tls-ca-chain": ["one", "two"],
+        }
+        s3_path = "/test-path/test-dir"
+        _named_temporary_file.return_value.__enter__.return_value.name = (
+            "/tmp/test-file"
+        )
+        client = MagicMock()
+        get_client.return_value = client
+
+        # Test success
+        success = self.harness.charm.backup._upload_backup_metadata(
+            s3_parameters, s3_path, True
+        )
+        self.assertTrue(success)
+        get_backup_metadata.assert_called_once()
+        client.upload_file.assert_called_once_with(
+            "/tmp/test-file",
+            "test-bucket",
+            "/test-path/test-dir/backup_metadata.json",
+        )
+
+        # Test success with no ca chain
+        get_backup_metadata.reset_mock()
+        client.reset_mock()
+        client.upload_file.side_effect = None
+        del s3_parameters["tls-ca-chain"]
+        success = self.harness.charm.backup._upload_backup_metadata(
+            s3_parameters, s3_path, True
+        )
+        self.assertTrue(success)
+
+        # Test failure
+        get_backup_metadata.reset_mock()
+        client.reset_mock()
+        client.upload_file.side_effect = S3UploadFailedError("Failure")
+        success = self.harness.charm.backup._upload_backup_metadata(
+            s3_parameters, s3_path, True
+        )
+        self.assertFalse(success)
+        get_backup_metadata.assert_called_once()
+        client.upload_file.assert_called_once_with(
+            "/tmp/test-file",
+            "test-bucket",
+            "/test-path/test-dir/backup_metadata.json",
+        )
+
+    @patch(
+        "charm.MaasRegionCharm.version",
+        new_callable=PropertyMock(return_value="3.6.0"),
+    )
+    @patch(
+        "charm.MaasHelper.get_installed_channel",
+        return_value="3.6/stable",
+    )
+    @patch(
+        "charm.MaasRegionCharm.model",
+        new_callable=PropertyMock(return_value=MagicMock(juju_version="1.0.0")),
+    )
+    def test_get_backup_metadata(self, _model, _snap_channel, _version):
+        self.harness.begin()
+        expected_metadata = {
+            "maas_snap_version": "3.6.0",
+            "maas_snap_channel": "3.6/stable",
+            "unit_name": "maas-region/0",
+            "juju_version": "1.0.0",
+        }
+        self.assertEqual(
+            self.harness.charm.backup._get_backup_metadata(), expected_metadata
+        )
 
     def test_generate_backup_id(self):
         self.harness.begin()
