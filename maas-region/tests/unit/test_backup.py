@@ -644,14 +644,14 @@ backup-id            | action              | status   | backup-path
         backup_maas_to_s3.assert_called_once_with(
             event=action_event,
             client=client,
-            bucket_name="test-bucket",
-            s3_path="/test-path/test-dir",
+            bucket_name=s3_parameters["bucket"],
+            s3_path=s3_path,
         )
         _named_temporary_file.assert_not_called()
         get_client.assert_called_once_with(s3_parameters, None)
 
         action_event.fail.assert_called_once_with(
-            "Failed to backup to S3. Please check the juju debug-log for more details."
+            f"Failed to backup to S3 bucket={s3_parameters['bucket']}, path={s3_path}. Please check the juju debug-log for more details."
         )
 
         # Test success with ca chain.
@@ -670,8 +670,8 @@ backup-id            | action              | status   | backup-path
         backup_maas_to_s3.assert_called_once_with(
             event=action_event,
             client=client,
-            bucket_name="test-bucket",
-            s3_path="/test-path/test-dir",
+            bucket_name=s3_parameters["bucket"],
+            s3_path=s3_path,
         )
         get_client.assert_called_once_with(s3_parameters, "/tmp/test-file")
         _named_temporary_file.assert_called_once()

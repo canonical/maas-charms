@@ -481,7 +481,7 @@ Juju Version: {self.charm.model.juju_version!s}
                     s3_path=s3_path,
                 )
             except Exception as e:
-                msg = f"Failed to backup to S3 bucket={bucket_name}, path={s3_path}"
+                msg = f"Failed to backup to S3 bucket={bucket_name}, path={s3_path}."
                 logger.exception(msg, exc_info=e)
                 event.fail(msg + REFER_TO_DEBUG_LOG)
                 return False
