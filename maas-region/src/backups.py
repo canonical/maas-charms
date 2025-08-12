@@ -664,6 +664,12 @@ Juju Version: {self.charm.model.juju_version!s}
         self, event: ActionEvent, s3_parameters: dict[str, str], backup_id: str
     ) -> None:
         path = f"/backup/{backup_id}"
+        if not self._get_backup_maas_version(event=event, path=path, s3_parameters=s3_parameters):
+            event.fail(
+                "Failed to validate MAAS version from S3 backup. Check the juju debug-log for more detail."
+            )
+            return
+
         if not self._update_controller_ids(event=event, path=path, s3_parameters=s3_parameters):
             event.fail(
                 "Failed to update MAAS-Region IDs from S3 backup. Check the juju debug-log for more detail."
@@ -680,10 +686,23 @@ Juju Version: {self.charm.model.juju_version!s}
             event=event,
             s3_path=f"{path}/image-strorage.tar.gz",
             s3_parameters=s3_parameters,
-            image_storage=image_storage,
+            local_path=image_storage,
+            file_type="image archive",
         ):
             event.fail(
                 "Failed to download and extract images from S3 backup. Check the juju debug-log for more detail."
+            )
+            return
+
+        if not self._download_and_unarchive_from_s3(
+            event=event,
+            s3_path=f"{path}/preseeds.tar.gz",
+            s3_parameters=s3_parameters,
+            local_path=Path(SNAP_PATH_TO_PRESEEDS),
+            file_type="preseeds",
+        ):
+            event.fail(
+                "Failed to download and extract preseeds from S3 backup. Check the juju debug-log for more detail."
             )
             return
 
@@ -692,6 +711,40 @@ Juju Version: {self.charm.model.juju_version!s}
             "juju add-relation maas-region postgresql\n"
             "to restart MAAS"
         )
+
+    def _get_backup_maas_version(
+        self, event: ActionEvent, path: str, s3_parameters: dict[str, str]
+    ) -> bool:
+        metadata = self._read_content_from_s3(f"{path}/backup_metadata.json", s3_parameters)
+        if not metadata:
+            event.fail("Restore failed: Could not fetch metadata")
+            return False
+
+        meta_dict: dict[str, str] = json.loads(metadata)
+        channel = meta_dict.get("maas_snap_channel")
+        if not channel:
+            event.fail("Restore failed: Could not locate snap channel in backup")
+            return False
+
+        installed = MaasHelper.get_installed_channel()
+        if not installed:
+            event.fail("Restore failed: Could not locate snap channel on running MAAS instance")
+            return False
+
+        installed_major, installed_minor = installed.split("/", 1)[0].split(".", 1)
+        backup_major, backup_minor = channel.split("/", 1)[0].split(".", 1)
+
+        if installed_major != backup_major:
+            event.fail("Restore failed: MAAS major version does not match backup major version")
+            return False
+
+        if installed_minor < backup_minor:
+            event.fail(
+                "Restore failed: MAAS minor version is not greater or equal to backup minor version"
+            )
+            return False
+
+        return True
 
     def _update_controller_ids(
         self, event: ActionEvent, path: str, s3_parameters: dict[str, str]
@@ -729,7 +782,8 @@ Juju Version: {self.charm.model.juju_version!s}
         event: ActionEvent,
         s3_path: str,
         s3_parameters: dict[str, str],
-        image_storage: Path,
+        local_path: Path,
+        file_type: str,
     ) -> bool:
         bucket = s3_parameters["bucket"]
         path = os.path.join(s3_parameters["path"], s3_path).lstrip("/")
@@ -737,56 +791,58 @@ Juju Version: {self.charm.model.juju_version!s}
             try:
                 if (
                     (size := client.head_object(Bucket=bucket, ey=path)["ContentLenght"])
-                    and (free := shutil.disk_usage(image_storage).free)
+                    and (free := shutil.disk_usage(local_path).free)
                     and (size >= free)
                 ):
                     logger.exception(
-                        f"Not enough free storage to extract image archive, required {size} but has {free}"
+                        f"Not enough free storage to extract {file_type}, required {size} but has {free}"
                     )
-                    event.fail("Not enough space to download image archive from S3.")
+                    event.fail(f"Not enough space to download {file_type} from S3.")
                     return False
 
                 with tempfile.NamedTemporaryFile(suffix=".tar.gz") as f:
-                    event.log("Downloading image archive from S3...")
+                    event.log(f"Downloading {file_type} from S3...")
                     client.download_file(
                         bucket,
                         f.name,
                         path,
-                        Callback=ProgressPercentage(f.name, "image archive"),
+                        Callback=ProgressPercentage(f.name, file_type),
                     )
 
-                    event.log("Extracting images from image archive...")
+                    event.log(f"Extracting from {file_type}...")
                     with tarfile.open(fileobj=f, mode="r:gz") as tar:
                         tar.extractall(path="/")
 
                 # check the storage path exists and contains something
-                if image_storage.exists() and any(image_storage.iterdir()):
+                if local_path.exists() and any(local_path.iterdir()):
                     return True
 
-                logger.error("Image archive from S3 did not contain any files.")
-                event.fail("Empty image archive downloaded from S3")
+                logger.error(f"{file_type.capitalize()} from S3 did not contain any files.")
+                event.fail(f"Empty {file_type} downloaded from S3")
                 return False
 
             except ClientError as e:
                 if e.response["Error"]["Code"] == "404":
                     logger.error(f"Could not find object in {bucket}:{path}")
-                    event.fail("Failed to download image archive from S3.")
+                    event.fail(f"Failed to download {file_type} from S3.")
 
                 else:
                     logger.exception(f"Could not read object from {bucket}:{path}", exc_info=e)
-                    event.fail("Failed to download image archive from S3.")
+                    event.fail(f"Failed to download {file_type} from S3.")
 
             except (FileNotFoundError, OSError) as e:
                 logger.exception("Filesystem error while extracting archive", exc_info=e)
-                event.fail("Failed to untar image archive from S3.")
+                event.fail(f"Failed to untar {file_type} from S3.")
 
             except tarfile.TarError as e:
                 logger.exception("Corrupted or invalid tar archive", exc_info=e)
-                event.fail("Image archive is not a valid .tar.gz file or is corrupted.")
+                event.fail(
+                    f"{file_type.capitalize()} is not a valid .tar.gz file or is corrupted."
+                )
 
             except Exception as e:
                 logger.exception(f"Could not read content from {bucket}:{path}", exc_info=e)
-                event.fail("Failed to download image archive from S3.")
+                event.fail(f"Failed to download {file_type} from S3.")
 
         return False
 
