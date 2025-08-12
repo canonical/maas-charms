@@ -4,6 +4,7 @@
     "config:recommended"
   ],
   "ignoreDeps": [
-    "canonical/observability"
+    "canonical/observability",
+    "tj-actions/changed-files"
   ]
 }
