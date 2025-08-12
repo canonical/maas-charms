@@ -12,10 +12,10 @@ from helper import MAAS_SERVICE, MaasHelper
 
 
 class TestHelperSnapCache(unittest.TestCase):
-    def _setup_snap(self, mock_snap, present=False, revision="1234", channel="latest/stable"):
+    def _setup_snap(self, mock_snap, present=False, version="1234", channel="latest/stable"):
         maas = MagicMock()
         type(maas).present = PropertyMock(return_value=present)
-        type(maas).revision = PropertyMock(return_value=revision)
+        type(maas).version = PropertyMock(return_value=version)
         type(maas).channel = PropertyMock(return_value=channel)
         instance = mock_snap.return_value
         instance.__getitem__.return_value = maas
@@ -60,7 +60,7 @@ class TestHelperSnapCache(unittest.TestCase):
 
     @patch("helper.SnapCache", autospec=True)
     def test_get_installed_version(self, mock_snap):
-        self._setup_snap(mock_snap, present=True, revision="12345")
+        self._setup_snap(mock_snap, present=True, version="12345")
         self.assertEqual(MaasHelper.get_installed_version(), "12345")
 
     @patch("helper.SnapCache", autospec=True)

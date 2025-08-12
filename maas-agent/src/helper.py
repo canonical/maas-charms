@@ -45,7 +45,7 @@ class MaasHelper:
             Union[str, None]: version if installed
         """
         maas = SnapCache()[MAAS_SNAP_NAME]
-        return maas.revision if maas.present else None
+        return maas.version.split("-")[0] if maas.version is not None and maas.present else None
 
     @staticmethod
     def get_installed_channel() -> str | None:
