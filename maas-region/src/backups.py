@@ -3,6 +3,7 @@
 
 """Backups implementation."""
 
+import json
 import logging
 import os
 import subprocess
@@ -14,7 +15,6 @@ from datetime import datetime
 from io import BytesIO
 from typing import Any
 
-import yaml
 from boto3.session import Session
 from botocore import loaders
 from botocore.client import Config
@@ -499,15 +499,7 @@ Juju Version: {self.charm.model.juju_version!s}
     ):
         # get region ids
         event.log("Retrieving region ids from MAAS...")
-        success, regions = self._get_region_ids()
-        if not success:
-            logger.error(
-                "Failed to get region ids for S3 backup. Please check the juju debug-log for more details."
-            )
-            event.fail(
-                "Failed to get region ids for S3 backup. Please check the juju debug-log for more details."
-            )
-            return False
+        regions = self._get_region_ids()
 
         # upload regions
         region_path = os.path.join(s3_path, "controllers.txt")
@@ -577,11 +569,11 @@ Juju Version: {self.charm.model.juju_version!s}
             bucket_name = s3_parameters["bucket"]
 
             try:
-                metadata_path = os.path.join(s3_path, "backup_metadata.yaml")
+                metadata_path = os.path.join(s3_path, "backup_metadata.json")
                 metadata = self._get_backup_metadata()
                 metadata["success"] = success
                 with tempfile.NamedTemporaryFile(suffix=".yaml") as f:
-                    f.write(yaml.safe_dump(metadata).encode())
+                    f.write(json.dumps(metadata).encode())
                     f.flush()
                     client.upload_file(
                         f.name,
@@ -595,19 +587,21 @@ Juju Version: {self.charm.model.juju_version!s}
 
     def _get_backup_metadata(self) -> dict[str, Any]:
         return {
-            "maas_snap_revision": self.charm.version,
+            "maas_snap_version": self.charm.version,
             "maas_snap_channel": MaasHelper.get_installed_channel(),
+            "unit_name": self.charm.unit.name,
+            "juju_version": str(self.charm.model.juju_version),
         }
 
-    def _get_region_ids(self) -> tuple[bool, set[str]]:
+    def _get_region_ids(self) -> set[str]:
         try:
             credentials = self.charm._create_or_get_internal_admin()
-            return True, MaasHelper.get_regions(
+            return MaasHelper.get_regions(
                 admin_username=credentials["username"], maas_ip=self.charm.bind_address
             )
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to get region ids: {e}")
-            return False, set()
+        except Exception as e:
+            logger.exception(e)
+            raise e
 
     def _generate_backup_id(self) -> str:
         """Create a backup id for failed backup operations (to store log file)."""
