@@ -483,7 +483,7 @@ Juju Version: {self.charm.model.juju_version!s}
                     exc_info=e,
                 )
                 event.fail(
-                    "Failed to backup to S3 backup. Please check the juju debug-log for more details."
+                    "Failed to backup to S3. Please check the juju debug-log for more details."
                 )
                 return False
 

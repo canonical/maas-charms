@@ -10,9 +10,7 @@ from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import ops
 import ops.testing
-import pytest
 from boto3.exceptions import S3UploadFailedError
-from botocore.client import BaseClient
 from botocore.exceptions import BotoCoreError, ClientError, ConnectTimeoutError, SSLError
 
 from backups import FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE, ProgressPercentage
@@ -494,7 +492,7 @@ backup-id            | action              | status   | backup-path
         self, can_unit_backup, s3_params, upload_content, run_backup
     ):
         can_unit_backup.return_value = True, ""
-        s3_params.return_value = ({}, None)
+        s3_params.return_value = ({}, [])
         self.harness.begin()
         self.harness.run_action("create-backup")
         can_unit_backup.assert_called_once()
@@ -522,7 +520,7 @@ backup-id            | action              | status   | backup-path
     ):
         can_unit_backup.return_value = True, ""
         upload_content.return_value = False
-        s3_params.return_value = ({}, None)
+        s3_params.return_value = ({}, [])
         self.harness.begin()
         with self.assertRaises(ops.testing.ActionFailed) as e:
             self.harness.run_action("create-backup")
@@ -576,7 +574,6 @@ backup-id            | action              | status   | backup-path
         generate_id.assert_called_once()
         execute_backup.assert_called_once()
         action_event.set_results.assert_not_called()
-        action_event.fail.assert_called_once()
         action_event.fail.assert_called_once_with(
             "Failed to archive and upload MAAS files to S3. Please check the juju debug-log for more details."
         )
@@ -660,7 +657,7 @@ backup-id            | action              | status   | backup-path
         get_client.assert_called_once_with(s3_parameters, None)
 
         action_event.fail.assert_called_once_with(
-            "Failed to backup to S3 backup. Please check the juju debug-log for more details."
+            "Failed to backup to S3. Please check the juju debug-log for more details."
         )
 
         # Test when success with ca chain.
