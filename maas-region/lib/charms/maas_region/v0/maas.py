@@ -7,12 +7,11 @@ import dataclasses
 import json
 import logging
 from collections.abc import MutableMapping
-from typing import Any
+from typing import Any, Self
 
 import ops
 from ops.charm import CharmEvents
 from ops.framework import EventSource, Handle, Object
-from typing_extensions import Self
 
 # The unique Charmhub library identifier, never change it
 LIBID = "3e4a25698b094f96a59aa01367416ecb"
@@ -22,7 +21,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 4
+LIBPATCH = 5
 
 
 DEFAULT_ENDPOINT_NAME = "maas-region"

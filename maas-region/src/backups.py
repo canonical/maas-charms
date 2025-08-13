@@ -440,9 +440,7 @@ Juju Version: {self.charm.model.juju_version!s}
             success=backup_success,
         )
         if not metadata_success:
-            error_message = (
-                f"Failed to upload backup metadata to S3 for backup-id {backup_id}."
-            )
+            error_message = f"Failed to upload backup metadata to S3 for backup-id {backup_id}."
             logger.error(f"Backup failed: {error_message}")
             event.fail(error_message + REFER_TO_DEBUG_LOG)
             return
