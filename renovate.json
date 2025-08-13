@@ -5,6 +5,7 @@
   ],
   "ignoreDeps": [
     "canonical/observability",
-    "tj-actions/changed-files"
+    "tj-actions/changed-files",
+    "setuptools"
   ]
 }
