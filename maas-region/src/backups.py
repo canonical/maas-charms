@@ -16,6 +16,7 @@ from contextlib import contextmanager, nullcontext
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from time import sleep
 from typing import Any
 
 from boto3.session import Session
@@ -49,6 +50,10 @@ SNAP_PATH_TO_IMAGES = "/var/snap/maas/common/maas/image-storage"
 SNAP_PATH_TO_PRESEEDS = "/var/snap/maas/current/preseeds"
 METADATA_PATH = "backup/latest"
 REFER_TO_DEBUG_LOG = " Please check the juju debug-log for more details."
+MAAS_REGION_RELATION = "maas-cluster"
+# How long in seconds should the leader wait for all units to complete
+MAX_RESTORE_TIMEOUT = 1200
+RESTORE_WAIT_TIME = 15
 
 
 class RegionsNotAvailableError(Exception):
@@ -653,22 +658,18 @@ Juju Version: {self.charm.model.juju_version!s}
             event.fail(error_message)
             return
 
-        self.charm.unit.status = MaintenanceStatus("restoring backup")
+        self.charm.unit.status = MaintenanceStatus("Restoring from backup...")
 
-        self._run_restore(event, s3_parameters, backup_id)
+        self._run_restore_leader(event, s3_parameters, backup_id)
 
         self.charm.unit.status = ActiveStatus()
         event.set_results({"restore-status": "restore finished"})
 
-    def _run_restore(
+    def _run_restore_leader(
         self, event: ActionEvent, s3_parameters: dict[str, str], backup_id: str
     ) -> None:
+        # This is the restore action only the leader will run
         path = f"/backup/{backup_id}"
-        if not self._get_backup_maas_version(event=event, path=path, s3_parameters=s3_parameters):
-            event.fail(
-                "Failed to validate MAAS version from S3 backup. Check the juju debug-log for more detail."
-            )
-            return
 
         if not self._update_controller_ids(event=event, path=path, s3_parameters=s3_parameters):
             event.fail(
@@ -676,17 +677,58 @@ Juju Version: {self.charm.model.juju_version!s}
             )
             return
 
-        image_storage = Path(SNAP_PATH_TO_IMAGES)
-        shutil.rmtree(image_storage, ignore_errors=True)
-        if image_storage.exists():
-            event.fail("Could not remove existing image-storage")
+        # we need to trigger a restore on all other units
+        relation = self.model.get_relation(MAAS_REGION_RELATION)
+        if relation is None:
+            event.fail("Failed to fetch MAAS-region relation")
+            return
+        for region in relation.units:
+            if not region.is_leader:
+                relation.data[self.model.app][f"{region.name}_restore_data"] = json.dumps(
+                    {"s3_parameters": s3_parameters, "backup_id": backup_id}
+                )
+
+        self._run_restore_unit(event=event, s3_parameters=s3_parameters, backup_id=backup_id)
+
+        if not self._await_restore_complete(event=event):
+            event.fail(
+                "Failed to restore on all regions. Check the juju debug-log for more detail."
+            )
+
+        # TODO: How do we determine the postgresql name if we don't have a relation yet.
+        event.log(
+            "Restore complete, please run:\n"
+            f"juju add-relation {self.model.app.name} postgresql\n"
+            "to restart MAAS"
+        )
+
+    def _run_restore_unit(
+        self, event: ActionEvent, s3_parameters: dict[str, str], backup_id: str
+    ) -> None:
+        # All units need to download images and preseeds
+
+        relation = self.model.get_relation(MAAS_REGION_RELATION)
+        if relation is None:
+            event.fail("Failed to fetch MAAS-region relation")
+            return
+        # clear the data now we have it, and tell the leader we're starting
+        del relation.data[self.model.app][f"{self.model.unit.name}_restore_data"]
+        relation.data[self.model.app][f"{self.model.unit.name}_restore_running"] = json.dumps(
+            "Restoring..."
+        )
+
+        path = f"/backup/{backup_id}"
+        if not self._get_backup_maas_version(event=event, path=path, s3_parameters=s3_parameters):
+            event.fail(
+                "Failed to validate MAAS version from S3 backup. Check the juju debug-log for more detail."
+            )
             return
 
         if not self._download_and_unarchive_from_s3(
             event=event,
             s3_path=f"{path}/image-strorage.tar.gz",
             s3_parameters=s3_parameters,
-            local_path=image_storage,
+            local_path=Path(SNAP_PATH_TO_IMAGES),
             file_type="image archive",
         ):
             event.fail(
@@ -706,11 +748,50 @@ Juju Version: {self.charm.model.juju_version!s}
             )
             return
 
-        event.log(
-            "Backup complete, please run:\n"
-            "juju add-relation maas-region postgresql\n"
-            "to restart MAAS"
+        relation.data[self.model.app][f"{self.model.unit.name}_restore_running"] = json.dumps(
+            "Restored"
         )
+
+    def _await_restore_complete(self, event: ActionEvent) -> bool:
+        relation = self.model.get_relation(MAAS_REGION_RELATION)
+        if relation is None:
+            event.fail("Failed to fetch MAAS-region relation")
+            return False
+
+        # we allow some time for the other units to run
+        for _ in range(0, MAX_RESTORE_TIMEOUT // RESTORE_WAIT_TIME):
+            unknown = 0
+            restoring = 0
+            complete = 0
+            for region in relation.units:
+                if running := relation.data[self.model.app].get(f"{region.name}_restore_running"):
+                    match json.loads(running):
+                        case "Restoring...":
+                            restoring += 1
+                        case "Restored":
+                            complete += 1
+                        case _:
+                            unknown += 1
+                else:
+                    unknown += 1
+            event.log(
+                f"{complete} completed restore; "
+                f"{restoring} restore ongoing; "
+                f"{unknown} in an unknown/broken state."
+            )
+            if complete == len(relation.units):
+                break
+            sleep(RESTORE_WAIT_TIME)
+        else:
+            return False
+
+        # clear all of the restore data so we don't mess up a later restore
+        for region in relation.units:
+            del relation.data[self.model.app][f"{region.name}_restore_running"]
+            del relation.data[self.model.app][f"{region.name}_restore_data"]
+            del relation.data[self.model.app][f"{region.name}_restore_id"]
+
+        return True
 
     def _get_backup_maas_version(
         self, event: ActionEvent, path: str, s3_parameters: dict[str, str]
@@ -721,26 +802,32 @@ Juju Version: {self.charm.model.juju_version!s}
             return False
 
         meta_dict: dict[str, str] = json.loads(metadata)
-        channel = meta_dict.get("maas_snap_channel")
-        if not channel:
+        backup = meta_dict.get("maas_snap_version")
+        if not backup:
             event.fail("Restore failed: Could not locate snap channel in backup")
             return False
 
-        installed = MaasHelper.get_installed_channel()
+        installed = self.charm.version
         if not installed:
             event.fail("Restore failed: Could not locate snap channel on running MAAS instance")
             return False
 
-        installed_major, installed_minor = installed.split("/", 1)[0].split(".", 1)
-        backup_major, backup_minor = channel.split("/", 1)[0].split(".", 1)
+        installed_major, installed_minor, installed_point = installed.split("/", 1)[0].split(
+            ".", 2
+        )
+        backup_major, backup_minor, backup_point = backup.split("/", 1)[0].split(".", 2)
 
         if installed_major != backup_major:
             event.fail("Restore failed: MAAS major version does not match backup major version")
             return False
 
-        if installed_minor < backup_minor:
+        if installed_minor != backup_minor:
+            event.fail("Restore failed: MAAS minor version does not match backup minor version")
+            return False
+
+        if installed_point < backup_point:
             event.fail(
-                "Restore failed: MAAS minor version is not greater or equal to backup minor version"
+                "Restore failed: MAAS point version is not greater or equal to backup point version"
             )
             return False
 
@@ -756,7 +843,7 @@ Juju Version: {self.charm.model.juju_version!s}
             return False
 
         controllers = controllers_content.strip("\n").split("\n")
-        relation = self.model.get_relation("maas-cluster")
+        relation = self.model.get_relation(MAAS_REGION_RELATION)
         if relation is None:
             event.fail("Restore failed: could not fetch MAAS regions list")
             return False
@@ -773,7 +860,7 @@ Juju Version: {self.charm.model.juju_version!s}
         # Push the corresponding controller ID to each region, to be updated
         for region, controller in zip(regions, sorted(controllers)):
             logger.debug(f"Assigning {controller} to {self.model.name}")
-            relation.data[self.model.app][f"{region.name}_id"] = json.dumps(controller)
+            relation.data[self.model.app][f"{region.name}_restore_id"] = json.dumps(controller)
 
         return True
 
@@ -785,6 +872,13 @@ Juju Version: {self.charm.model.juju_version!s}
         local_path: Path,
         file_type: str,
     ) -> bool:
+        # Clean before restore
+        shutil.rmtree(local_path, ignore_errors=True)
+        if local_path.exists():
+            event.fail("Could not remove existing image-storage")
+            return False
+        local_path.mkdir(parents=True)
+
         bucket = s3_parameters["bucket"]
         path = os.path.join(s3_parameters["path"], s3_path).lstrip("/")
         with self._s3_client(s3_parameters) as client:
@@ -846,9 +940,6 @@ Juju Version: {self.charm.model.juju_version!s}
 
         return False
 
-    def _relation_exists(self, relation_name: str) -> bool:
-        return self.model.get_relation(relation_name=relation_name) is not None
-
     def _pre_restore_checks(self, event: ActionEvent) -> bool:
         """Run some checks before starting the restore.
 
@@ -881,12 +972,11 @@ Juju Version: {self.charm.model.juju_version!s}
             event.fail(error_message)
             return False
 
-        # from https://github.com/canonical/maas-charms/pull/511 .
         logger.info("Checking that the PostgreSQL relation has been removed")
-        if not self._relation_exists("maas-db"):
+        if relation := self.model.get_relation(relation_name="maas-db"):
             error_message = (
                 "PostgreSQL relation still exists, please run:\n"
-                "juju remove-relation maas-region postgresql\n"
+                f"juju remove-relation {self.model.app.name} {relation.app.name}\n"
                 "then retry this action"
             )
             logger.error(f"Restore failed: {error_message}")
