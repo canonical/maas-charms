@@ -2,4 +2,7 @@ ops ~=3.1
 # for grafana agent
 pydantic < 2
 cosl
+
+# For tracing
 opentelemetry-exporter-otlp-proto-http>=1.21.0
+setuptools<80.9.0
