@@ -16,7 +16,6 @@ from contextlib import contextmanager, nullcontext
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from time import sleep
 from typing import Any
 
 from boto3.session import Session
@@ -46,14 +45,13 @@ FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE = (
 S3_BLOCK_MESSAGES = [
     FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
 ]
+SNAP_PATH_TO_IDS = "/var/snap/maas/common/maas/maas_id"
 SNAP_PATH_TO_IMAGES = "/var/snap/maas/common/maas/image-storage"
 SNAP_PATH_TO_PRESEEDS = "/var/snap/maas/current/preseeds"
 METADATA_PATH = "backup/latest"
 REFER_TO_DEBUG_LOG = " Please check the juju debug-log for more details."
 MAAS_REGION_RELATION = "maas-cluster"
 # How long in seconds should the leader wait for all units to complete
-MAX_RESTORE_TIMEOUT = 1200
-RESTORE_WAIT_TIME = 15
 
 
 class RegionsNotAvailableError(Exception):
@@ -105,7 +103,7 @@ class MAASBackups(Object):
         self.framework.observe(self.charm.on.create_backup_action, self._on_create_backup_action)
         self.framework.observe(self.charm.on.list_backups_action, self._on_list_backups_action)
         self.framework.observe(
-            self.charm.on.restore_from_backup_action, self._on_restore_from_backup_action
+            self.charm.on.restore_backup_action, self._on_restore_from_backup_action
         )
 
     def _get_s3_session_resource(
@@ -465,9 +463,7 @@ Juju Version: {self.charm.model.juju_version!s}
             success=backup_success,
         )
         if not metadata_success:
-            error_message = (
-                f"Failed to upload backup metadata to S3 for backup-id {backup_id}."
-            )
+            error_message = f"Failed to upload backup metadata to S3 for backup-id {backup_id}."
             logger.error(f"Backup failed: {error_message}")
             event.fail(error_message + REFER_TO_DEBUG_LOG)
             return
@@ -660,12 +656,12 @@ Juju Version: {self.charm.model.juju_version!s}
 
         self.charm.unit.status = MaintenanceStatus("Restoring from backup...")
 
-        self._run_restore_leader(event, s3_parameters, backup_id)
+        self._run_restore(event, s3_parameters, backup_id)
 
         self.charm.unit.status = ActiveStatus()
         event.set_results({"restore-status": "restore finished"})
 
-    def _run_restore_leader(
+    def _run_restore(
         self, event: ActionEvent, s3_parameters: dict[str, str], backup_id: str
     ) -> None:
         # This is the restore action only the leader will run
@@ -677,62 +673,9 @@ Juju Version: {self.charm.model.juju_version!s}
             )
             return
 
-        # we need to trigger a restore on all other units
-        relation = self.model.get_relation(MAAS_REGION_RELATION)
-        if relation is None:
-            event.fail("Failed to fetch MAAS-region relation")
-            return
-        for region in relation.units:
-            if not region.is_leader:
-                relation.data[self.model.app][f"{region.name}_restore_data"] = json.dumps(
-                    {"s3_parameters": s3_parameters, "backup_id": backup_id}
-                )
-
-        self._run_restore_unit(event=event, s3_parameters=s3_parameters, backup_id=backup_id)
-
-        if not self._await_restore_complete(event=event):
-            event.fail(
-                "Failed to restore on all regions. Check the juju debug-log for more detail."
-            )
-
-        # TODO: How do we determine the postgresql name if we don't have a relation yet.
-        event.log(
-            "Restore complete, please run:\n"
-            f"juju add-relation {self.model.app.name} postgresql\n"
-            "to restart MAAS"
-        )
-
-    def _run_restore_unit(
-        self, event: ActionEvent, s3_parameters: dict[str, str], backup_id: str
-    ) -> None:
-        # All units need to download images and preseeds
-
-        relation = self.model.get_relation(MAAS_REGION_RELATION)
-        if relation is None:
-            event.fail("Failed to fetch MAAS-region relation")
-            return
-        # clear the data now we have it, and tell the leader we're starting
-        del relation.data[self.model.app][f"{self.model.unit.name}_restore_data"]
-        relation.data[self.model.app][f"{self.model.unit.name}_restore_running"] = json.dumps(
-            "Restoring..."
-        )
-
-        path = f"/backup/{backup_id}"
         if not self._get_backup_maas_version(event=event, path=path, s3_parameters=s3_parameters):
             event.fail(
                 "Failed to validate MAAS version from S3 backup. Check the juju debug-log for more detail."
-            )
-            return
-
-        if not self._download_and_unarchive_from_s3(
-            event=event,
-            s3_path=f"{path}/image-strorage.tar.gz",
-            s3_parameters=s3_parameters,
-            local_path=Path(SNAP_PATH_TO_IMAGES),
-            file_type="image archive",
-        ):
-            event.fail(
-                "Failed to download and extract images from S3 backup. Check the juju debug-log for more detail."
             )
             return
 
@@ -748,50 +691,24 @@ Juju Version: {self.charm.model.juju_version!s}
             )
             return
 
-        relation.data[self.model.app][f"{self.model.unit.name}_restore_running"] = json.dumps(
-            "Restored"
-        )
-
-    def _await_restore_complete(self, event: ActionEvent) -> bool:
-        relation = self.model.get_relation(MAAS_REGION_RELATION)
-        if relation is None:
-            event.fail("Failed to fetch MAAS-region relation")
-            return False
-
-        # we allow some time for the other units to run
-        for _ in range(0, MAX_RESTORE_TIMEOUT // RESTORE_WAIT_TIME):
-            unknown = 0
-            restoring = 0
-            complete = 0
-            for region in relation.units:
-                if running := relation.data[self.model.app].get(f"{region.name}_restore_running"):
-                    match json.loads(running):
-                        case "Restoring...":
-                            restoring += 1
-                        case "Restored":
-                            complete += 1
-                        case _:
-                            unknown += 1
-                else:
-                    unknown += 1
-            event.log(
-                f"{complete} completed restore; "
-                f"{restoring} restore ongoing; "
-                f"{unknown} in an unknown/broken state."
+        if not self._download_and_unarchive_from_s3(
+            event=event,
+            s3_path=f"{path}/image-strorage.tar.gz",
+            s3_parameters=s3_parameters,
+            local_path=Path(SNAP_PATH_TO_IMAGES),
+            file_type="image archive",
+        ):
+            event.fail(
+                "Failed to download and extract images from S3 backup. Check the juju debug-log for more detail."
             )
-            if complete == len(relation.units):
-                break
-            sleep(RESTORE_WAIT_TIME)
-        else:
-            return False
+            return
 
-        # clear all of the restore data so we don't mess up a later restore
-        for region in relation.units:
-            del relation.data[self.model.app][f"{region.name}_restore_running"]
-            del relation.data[self.model.app][f"{region.name}_restore_data"]
-            del relation.data[self.model.app][f"{region.name}_restore_id"]
-
-        return True
+        # TODO: How do we determine the postgresql name if we don't have a relation yet.
+        event.log(
+            "Restore complete, please run:\n"
+            f"juju add-relation {self.model.app.name} postgresql\n"
+            "to restart MAAS"
+        )
 
     def _get_backup_maas_version(
         self, event: ActionEvent, path: str, s3_parameters: dict[str, str]
@@ -845,22 +762,28 @@ Juju Version: {self.charm.model.juju_version!s}
         controllers = controllers_content.strip("\n").split("\n")
         relation = self.model.get_relation(MAAS_REGION_RELATION)
         if relation is None:
-            event.fail("Restore failed: could not fetch MAAS regions list")
+            event.fail("Restore failed: Could not fetch MAAS regions list")
             return False
 
         regions = relation.units
 
         if len(controllers) != len(regions):
             event.fail(
-                f"Restore failed: the number of MAAS-Region units ({len(regions)}) "
+                f"Restore failed: The number of MAAS-Region units ({len(regions)}) "
                 f"does not match the expected value from the backup ({len(controllers)})."
             )
             return False
 
-        # Push the corresponding controller ID to each region, to be updated
-        for region, controller in zip(regions, sorted(controllers)):
-            logger.debug(f"Assigning {controller} to {self.model.name}")
-            relation.data[self.model.app][f"{region.name}_restore_id"] = json.dumps(controller)
+        # Determine my controller ID from a deterministic sorting of the region names
+        for region_name, controller in zip(
+            sorted(region.name for region in regions), sorted(controllers)
+        ):
+            if self.model.unit.name == region_name:
+                Path(SNAP_PATH_TO_IDS).write_text(f"{controller}\n")
+                break
+        else:
+            event.fail("Restore failed: The unit could not be assigned a valid controller ID")
+            return False
 
         return True
 
@@ -961,13 +884,6 @@ Juju Version: {self.charm.model.juju_version!s}
         logger.info("Checking if cluster is in blocked state")
         if self.charm.is_blocked:
             error_message = "Cluster or unit is in a blocking state"
-            logger.error(f"Restore failed: {error_message}")
-            event.fail(error_message)
-            return False
-
-        logger.info("Checking that this unit was already elected the leader unit")
-        if not self.charm.unit.is_leader():
-            error_message = "Unit cannot restore backup as it was not elected the leader unit yet"
             logger.error(f"Restore failed: {error_message}")
             event.fail(error_message)
             return False

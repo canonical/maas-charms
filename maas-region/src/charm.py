@@ -10,7 +10,6 @@ import random
 import socket
 import string
 import subprocess
-from pathlib import Path
 from typing import Any
 
 import ops
@@ -63,8 +62,6 @@ MAAS_REGION_PORTS = [
 
 MAAS_ADMIN_SECRET_LABEL = "maas-admin"
 MAAS_ADMIN_SECRET_KEY = "maas-admin-secret-uri"
-
-MAAS_SNAP_COMMON = "/var/snap/maas/common/maas"
 
 MAAS_BACKUP_TYPES = ["full", "differential", "incremental"]
 
@@ -504,21 +501,6 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_maas_cluster_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
-        # Handle data updates
-        if region_id := self.get_peer_data(self.app, f"{self.unit.name}_restore_id"):
-            (Path(MAAS_SNAP_COMMON) / "maas_id").write_text(f"{region_id}\n")
-            self.set_peer_data(self.app, f"{self.unit.name}_restore_id", "")
-
-        if restore_data := self.get_peer_data(self.app, f"{self.unit.name}_restore_data"):
-            self.unit.status = ops.MaintenanceStatus("Restoring from backup...")
-            self.set_peer_data(self.app, f"{self.unit.name}_restore_data", "")
-            self.backup._run_restore_unit(
-                event=ops.ActionEvent(event.handle),
-                s3_parameters=restore_data["s3_parameters"],
-                backup_id=restore_data["backup_id"],
-            )
-            self.unit.status = ops.ActiveStatus()
-            return
 
         # Handle cluster joining
         if self.unit.is_leader() and not self._publish_tokens():

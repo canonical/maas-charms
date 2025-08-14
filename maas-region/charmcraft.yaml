@@ -86,9 +86,8 @@ actions:
     description: Get MAAS API URL
   create-backup:
     description: Create a backup of MAAS data not stored in the database.
-  restore-from-backup:
+  restore-backup:
     description: Restore from a MAAS backup
-      NOTE - This is a noop action, and serves only as a placeholder
     params:
       backup-id:
         type: string
