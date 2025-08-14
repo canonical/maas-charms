@@ -6,6 +6,7 @@
 import json
 import logging
 import os
+import subprocess
 import tarfile
 import tempfile
 import threading
@@ -45,6 +46,12 @@ SNAP_PATH_TO_IMAGES = "/var/snap/maas/common/maas/image-storage"
 SNAP_PATH_TO_PRESEEDS = "/var/snap/maas/current/preseeds"
 METADATA_PATH = "backup/latest"
 REFER_TO_DEBUG_LOG = " Please check the juju debug-log for more details."
+
+
+class RegionsNotAvailableError(Exception):
+    """Raised when regions cannot be obtained from MAAS."""
+
+    pass
 
 
 class ProgressPercentage:
@@ -482,7 +489,8 @@ Juju Version: {self.charm.model.juju_version!s}
                 )
             except Exception as e:
                 msg = f"Failed to backup to S3 bucket={bucket_name}, path={s3_path}."
-                logger.exception(msg, exc_info=e)
+                logger.error(msg)
+                logger.error(repr(e))
                 event.fail(msg + REFER_TO_DEBUG_LOG)
                 return False
 
@@ -497,7 +505,13 @@ Juju Version: {self.charm.model.juju_version!s}
     ):
         # get region ids
         event.log("Retrieving region ids from MAAS...")
-        regions = self.charm._get_region_system_ids()
+        try:
+            regions = self.charm._get_region_system_ids()
+        except subprocess.CalledProcessError:
+            # Avoid logging the apikey of an Admin user
+            raise RegionsNotAvailableError(
+                "Failed to retrieve region ids from the MAAS API"
+            )
 
         # upload regions
         region_path = os.path.join(s3_path, "controllers.txt")
@@ -522,7 +536,7 @@ Juju Version: {self.charm.model.juju_version!s}
                     arcname="images-storage",
                 )
             f.flush()
-            event.log("Uploading image archive to S3...")
+            event.log("Uploading image archive to S3, see debug-log for progress...")
             client.upload_file(
                 f.name,
                 bucket_name,

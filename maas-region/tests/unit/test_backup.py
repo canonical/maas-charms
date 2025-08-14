@@ -13,7 +13,11 @@ import ops.testing
 from boto3.exceptions import S3UploadFailedError
 from botocore.exceptions import BotoCoreError, ClientError, ConnectTimeoutError, SSLError
 
-from backups import FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE, ProgressPercentage
+from backups import (
+    FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
+    ProgressPercentage,
+    RegionsNotAvailableError,
+)
 from charm import MaasRegionCharm
 
 
@@ -685,7 +689,7 @@ backup-id            | action              | status   | backup-path
 
         # Test fails to get region ids
         get_region_ids.side_effect = subprocess.CalledProcessError(1, "maas")
-        with self.assertRaises(subprocess.CalledProcessError):
+        with self.assertRaises(RegionsNotAvailableError):
             self.harness.charm.backup._backup_maas_to_s3(
                 event=event_mock,
                 client=client_mock,
