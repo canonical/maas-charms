@@ -62,7 +62,7 @@ class RegionsNotAvailableError(Exception):
 class ProgressPercentage:
     """Class to track the progress of a file upload to S3."""
 
-    def __init__(self, filename: str, log_label: str, update_interval: int = 10):
+    def __init__(self, filename: str, log_label: str, uploading: bool, update_interval: int = 10):
         self._filename = filename
         self._size = float(os.path.getsize(filename))
         self._seen_so_far = 0
@@ -70,6 +70,7 @@ class ProgressPercentage:
         self._update_interval = update_interval
         self._last_percentage = 0
         self._log_label = log_label
+        self._uploading = uploading
 
     def __call__(self, bytes_amount: int):
         """Track the progress of the upload as a callback."""
@@ -78,7 +79,10 @@ class ProgressPercentage:
             percentage = (self._seen_so_far / self._size) * 100
             if (percentage - self._last_percentage) >= self._update_interval or percentage >= 100:
                 self._last_percentage = percentage
-                logger.info(f"uploading {self._log_label} to s3: {percentage:.2f}%")
+                verb, direction = (
+                    ("uploading", "to") if self._uploading else ("downloading", "from")
+                )
+                logger.info(f"{verb} {self._log_label} {direction} s3: {percentage:.2f}%")
 
 
 class MAASBackups(Object):
@@ -527,7 +531,7 @@ Juju Version: {self.charm.model.juju_version!s}
                 f.name,
                 bucket_name,
                 region_path,
-                Callback=ProgressPercentage(f.name, log_label="region ids"),
+                Callback=ProgressPercentage(f.name, log_label="region ids", uploading=True),
             )
 
         # archive and upload images
@@ -545,7 +549,7 @@ Juju Version: {self.charm.model.juju_version!s}
                 f.name,
                 bucket_name,
                 image_path,
-                Callback=ProgressPercentage(f.name, "image archive"),
+                Callback=ProgressPercentage(f.name, "image archive", uploading=True),
             )
 
         # archive and upload preseeds
@@ -563,7 +567,7 @@ Juju Version: {self.charm.model.juju_version!s}
                 f.name,
                 bucket_name,
                 preseed_path,
-                Callback=ProgressPercentage(f.name, "preseed archive"),
+                Callback=ProgressPercentage(f.name, "preseed archive", uploading=True),
             )
 
     def _upload_backup_metadata(
@@ -633,7 +637,10 @@ Juju Version: {self.charm.model.juju_version!s}
             return
 
         backup_id: str = event.params.get("backup-id", "")
-        logger.info(f"A restore with backup-id {backup_id} has been requested on the unit")
+        controller_id: str = event.params.get("controller-id", "")
+        logger.info(
+            f"A restore with backup-id {backup_id} has been requested on the unit with controller-id {controller_id}"
+        )
 
         # Validate the provided backup id
         logger.info("Validating provided backup-id")
@@ -655,26 +662,34 @@ Juju Version: {self.charm.model.juju_version!s}
 
         self.charm.unit.status = MaintenanceStatus("Restoring from backup...")
 
-        self._run_restore(event, s3_parameters, backup_id)
+        self._run_restore(
+            event=event,
+            s3_parameters=s3_parameters,
+            backup_id=backup_id,
+            controller_id=controller_id,
+        )
 
         self.charm.unit.status = ActiveStatus()
         event.set_results({"restore-status": "restore finished"})
 
     def _run_restore(
-        self, event: ActionEvent, s3_parameters: dict[str, str], backup_id: str
+        self, event: ActionEvent, s3_parameters: dict[str, str], backup_id: str, controller_id: str
     ) -> None:
-        # This is the restore action only the leader will run
         path = f"/backup/{backup_id}"
 
-        if not self._update_controller_ids(event=event, path=path, s3_parameters=s3_parameters):
+        if not self._check_backup_maas_version(
+            event=event, path=path, s3_parameters=s3_parameters
+        ):
             event.fail(
-                "Failed to update MAAS-Region IDs from S3 backup. Check the juju debug-log for more detail."
+                "Failed to validate MAAS version from S3 backup. Check the juju debug-log for more detail."
             )
             return
 
-        if not self._get_backup_maas_version(event=event, path=path, s3_parameters=s3_parameters):
+        if not self._update_controller_id(
+            event=event, path=path, s3_parameters=s3_parameters, controller_id=controller_id
+        ):
             event.fail(
-                "Failed to validate MAAS version from S3 backup. Check the juju debug-log for more detail."
+                "Failed to update MAAS-Region IDs from S3 backup. Check the juju debug-log for more detail."
             )
             return
 
@@ -709,7 +724,7 @@ Juju Version: {self.charm.model.juju_version!s}
             "to restart MAAS"
         )
 
-    def _get_backup_maas_version(
+    def _check_backup_maas_version(
         self, event: ActionEvent, path: str, s3_parameters: dict[str, str]
     ) -> bool:
         metadata = self._read_content_from_s3(f"{path}/backup_metadata.json", s3_parameters)
@@ -749,9 +764,13 @@ Juju Version: {self.charm.model.juju_version!s}
 
         return True
 
-    def _update_controller_ids(
-        self, event: ActionEvent, path: str, s3_parameters: dict[str, str]
+    def _update_controller_id(
+        self, event: ActionEvent, path: str, s3_parameters: dict[str, str], controller_id: str
     ) -> bool:
+        if not controller_id:
+            event.fail("Restore failed: Controller ID empty")
+            return False
+
         # Fetch the controllers from S3 and the regions from the relation
         controllers_content = self._read_content_from_s3(f"{path}/controllers.txt", s3_parameters)
         if not controllers_content:
@@ -773,18 +792,14 @@ Juju Version: {self.charm.model.juju_version!s}
             )
             return False
 
-        # Determine my controller ID from a deterministic sorting of the region names
-        for region_name, controller in zip(
-            sorted(region.name for region in regions), sorted(controllers)
-        ):
-            if self.model.unit.name == region_name:
-                Path(SNAP_PATH_TO_IDS).write_text(f"{controller}\n")
-                break
-        else:
-            event.fail("Restore failed: The unit could not be assigned a valid controller ID")
-            return False
+        controller_file = Path(SNAP_PATH_TO_IDS)
 
-        return True
+        if controller_id in controllers:
+            controller_file.write_text(f"{controller_id}\n")
+            return True
+
+        event.fail(f"Restore failed: {controller_id} is not a valid ID from the controllers list")
+        return False
 
     def _download_and_unarchive_from_s3(
         self,
@@ -822,7 +837,7 @@ Juju Version: {self.charm.model.juju_version!s}
                         bucket,
                         f.name,
                         path,
-                        Callback=ProgressPercentage(f.name, file_type),
+                        Callback=ProgressPercentage(f.name, file_type, uploading=False),
                     )
 
                     event.log(f"Extracting from {file_type}...")
