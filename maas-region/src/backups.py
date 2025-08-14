@@ -298,8 +298,8 @@ class MAASBackups(Object):
         backups = self._list_backups(s3_parameters)
         backup_list = []
         for backup in backups:
-            # TODO: backup_action and backup_status is statically set for now. It can be enriched
-            # with extra content if such functionality is added to the backup mechanism.
+            # TODO: backup_action is statically set for now. It can be enriched with extra content
+            # if such functionality is added to the backup mechanism.
             backup_action = "full backup"
             backup_path = f"/{s3_parameters['path'].lstrip('/')}/backup/{backup['id']}"
             backup_status = "finished" if backup["completed"] else "failed"
