@@ -289,8 +289,8 @@ class TestMAASBackups(unittest.TestCase):
             """Storage bucket name: test-bucket
 Backups base path: /test-path/backup/
 
-backup-id            | action              | status   | backup-path
--------------------------------------------------------------------""",
+backup-id            | action      | status   | maas     | size      | controllers            | backup-path
+-----------------------------------------------------------------------------------------------------------""",
         )
 
         # Test when there are backups.
@@ -298,19 +298,28 @@ backup-id            | action              | status   | backup-path
             (
                 "2023-01-01T09:00:00Z",
                 "full backup",
-                "failed: fake error",
+                "failed",
+                "3.6.0",
+                "772.56 MB",
+                "abc123, def456, ghi789",
                 "a/b/c",
             ),
             (
                 "2023-01-01T10:00:00Z",
                 "full backup",
                 "finished",
+                "3.6.1",
+                "123.56 MB",
+                "abc123, def456, ghi789",
                 "a/b/d",
             ),
             (
                 "2023-01-01T11:00:00Z",
-                "restore",
+                "full backup",
                 "finished",
+                "3.6.2",
+                "42.42 GB",
+                "abc123, def456, ghi789",
                 "n/a",
             ),
         ]
@@ -321,11 +330,11 @@ backup-id            | action              | status   | backup-path
             """Storage bucket name: test-bucket
 Backups base path: /test-path/backup/
 
-backup-id            | action              | status   | backup-path
--------------------------------------------------------------------
-2023-01-01T09:00:00Z | full backup         | failed: fake error | a/b/c
-2023-01-01T10:00:00Z | full backup         | finished | a/b/d
-2023-01-01T11:00:00Z | restore             | finished | n/a""",
+backup-id            | action      | status   | maas     | size      | controllers            | backup-path
+-----------------------------------------------------------------------------------------------------------
+2023-01-01T09:00:00Z | full backup | failed   | 3.6.0    | 772.56 MB | abc123, def456, ghi789 | a/b/c
+2023-01-01T10:00:00Z | full backup | finished | 3.6.1    | 123.56 MB | abc123, def456, ghi789 | a/b/d
+2023-01-01T11:00:00Z | full backup | finished | 3.6.2    | 42.42 GB  | abc123, def456, ghi789 | n/a""",
         )
 
     @patch("backups.MAASBackups._retrieve_s3_parameters")
@@ -343,8 +352,20 @@ backup-id            | action              | status   | backup-path
             [],
         )
         list_backups.return_value = [
-            {"id": "2023-01-01T09:00:00Z"},
-            {"id": "2024-10-14T20:27:32Z"},
+            {
+                "id": "2024-10-14T20:27:32Z",
+                "size": "772.56 MB",
+                "controller_ids": ["abc123", "def456", "ghi789"],
+                "completed": False,
+                "maas_version": "3.6.0",
+            },
+            {
+                "id": "2024-10-14T20:27:32Z",
+                "size": "42.42 GB",
+                "controller_ids": ["abc123", "def456", "ghi789"],
+                "completed": True,
+                "maas_version": "3.6.1",
+            },
         ]
 
         self.assertEqual(
@@ -352,14 +373,15 @@ backup-id            | action              | status   | backup-path
             """Storage bucket name: test-bucket
 Backups base path: /test-path/backup/
 
-backup-id            | action              | status   | backup-path
--------------------------------------------------------------------
-2023-01-01T09:00:00Z | full backup         | finished | /test-path/backup/2023-01-01T09:00:00Z
-2024-10-14T20:27:32Z | full backup         | finished | /test-path/backup/2024-10-14T20:27:32Z""",
+backup-id            | action      | status   | maas     | size      | controllers            | backup-path
+-----------------------------------------------------------------------------------------------------------
+2024-10-14T20:27:32Z | full backup | failed   | 3.6.0    | 772.56 MB | abc123, def456, ghi789 | /test-path/backup/2024-10-14T20:27:32Z
+2024-10-14T20:27:32Z | full backup | finished | 3.6.1    | 42.42 GB  | abc123, def456, ghi789 | /test-path/backup/2024-10-14T20:27:32Z""",
         )
 
+    @patch("backups.MAASBackups._get_backup_details")
     @patch("backups.MAASBackups._get_s3_session_client")
-    def test_list_backups(self, _client):
+    def test_list_backups(self, _client, _backup_details):
         self.harness.begin()
 
         s3_parameters = {
@@ -368,18 +390,22 @@ backup-id            | action              | status   | backup-path
             "secret-key": " test-secret-key ",
             "path": "/test-path",
         }
+        backup_details = {
+            "id": "123-456",
+            "size": "772.56 MB",
+            "controller_ids": ["abc123", "def456", "ghi789"],
+            "completed": True,
+            "maas_version": "3.6.1",
+        }
         _client.return_value.get_paginator.return_value.paginate.return_value = [
             {"CommonPrefixes": [{"Prefix": "123-456"}]}
         ]
-        self.assertEqual(
-            self.harness.charm.backup._list_backups(s3_parameters), [{"id": "123-456"}]
-        )
+        _backup_details.return_value = backup_details
+        self.assertEqual(self.harness.charm.backup._list_backups(s3_parameters), [backup_details])
 
         # Test listing backups with TLS CA chain
         s3_parameters["tls-ca-chain"] = ["one", "two"]
-        self.assertEqual(
-            self.harness.charm.backup._list_backups(s3_parameters), [{"id": "123-456"}]
-        )
+        self.assertEqual(self.harness.charm.backup._list_backups(s3_parameters), [backup_details])
 
     @patch("backups.MAASBackups._retrieve_s3_parameters")
     @patch("backups.MAASBackups._create_bucket_if_not_exists")

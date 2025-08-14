@@ -5,6 +5,7 @@
 
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -344,7 +345,7 @@ class MAASBackups(Object):
 
     def _format_backup_list(
         self,
-        backup_list: list[tuple[str, str, str, str]],
+        backup_list: list[tuple[str, str, str, str, str, str, str]],
         s3_bucket: str,
         s3_path: str,
     ) -> str:
@@ -352,11 +353,8 @@ class MAASBackups(Object):
         backups = [
             f"Storage bucket name: {s3_bucket:s}",
             f"Backups base path: {s3_path:s}/backup/\n",
-            "{:<20s} | {:<19s} | {:<8s} | {:s}".format(
-                "backup-id",
-                "action",
-                "status",
-                "backup-path",
+            "{:<20s} | {:<11s} | {:<8s} | {:<8s} | {:<9s} | {:<22s} | {:s}".format(
+                "backup-id", "action", "status", "maas", "size", "controllers", "backup-path"
             ),
         ]
         backups.append("-" * len(backups[2]))
@@ -364,10 +362,13 @@ class MAASBackups(Object):
             backup_id,
             backup_action,
             backup_status,
+            version,
+            size,
+            controllers,
             path,
         ) in backup_list:
             backups.append(
-                f"{backup_id:<20s} | {backup_action:<19s} | {backup_status:<8s} | {path:s}"
+                f"{backup_id:<20s} | {backup_action:<11s} | {backup_status:<8s} | {version:<8s} | {size:<9s} | {controllers:<22s} | {path:s}"
             )
         return "\n".join(backups)
 
@@ -380,16 +381,19 @@ class MAASBackups(Object):
         backups = self._list_backups(s3_parameters)
         backup_list = []
         for backup in backups:
-            # TODO: backup_action and backup_status are statically set for now. They can be enriched
-            # with extra content if such functionality is added to the backup mechanism.
+            # TODO: backup_action is statically set for now. It can be enriched with extra content
+            # if such functionality is added to the backup mechanism.
             backup_action = "full backup"
             backup_path = f"/{s3_parameters['path'].lstrip('/')}/backup/{backup['id']}"
-            backup_status = "finished"
+            backup_status = "finished" if backup["completed"] else "failed"
             backup_list.append(
                 (
                     backup["id"],
                     backup_action,
                     backup_status,
+                    backup["maas_version"],
+                    backup["size"],
+                    ", ".join(backup["controller_ids"]),
                     backup_path,
                 )
             )
@@ -418,14 +422,81 @@ class MAASBackups(Object):
             for page in page_iterator:
                 for common_prefix in page.get("CommonPrefixes", []):
                     backups.append(
-                        {
-                            "id": common_prefix["Prefix"]
-                            .lstrip(f"{s3_parameters['path'].lstrip('/')}/backup/")
-                            .rstrip("/")
-                        }
+                        common_prefix["Prefix"]
+                        .lstrip(f"{s3_parameters['path'].lstrip('/')}/backup/")
+                        .rstrip("/")
                     )
 
-        return backups
+        backup_dict_list = []
+
+        for backup in backups:
+            backup_dict_list.append(self._get_backup_details(s3_parameters, backup))
+
+        return backup_dict_list
+
+    def _get_backup_details(self, s3_parameters: dict, backup_id: str) -> dict:
+        total_size = 0
+        contents = []
+
+        ca_chain = s3_parameters.get("tls-ca-chain", [])
+        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
+            if ca_file:
+                ca = "\n".join(ca_chain)
+                ca_file.write(ca.encode())
+                ca_file.flush()
+
+                s3 = self._get_s3_session_client(s3_parameters, ca_file.name)
+            else:
+                s3 = self._get_s3_session_client(s3_parameters, None)
+
+            prefix = f"{s3_parameters['path'].lstrip('/')}/backup/{backup_id}/"
+            paginator = s3.get_paginator("list_objects_v2")
+            page_iterator = paginator.paginate(
+                Bucket=s3_parameters["bucket"],
+                Prefix=prefix,
+                Delimiter="/",
+            )
+            for page in page_iterator:
+                for content in page.get("Contents", []):
+                    contents.append(content["Key"].removeprefix(prefix))
+                    total_size += content["Size"]
+
+        size = convert_size(total_size)
+        complete_files = set(contents) == {
+            "backup_metadata.json",
+            "controllers.txt",
+            "images-storage.tar.gz",
+            "preseeds.tar.gz",
+        }
+
+        metadata = {}
+        if metadata_str := self._read_content_from_s3(
+            f"backup/{backup_id}/backup_metadata.json", s3_parameters
+        ):
+            try:
+                metadata = json.loads(metadata_str)
+            except Exception:
+                pass
+
+        controller_ids = []
+        if controller_str := self._read_content_from_s3(
+            f"backup/{backup_id}/controllers.txt", s3_parameters
+        ):
+            try:
+                controller_ids = controller_str.split()
+            except Exception:
+                pass
+
+        completed = metadata.get("success", False) and complete_files
+        maas_version = metadata.get("maas_snap_version", "")
+
+        return {
+            "id": backup_id,
+            "size": size,
+            "controller_ids": controller_ids,
+            "completed": completed,
+            "maas_version": maas_version,
+        }
 
     def _on_s3_credential_changed(self, event: CredentialsChangedEvent) -> None:
         if not self.charm.unit.is_leader():
@@ -1174,3 +1245,17 @@ Juju Version: {self.charm.model.juju_version!s}
                 )
 
         return None
+
+
+def convert_size(size_bytes):
+    """Convert bytes given in integer to a human readable format.
+
+    Source: https://stackoverflow.com/questions/5194057/better-way-to-convert-file-sizes-in-python
+    """
+    if size_bytes == 0:
+        return "0B"
+    size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+    i = math.floor(math.log(size_bytes, 1024))
+    p = math.pow(1024, i)
+    s = round(size_bytes / p, 2)
+    return f"{s} {size_name[i]}"
