@@ -186,21 +186,6 @@ class MaasRegionCharm(ops.CharmBase):
         return f"postgres://{username}:{password}@{endpoints}/{self.maasdb_name}"
 
     @property
-    def restore_running(self) -> bool:
-        """Reports the completion status of the backup restore action.
-
-        Returns:
-            bool: True if all units have restored
-        """
-        if relation := self.model.get_relation(MAAS_PEER_NAME):
-            return any(
-                self.get_peer_data(relation.app, f"{unit.name}_restore") == "Restoring"
-                for unit in relation.units
-            )
-
-        return False
-
-    @property
     def version(self) -> str | None:
         """Reports the current workload version.
 
@@ -464,8 +449,6 @@ class MaasRegionCharm(ops.CharmBase):
             e.add_status(ops.WaitingStatus("Waiting for database DSN"))
         elif not self.maas_api_url:
             ops.WaitingStatus("Waiting for MAAS initialization")
-        elif self.restore_running:
-            ops.WaitingStatus("Waiting for restore to complete")
         else:
             self.unit.status = ops.ActiveStatus()
 
