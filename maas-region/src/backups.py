@@ -842,7 +842,7 @@ Juju Version: {self.charm.model.juju_version!s}
 
                     event.log(f"Extracting from {file_type}...")
                     with tarfile.open(fileobj=f, mode="r:gz") as tar:
-                        tar.extractall(path="/")
+                        tar.extractall(path=local_path)
 
                 # check the storage path exists and contains something
                 if local_path.exists() and any(local_path.iterdir()):
