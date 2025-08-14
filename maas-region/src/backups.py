@@ -51,7 +51,6 @@ SNAP_PATH_TO_PRESEEDS = "/var/snap/maas/current/preseeds"
 METADATA_PATH = "backup/latest"
 REFER_TO_DEBUG_LOG = " Please check the juju debug-log for more details."
 MAAS_REGION_RELATION = "maas-cluster"
-# How long in seconds should the leader wait for all units to complete
 
 
 class RegionsNotAvailableError(Exception):
@@ -654,10 +653,19 @@ Juju Version: {self.charm.model.juju_version!s}
             event.fail(error_message)
             return
 
+        relation = self.model.get_relation(MAAS_REGION_RELATION)
+        if relation is None:
+            error_message = "Failed to fetch MAAS-region relation"
+            logger.error(f"Restore failed: {error_message}")
+            event.fail(error_message)
+            return
+
         self.charm.unit.status = MaintenanceStatus("Restoring from backup...")
+        relation.data[self.model.app][f"{self.model.unit.name}_restore"] = json.dumps("Restoring")
 
         self._run_restore(event, s3_parameters, backup_id)
 
+        relation.data[self.model.app][f"{self.model.unit.name}_restore"] = ""
         self.charm.unit.status = ActiveStatus()
         event.set_results({"restore-status": "restore finished"})
 
