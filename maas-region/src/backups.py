@@ -660,7 +660,7 @@ Juju Version: {self.charm.model.juju_version!s}
         backup_id: str = event.params.get("backup-id", "")
         controller_id: str = event.params.get("controller-id", "")
         logger.info(
-            f"A restore with backup-id {backup_id} has been requested on the unit with controller-id {controller_id}"
+            f"A restore with backup-id '{backup_id}' has been requested on the unit with controller-id '{controller_id}'"
         )
 
         # Validate the provided backup id
@@ -748,8 +748,15 @@ Juju Version: {self.charm.model.juju_version!s}
     def _check_backup_maas_version(
         self, event: ActionEvent, path: str, s3_parameters: dict[str, str]
     ) -> bool:
-        metadata = self._read_content_from_s3(f"{path}/backup_metadata.json", s3_parameters)
-        if not metadata:
+        if metadata_str := self._read_content_from_s3(
+            f"{path}/backup_metadata.json", s3_parameters
+        ):
+            try:
+                metadata = json.loads(metadata_str)
+            except Exception:
+                self._log_error(event, "Could not read metadata", msg_prefix="Restore failed")
+                return False
+        else:
             self._log_error(event, "Could not fetch metadata", msg_prefix="Restore failed")
             return False
 
@@ -804,10 +811,6 @@ Juju Version: {self.charm.model.juju_version!s}
     def _update_controller_id(
         self, event: ActionEvent, path: str, s3_parameters: dict[str, str], controller_id: str
     ) -> bool:
-        if not controller_id:
-            self._log_error(event, "Controller ID empty", msg_prefix="Restore failed")
-            return False
-
         # Fetch the controllers from S3 and the regions from the relation
         controllers_content = self._read_content_from_s3(f"{path}/controllers.txt", s3_parameters)
         if not controllers_content:
@@ -961,7 +964,15 @@ Juju Version: {self.charm.model.juju_version!s}
         if not event.params.get("backup-id"):
             self._log_error(
                 event,
-                "Backup-id parameter need to be provided to be able to do restore",
+                "The 'backup-id' parameter must be specified to perform a restore",
+                msg_prefix="Restore failed",
+            )
+            return False
+
+        if not event.params.get("controller-id"):
+            self._log_error(
+                event,
+                "The 'controller-id' parameter must be specified to perform a restore",
                 msg_prefix="Restore failed",
             )
             return False
