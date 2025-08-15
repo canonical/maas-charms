@@ -819,7 +819,8 @@ Juju Version: {self.charm.model.juju_version!s}
             )
             return False
 
-        regions = relation.units
+        # the relation only includes remote units, and does not include the local unit
+        regions = relation.units.union({self.model.unit})
 
         if len(controllers) != len(regions):
             self._log_error(
