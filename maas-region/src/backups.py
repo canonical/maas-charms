@@ -74,14 +74,17 @@ class ProgressPercentage:
 
     def __call__(self, bytes_amount: int):
         """Track the progress of the upload as a callback."""
+        verb, direction = ("uploading", "to") if self._uploading else ("downloading", "from")
+
+        if self._size <= 0:
+            logger.info(f"{verb} {self._log_label} {direction} s3: {100:.2f}% (empty file)")
+            return
+
         with self._lock:
             self._seen_so_far += bytes_amount
             percentage = (self._seen_so_far / self._size) * 100
             if (percentage - self._last_percentage) >= self._update_interval or percentage >= 100:
                 self._last_percentage = percentage
-                verb, direction = (
-                    ("uploading", "to") if self._uploading else ("downloading", "from")
-                )
                 logger.info(f"{verb} {self._log_label} {direction} s3: {percentage:.2f}%")
 
 
