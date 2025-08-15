@@ -177,6 +177,23 @@ class MAASBackups(Object):
 
             yield s3
 
+    def _log_error(
+        self,
+        event: ActionEvent,
+        msg: str,
+        fail_msg: str | None = None,
+        msg_prefix: str | None = None,
+        exc: Exception | None = None,
+    ) -> None:
+        """Log an error, optionally including exception info."""
+        if exc:
+            logger.exception(msg=msg, exc_info=exc)
+        else:
+            logger.error(msg=msg)
+
+        message = fail_msg or msg
+        event.fail(f"{msg_prefix}: {message}" if msg_prefix else message)
+
     def _are_backup_settings_ok(self) -> tuple[bool, str]:
         """Validate whether backup settings are OK."""
         if self.model.get_relation(self.relation_name) is None:
@@ -413,6 +430,7 @@ class MAASBackups(Object):
     def _on_create_backup_action(self, event) -> None:
         can_unit_perform_backup, validation_message = self._can_unit_perform_backup()
         if not can_unit_perform_backup:
+            self._log_error(event=event, msg=validation_message, msg_prefix="Backup failed")
             logger.error(f"Backup failed: {validation_message}")
             event.fail(validation_message)
             return
@@ -729,18 +747,24 @@ Juju Version: {self.charm.model.juju_version!s}
     ) -> bool:
         metadata = self._read_content_from_s3(f"{path}/backup_metadata.json", s3_parameters)
         if not metadata:
-            event.fail("Restore failed: Could not fetch metadata")
+            self._log_error(event, "Could not fetch metadata", msg_prefix="Restore failed")
             return False
 
         meta_dict: dict[str, str] = json.loads(metadata)
         backup = meta_dict.get("maas_snap_version")
         if not backup:
-            event.fail("Restore failed: Could not locate snap channel in backup")
+            self._log_error(
+                event, "Could not locate snap version in backup", msg_prefix="Restore failed"
+            )
             return False
 
         installed = self.charm.version
         if not installed:
-            event.fail("Restore failed: Could not locate snap channel on running MAAS instance")
+            self._log_error(
+                event,
+                "Could not locate snap version on running MAAS instance",
+                msg_prefix="Restore failed",
+            )
             return False
 
         installed_major, installed_minor, installed_point = installed.split("/", 1)[0].split(
@@ -749,16 +773,26 @@ Juju Version: {self.charm.model.juju_version!s}
         backup_major, backup_minor, backup_point = backup.split("/", 1)[0].split(".", 2)
 
         if installed_major != backup_major:
-            event.fail("Restore failed: MAAS major version does not match backup major version")
+            self._log_error(
+                event,
+                "MAAS major version does not match backup major version",
+                msg_prefix="Restore failed",
+            )
             return False
 
         if installed_minor != backup_minor:
-            event.fail("Restore failed: MAAS minor version does not match backup minor version")
+            self._log_error(
+                event,
+                "MAAS minor version does not match backup minor version",
+                msg_prefix="Restore failed",
+            )
             return False
 
         if installed_point < backup_point:
-            event.fail(
-                "Restore failed: MAAS point version is not greater or equal to backup point version"
+            self._log_error(
+                event,
+                "MAAS point version is not greater or equal to backup point version",
+                msg_prefix="Restore failed",
             )
             return False
 
@@ -768,27 +802,31 @@ Juju Version: {self.charm.model.juju_version!s}
         self, event: ActionEvent, path: str, s3_parameters: dict[str, str], controller_id: str
     ) -> bool:
         if not controller_id:
-            event.fail("Restore failed: Controller ID empty")
+            self._log_error(event, "Controller ID empty", msg_prefix="Restore failed")
             return False
 
         # Fetch the controllers from S3 and the regions from the relation
         controllers_content = self._read_content_from_s3(f"{path}/controllers.txt", s3_parameters)
         if not controllers_content:
-            event.fail("Restore failed: Could not fetch controllers list")
+            self._log_error(event, "Could not fetch controllers list", msg_prefix="Restore failed")
             return False
 
         controllers = controllers_content.strip("\n").split("\n")
         relation = self.model.get_relation(MAAS_REGION_RELATION)
         if relation is None:
-            event.fail("Restore failed: Could not fetch MAAS regions list")
+            self._log_error(
+                event, "Could not fetch MAAS regions list", msg_prefix="Restore failed"
+            )
             return False
 
         regions = relation.units
 
         if len(controllers) != len(regions):
-            event.fail(
+            self._log_error(
+                event,
                 f"Restore failed: The number of MAAS-Region units ({len(regions)}) "
-                f"does not match the expected value from the backup ({len(controllers)})."
+                f"does not match the expected value from the backup ({len(controllers)}).",
+                msg_prefix="Restore failed",
             )
             return False
 
@@ -798,7 +836,11 @@ Juju Version: {self.charm.model.juju_version!s}
             controller_file.write_text(f"{controller_id}\n")
             return True
 
-        event.fail(f"Restore failed: {controller_id} is not a valid ID from the controllers list")
+        self._log_error(
+            event,
+            f"{controller_id} is not a valid ID from the controllers list",
+            msg_prefix="Restore failed",
+        )
         return False
 
     def _download_and_unarchive_from_s3(
@@ -812,7 +854,9 @@ Juju Version: {self.charm.model.juju_version!s}
         # Clean before restore
         shutil.rmtree(local_path, ignore_errors=True)
         if local_path.exists():
-            event.fail("Could not remove existing image-storage")
+            self._log_error(
+                event, "Could not remove existing image-storage", msg_prefix="Restore failed"
+            )
             return False
         local_path.mkdir(parents=True)
 
@@ -821,14 +865,15 @@ Juju Version: {self.charm.model.juju_version!s}
         with self._s3_client(s3_parameters) as client:
             try:
                 if (
-                    (size := client.head_object(Bucket=bucket, ey=path)["ContentLenght"])
+                    (size := client.head_object(Bucket=bucket, Key=path)["ContentLength"])
                     and (free := shutil.disk_usage(local_path).free)
                     and (size >= free)
                 ):
-                    logger.exception(
-                        f"Not enough free storage to extract {file_type}, required {size} but has {free}"
+                    self._log_error(
+                        event,
+                        f"Not enough free storage to extract {file_type}, required {size} but has {free}",
+                        msg_prefix="Restore failed",
                     )
-                    event.fail(f"Not enough space to download {file_type} from S3.")
                     return False
 
                 with tempfile.NamedTemporaryFile(suffix=".tar.gz") as f:
@@ -848,32 +893,53 @@ Juju Version: {self.charm.model.juju_version!s}
                 if local_path.exists() and any(local_path.iterdir()):
                     return True
 
-                logger.error(f"{file_type.capitalize()} from S3 did not contain any files.")
-                event.fail(f"Empty {file_type} downloaded from S3")
+                self._log_error(
+                    event,
+                    f"{file_type.capitalize()} from S3 did not contain any files.",
+                    msg_prefix="Restore failed",
+                )
                 return False
 
             except ClientError as e:
                 if e.response["Error"]["Code"] == "404":
-                    logger.error(f"Could not find object in {bucket}:{path}")
-                    event.fail(f"Failed to download {file_type} from S3.")
+                    self._log_error(
+                        event,
+                        f"Could not find object in {bucket}:{path}",
+                        msg_prefix="Restore failed",
+                        exc=e,
+                    )
 
                 else:
-                    logger.exception(f"Could not read object from {bucket}:{path}", exc_info=e)
-                    event.fail(f"Failed to download {file_type} from S3.")
+                    self._log_error(
+                        event,
+                        f"Could not read object from {bucket}:{path}",
+                        msg_prefix="Restore failed",
+                        exc=e,
+                    )
 
             except (FileNotFoundError, OSError) as e:
-                logger.exception("Filesystem error while extracting archive", exc_info=e)
-                event.fail(f"Failed to untar {file_type} from S3.")
+                self._log_error(
+                    event,
+                    f"Filesystem error while extracting {file_type}",
+                    msg_prefix="Restore failed",
+                    exc=e,
+                )
 
             except tarfile.TarError as e:
-                logger.exception("Corrupted or invalid tar archive", exc_info=e)
-                event.fail(
-                    f"{file_type.capitalize()} is not a valid .tar.gz file or is corrupted."
+                self._log_error(
+                    event,
+                    f"{file_type.capitalize()} is not a valid .tar.gz file or is corrupted.",
+                    msg_prefix="Restore failed",
+                    exc=e,
                 )
 
             except Exception as e:
-                logger.exception(f"Could not read content from {bucket}:{path}", exc_info=e)
-                event.fail(f"Failed to download {file_type} from S3.")
+                self._log_error(
+                    event,
+                    f"Could not read content from {bucket}:{path}",
+                    msg_prefix="Restore failed",
+                    exc=e,
+                )
 
         return False
 
@@ -885,32 +951,33 @@ Juju Version: {self.charm.model.juju_version!s}
         """
         are_backup_settings_ok, validation_message = self._are_backup_settings_ok()
         if not are_backup_settings_ok:
-            logger.error(f"Restore failed: {validation_message}")
-            event.fail(validation_message)
+            self._log_error(event, validation_message, msg_prefix="Restore failed")
             return False
 
         if not event.params.get("backup-id"):
-            error_message = "Backup-id parameter need to be provided to be able to do restore"
-            logger.error(f"Restore failed: {error_message}")
-            event.fail(error_message)
+            self._log_error(
+                event,
+                "Backup-id parameter need to be provided to be able to do restore",
+                msg_prefix="Restore failed",
+            )
             return False
 
         logger.info("Checking if cluster is in blocked state")
         if self.charm.is_blocked:
-            error_message = "Cluster or unit is in a blocking state"
-            logger.error(f"Restore failed: {error_message}")
-            event.fail(error_message)
+            self._log_error(
+                event, "Cluster or unit is in a blocking state", msg_prefix="Restore failed"
+            )
             return False
 
         logger.info("Checking that the PostgreSQL relation has been removed")
         if relation := self.model.get_relation(relation_name="maas-db"):
-            error_message = (
+            self._log_error(
+                event,
                 "PostgreSQL relation still exists, please run:\n"
                 f"juju remove-relation {self.model.app.name} {relation.app.name}\n"
-                "then retry this action"
+                "then retry this action",
+                msg_prefix="Restore failed",
             )
-            logger.error(f"Restore failed: {error_message}")
-            event.fail(error_message)
             return False
 
         return True
