@@ -95,6 +95,9 @@ actions:
       controller-id:
         type: string
         description: The controller id to assign to this region. See `list-backup` for a list of controller ids
+    required:
+      - backup-id
+      - controller-id
   list-backups:
     description: List available MAAS backups
       NOTE - This is a noop action, and serves only as a placeholder
