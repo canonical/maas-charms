@@ -86,13 +86,18 @@ actions:
     description: Get MAAS API URL
   create-backup:
     description: Create a backup of MAAS data not stored in the database.
-  restore-from-backup:
+  restore-backup:
     description: Restore from a MAAS backup
-      NOTE - This is a noop action, and serves only as a placeholder
     params:
       backup-id:
         type: string
         description: The id of the backup to restore from. See `list-backup` for a list of backup ids
+      controller-id:
+        type: string
+        description: The controller id to assign to this region. See `list-backup` for a list of controller ids
+    required:
+      - backup-id
+      - controller-id
   list-backups:
     description: List available MAAS backups
       NOTE - This is a noop action, and serves only as a placeholder
