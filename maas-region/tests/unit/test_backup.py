@@ -1023,7 +1023,9 @@ class TestProgressPercentage(unittest.TestCase):
         _getsize.return_value = 50
 
         # Test creation and initial call
-        progress_percentage = ProgressPercentage("test-file", "test-label", update_interval=10)
+        progress_percentage = ProgressPercentage(
+            "test-file", "test-label", update_interval=10, uploading=True
+        )
         progress_percentage(25)
         self.assertEqual(progress_percentage._last_percentage, 50)
         logger.info.assert_called_once_with("uploading test-label to s3: 50.00%")
