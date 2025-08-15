@@ -682,7 +682,7 @@ Juju Version: {self.charm.model.juju_version!s}
     def _run_restore(
         self, event: ActionEvent, s3_parameters: dict[str, str], backup_id: str, controller_id: str
     ) -> None:
-        path = f"/backup/{backup_id}"
+        path = f"backup/{backup_id}"
 
         if not self._check_backup_maas_version(
             event=event, path=path, s3_parameters=s3_parameters
