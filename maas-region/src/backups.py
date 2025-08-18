@@ -100,7 +100,7 @@ class ProgressPercentage:
 class UploadProgressPercentage(ProgressPercentage):
     """Class to track the progress of a file upload to s3."""
 
-    def __init__(self, filename: str, log_label: str, update_interval: str = 10):
+    def __init__(self, filename: str, log_label: str, update_interval: int = 10):
         super().__init__(filename, log_label, update_interval)
         self._size = float(os.path.getsize(filename))
         self._verb = "uploading"
@@ -746,7 +746,6 @@ Juju Version: {self.charm.model.juju_version!s}
             s3_path=os.path.join(s3_path, PRESEED_TAR_FILENAME).lstrip("/"),
             s3_parameters=s3_parameters,
             local_path=Path(SNAP_PATH_TO_PRESEEDS),
-            file_type="preseeds",
         ):
             event.fail(
                 "Failed to download and extract preseeds from S3 backup. Check the juju debug-log for more detail."
@@ -758,7 +757,6 @@ Juju Version: {self.charm.model.juju_version!s}
             s3_path=os.path.join(s3_path, IMAGE_TAR_FILENAME).lstrip("/"),
             s3_parameters=s3_parameters,
             local_path=Path(SNAP_PATH_TO_IMAGES),
-            file_type="image archive",
         ):
             event.fail(
                 "Failed to download and extract images from S3 backup. Check the juju debug-log for more detail."
@@ -899,11 +897,13 @@ Juju Version: {self.charm.model.juju_version!s}
         local_path: Path,
         file_type: str | None = None,
     ) -> bool:
+        file_type = file_type or Path(s3_path).stem
+
         # Clean before restore
         shutil.rmtree(local_path, ignore_errors=True)
         if local_path.exists():
             self._log_error(
-                event, "Could not remove existing image-storage", msg_prefix="Restore failed"
+                event, f"Could not remove existing {file_type}", msg_prefix="Restore failed"
             )
             return False
         local_path.mkdir(parents=True)
@@ -958,7 +958,7 @@ Juju Version: {self.charm.model.juju_version!s}
         file_type: str | None = None,
     ) -> Iterator[Path | None]:
         """Download a file to a temporary location, yielding the temp path if successful."""
-        tmp_path: str | None = None
+        tmp_path: str = ""
         bucket = s3_parameters["bucket"]
 
         logger.info(f"Download request for {bucket}:{s3_path}")
@@ -1016,7 +1016,7 @@ Juju Version: {self.charm.model.juju_version!s}
             yield None
 
         finally:
-            if os.path.exists(tmp_path):
+            if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
 
         return None
