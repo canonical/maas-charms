@@ -52,6 +52,12 @@ METADATA_PATH = "backup/latest"
 REFER_TO_DEBUG_LOG = " Please check the juju debug-log for more details."
 MAAS_REGION_RELATION = "maas-cluster"
 
+# filenames
+METADATA_FILENAME = "backup_metadata.json"
+CONTROLLER_LIST_FILENAME = "controllers.txt"
+IMAGE_TAR_FILENAME = "image-storage.tar.gz"
+PRESEED_TAR_FILENAME = "preseeds.tar.gz"
+
 
 class RegionsNotAvailableError(Exception):
     """Raised when regions cannot be obtained from MAAS."""
@@ -60,24 +66,25 @@ class RegionsNotAvailableError(Exception):
 
 
 class ProgressPercentage:
-    """Class to track the progress of a file upload to S3."""
+    """Parent class to track the progress of a file transfer to/from S3."""
 
-    def __init__(self, filename: str, log_label: str, uploading: bool, update_interval: int = 10):
+    def __init__(self, filename: str, log_label: str, update_interval: int = 10):
         self._filename = filename
-        self._size = float(os.path.getsize(filename))
+        self._size = 0
         self._seen_so_far = 0
         self._lock = threading.Lock()
         self._update_interval = update_interval
         self._last_percentage = 0
         self._log_label = log_label
-        self._uploading = uploading
+        self._verb = "transferring"
+        self._direction = "to/from"
 
     def __call__(self, bytes_amount: int):
         """Track the progress of the upload as a callback."""
-        verb, direction = ("uploading", "to") if self._uploading else ("downloading", "from")
-
         if self._size <= 0:
-            logger.info(f"{verb} {self._log_label} {direction} s3: {100:.2f}% (empty file)")
+            logger.info(
+                f"{self._verb} {self._log_label} {self._direction} s3: {100:.2f}% (empty file)"
+            )
             return
 
         with self._lock:
@@ -85,7 +92,29 @@ class ProgressPercentage:
             percentage = (self._seen_so_far / self._size) * 100
             if (percentage - self._last_percentage) >= self._update_interval or percentage >= 100:
                 self._last_percentage = percentage
-                logger.info(f"{verb} {self._log_label} {direction} s3: {percentage:.2f}%")
+                logger.info(
+                    f"{self._verb} {self._log_label} {self._direction} s3: {percentage:.2f}%"
+                )
+
+
+class UploadProgressPercentage(ProgressPercentage):
+    """Class to track the progress of a file upload to s3."""
+
+    def __init__(self, filename: str, log_label: str, update_interval: str = 10):
+        super().__init__(filename, log_label, update_interval)
+        self._size = float(os.path.getsize(filename))
+        self._verb = "uploading"
+        self._direction = "to"
+
+
+class DownloadProgressPercentage(ProgressPercentage):
+    """Class to track the progress of a file upload to S3."""
+
+    def __init__(self, filename: str, log_label: str, size: float, update_interval: int = 10):
+        super().__init__(filename, log_label, update_interval)
+        self._size = size
+        self._verb = "downloading"
+        self._direction = "from"
 
 
 class MAASBackups(Object):
@@ -538,12 +567,10 @@ Juju Version: {self.charm.model.juju_version!s}
             regions = self.charm._get_region_system_ids()
         except subprocess.CalledProcessError:
             # Avoid logging the apikey of an Admin user
-            raise RegionsNotAvailableError(
-                "Failed to retrieve region ids from the MAAS API"
-            )
+            raise RegionsNotAvailableError("Failed to retrieve region ids from the MAAS API")
 
         # upload regions
-        region_path = os.path.join(s3_path, "controllers.txt")
+        region_path = os.path.join(s3_path, CONTROLLER_LIST_FILENAME)
         with tempfile.NamedTemporaryFile(suffix=".txt") as f:
             f.write("\n".join(regions).encode("utf-8"))
             f.flush()
@@ -552,17 +579,17 @@ Juju Version: {self.charm.model.juju_version!s}
                 f.name,
                 bucket_name,
                 region_path,
-                Callback=ProgressPercentage(f.name, log_label="region ids", uploading=True),
+                Callback=UploadProgressPercentage(f.name, log_label="region ids"),
             )
 
         # archive and upload images
-        image_path = os.path.join(s3_path, "images-storage.tar.gz")
+        image_path = os.path.join(s3_path, IMAGE_TAR_FILENAME)
         with tempfile.NamedTemporaryFile(suffix=".tar.gz") as f:
             event.log("Creating image archive for S3 backup...")
             with tarfile.open(fileobj=f, mode="w:gz") as tar:
                 tar.add(
                     SNAP_PATH_TO_IMAGES,
-                    arcname="images-storage",
+                    arcname=Path(IMAGE_TAR_FILENAME).stem,
                 )
             f.flush()
             event.log("Uploading image archive to S3, see debug-log for progress...")
@@ -570,17 +597,17 @@ Juju Version: {self.charm.model.juju_version!s}
                 f.name,
                 bucket_name,
                 image_path,
-                Callback=ProgressPercentage(f.name, "image archive", uploading=True),
+                Callback=UploadProgressPercentage(f.name, "image archive"),
             )
 
         # archive and upload preseeds
-        preseed_path = os.path.join(s3_path, "preseeds.tar.gz")
+        preseed_path = os.path.join(s3_path, PRESEED_TAR_FILENAME)
         with tempfile.NamedTemporaryFile(suffix=".tar.gz") as f:
             event.log("Creating preseed archive for S3 backup...")
             with tarfile.open(fileobj=f, mode="w:gz") as tar:
                 tar.add(
                     SNAP_PATH_TO_PRESEEDS,
-                    arcname="preseeds",
+                    arcname=Path(PRESEED_TAR_FILENAME).stem,
                 )
             f.flush()
             event.log("Uploading preseed archive to S3...")
@@ -588,7 +615,7 @@ Juju Version: {self.charm.model.juju_version!s}
                 f.name,
                 bucket_name,
                 preseed_path,
-                Callback=ProgressPercentage(f.name, "preseed archive", uploading=True),
+                Callback=UploadProgressPercentage(f.name, "preseed archive"),
             )
 
     def _upload_backup_metadata(
@@ -610,7 +637,7 @@ Juju Version: {self.charm.model.juju_version!s}
             bucket_name = s3_parameters["bucket"]
 
             try:
-                metadata_path = os.path.join(s3_path, "backup_metadata.json")
+                metadata_path = os.path.join(s3_path, METADATA_FILENAME)
                 metadata = self._get_backup_metadata()
                 metadata["success"] = success
                 with tempfile.NamedTemporaryFile(suffix=".yaml") as f:
@@ -699,7 +726,7 @@ Juju Version: {self.charm.model.juju_version!s}
         s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
 
         if not self._check_backup_maas_version(
-            event=event, path=s3_path, s3_parameters=s3_parameters
+            event=event, s3_path=s3_path, s3_parameters=s3_parameters
         ):
             event.fail(
                 "Failed to validate MAAS version from S3 backup. Check the juju debug-log for more detail."
@@ -707,7 +734,7 @@ Juju Version: {self.charm.model.juju_version!s}
             return
 
         if not self._update_controller_id(
-            event=event, path=s3_path, s3_parameters=s3_parameters, controller_id=controller_id
+            event=event, s3_path=s3_path, s3_parameters=s3_parameters, controller_id=controller_id
         ):
             event.fail(
                 "Failed to update MAAS-Region IDs from S3 backup. Check the juju debug-log for more detail."
@@ -716,7 +743,7 @@ Juju Version: {self.charm.model.juju_version!s}
 
         if not self._download_and_unarchive_from_s3(
             event=event,
-            s3_path=os.path.join(s3_path, "preseeds.tar.gz").lstrip("/"),
+            s3_path=os.path.join(s3_path, PRESEED_TAR_FILENAME).lstrip("/"),
             s3_parameters=s3_parameters,
             local_path=Path(SNAP_PATH_TO_PRESEEDS),
             file_type="preseeds",
@@ -728,7 +755,7 @@ Juju Version: {self.charm.model.juju_version!s}
 
         if not self._download_and_unarchive_from_s3(
             event=event,
-            s3_path=os.path.join(s3_path, "image-strorage.tar.gz").lstrip("/"),
+            s3_path=os.path.join(s3_path, IMAGE_TAR_FILENAME).lstrip("/"),
             s3_parameters=s3_parameters,
             local_path=Path(SNAP_PATH_TO_IMAGES),
             file_type="image archive",
@@ -746,12 +773,12 @@ Juju Version: {self.charm.model.juju_version!s}
         )
 
     def _check_backup_maas_version(
-        self, event: ActionEvent, path: str, s3_parameters: dict[str, str]
+        self, event: ActionEvent, s3_path: str, s3_parameters: dict[str, str]
     ) -> bool:
         event.log("Downloading metadata from s3...")
         with self._download_file_from_s3(
             event=event,
-            s3_path=os.path.join(path, "backup_metadata.json").lstrip("/"),
+            s3_path=os.path.join(s3_path, METADATA_FILENAME).lstrip("/"),
             s3_parameters=s3_parameters,
         ) as f:
             if f:
@@ -811,13 +838,16 @@ Juju Version: {self.charm.model.juju_version!s}
         return True
 
     def _update_controller_id(
-        self, event: ActionEvent, path: str, s3_parameters: dict[str, str], controller_id: str
+        self, event: ActionEvent, s3_path: str, s3_parameters: dict[str, str], controller_id: str
     ) -> bool:
         # Fetch the controllers from S3 and the regions from the relation
 
         event.log("Downloading controllers list from s3...")
+
         with self._download_file_from_s3(
-            event=event, s3_path=os.path.join(path, "controllers.txt"), s3_parameters=s3_parameters
+            event=event,
+            s3_path=os.path.join(s3_path, CONTROLLER_LIST_FILENAME).lstrip("/"),
+            s3_parameters=s3_parameters,
         ) as f:
             if f:
                 controllers_content = f.read_text()
@@ -855,7 +885,8 @@ Juju Version: {self.charm.model.juju_version!s}
 
         self._log_error(
             event,
-            f"{controller_id} is not a valid ID from the controllers list",
+            f"{controller_id} is not a valid ID from the controllers list; "
+            f"should be one of {', '.join(controllers)}!",
             msg_prefix="Restore failed",
         )
         return False
@@ -866,7 +897,7 @@ Juju Version: {self.charm.model.juju_version!s}
         s3_path: str,
         s3_parameters: dict[str, str],
         local_path: Path,
-        file_type: str,
+        file_type: str | None = None,
     ) -> bool:
         # Clean before restore
         shutil.rmtree(local_path, ignore_errors=True)
@@ -924,21 +955,22 @@ Juju Version: {self.charm.model.juju_version!s}
         event: ActionEvent,
         s3_path: str,
         s3_parameters: dict[str, str],
+        file_type: str | None = None,
     ) -> Iterator[Path | None]:
-        """Downloads a file to a temporary location, yielding the temp path if successful"""
+        """Download a file to a temporary location, yielding the temp path if successful."""
         tmp_path: str | None = None
         bucket = s3_parameters["bucket"]
+
+        logger.info(f"Download request for {bucket}:{s3_path}")
 
         try:
             with self._s3_client(s3_parameters) as client:
                 with tempfile.NamedTemporaryFile(suffix=Path(s3_path).suffix, delete=False) as f:
                     tmp_path = f.name
 
-                if (
-                    (size := client.head_object(Bucket=bucket, Key=s3_path)["ContentLength"])
-                    and (free := shutil.disk_usage(tmp_path).free)
-                    and (size >= free)
-                ):
+                size = client.head_object(Bucket=bucket, Key=s3_path)["ContentLength"]
+
+                if (free := shutil.disk_usage(tmp_path).free) and (size >= free):
                     self._log_error(
                         event,
                         f"Not enough free storage to download {s3_path}, required {size} but has {free}",
@@ -949,6 +981,9 @@ Juju Version: {self.charm.model.juju_version!s}
                     bucket,
                     s3_path,
                     tmp_path,
+                    Callback=DownloadProgressPercentage(
+                        f.name, log_label=file_type or Path(s3_path).stem, size=size
+                    ),
                 )
 
                 yield Path(tmp_path)
