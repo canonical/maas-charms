@@ -696,10 +696,10 @@ Juju Version: {self.charm.model.juju_version!s}
     def _run_restore(
         self, event: ActionEvent, s3_parameters: dict[str, str], backup_id: str, controller_id: str
     ) -> None:
-        path = f"/backup/{backup_id}"
+        s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
 
         if not self._check_backup_maas_version(
-            event=event, path=path, s3_parameters=s3_parameters
+            event=event, path=s3_path, s3_parameters=s3_parameters
         ):
             event.fail(
                 "Failed to validate MAAS version from S3 backup. Check the juju debug-log for more detail."
@@ -707,7 +707,7 @@ Juju Version: {self.charm.model.juju_version!s}
             return
 
         if not self._update_controller_id(
-            event=event, path=path, s3_parameters=s3_parameters, controller_id=controller_id
+            event=event, path=s3_path, s3_parameters=s3_parameters, controller_id=controller_id
         ):
             event.fail(
                 "Failed to update MAAS-Region IDs from S3 backup. Check the juju debug-log for more detail."
@@ -716,7 +716,7 @@ Juju Version: {self.charm.model.juju_version!s}
 
         if not self._download_and_unarchive_from_s3(
             event=event,
-            s3_path=f"{path}/preseeds.tar.gz",
+            s3_path=os.path.join(s3_path, "preseeds.tar.gz").lstrip("/"),
             s3_parameters=s3_parameters,
             local_path=Path(SNAP_PATH_TO_PRESEEDS),
             file_type="preseeds",
@@ -728,7 +728,7 @@ Juju Version: {self.charm.model.juju_version!s}
 
         if not self._download_and_unarchive_from_s3(
             event=event,
-            s3_path=f"{path}/image-strorage.tar.gz",
+            s3_path=os.path.join(s3_path, "image-strorage.tar.gz").lstrip("/"),
             s3_parameters=s3_parameters,
             local_path=Path(SNAP_PATH_TO_IMAGES),
             file_type="image archive",
@@ -748,17 +748,19 @@ Juju Version: {self.charm.model.juju_version!s}
     def _check_backup_maas_version(
         self, event: ActionEvent, path: str, s3_parameters: dict[str, str]
     ) -> bool:
-        if metadata_str := self._read_content_from_s3(
-            f"{path}/backup_metadata.json", s3_parameters
-        ):
-            try:
-                metadata = json.loads(metadata_str)
-            except Exception:
-                self._log_error(event, "Could not read metadata", msg_prefix="Restore failed")
+        event.log("Downloading metadata from s3...")
+        with self._download_file_from_s3(
+            event=event,
+            s3_path=os.path.join(path, "backup_metadata.json").lstrip("/"),
+            s3_parameters=s3_parameters,
+        ) as f:
+            if f:
+                metadata = f.read_text()
+            else:
+                self._log_error(
+                    event, "Could not read metadata from s3", msg_prefix="Restore failed"
+                )
                 return False
-        else:
-            self._log_error(event, "Could not fetch metadata", msg_prefix="Restore failed")
-            return False
 
         meta_dict: dict[str, str] = json.loads(metadata)
         backup = meta_dict.get("maas_snap_version")
@@ -812,10 +814,18 @@ Juju Version: {self.charm.model.juju_version!s}
         self, event: ActionEvent, path: str, s3_parameters: dict[str, str], controller_id: str
     ) -> bool:
         # Fetch the controllers from S3 and the regions from the relation
-        controllers_content = self._read_content_from_s3(f"{path}/controllers.txt", s3_parameters)
-        if not controllers_content:
-            self._log_error(event, "Could not fetch controllers list", msg_prefix="Restore failed")
-            return False
+
+        event.log("Downloading controllers list from s3...")
+        with self._download_file_from_s3(
+            event=event, s3_path=os.path.join(path, "controllers.txt"), s3_parameters=s3_parameters
+        ) as f:
+            if f:
+                controllers_content = f.read_text()
+            else:
+                self._log_error(
+                    event, "Could not read controllers list from s3", msg_prefix="Restore failed"
+                )
+                return False
 
         controllers = controllers_content.strip("\n").split("\n")
         relation = self.model.get_relation(MAAS_REGION_RELATION)
@@ -867,36 +877,20 @@ Juju Version: {self.charm.model.juju_version!s}
             return False
         local_path.mkdir(parents=True)
 
-        bucket = s3_parameters["bucket"]
-        path = os.path.join(s3_parameters["path"], s3_path).lstrip("/")
-        with self._s3_client(s3_parameters) as client:
+        event.log(f"Downloading {file_type} from s3...")
+        with self._download_file_from_s3(
+            event=event, s3_path=s3_path, s3_parameters=s3_parameters
+        ) as f:
+            if f is None:
+                self._log_error(
+                    event, f"Could not read {file_type} list from s3", msg_prefix="Restore failed"
+                )
+                return False
+
             try:
-                if (
-                    (size := client.head_object(Bucket=bucket, Key=path)["ContentLength"])
-                    and (free := shutil.disk_usage(local_path).free)
-                    and (size >= free)
-                ):
-                    self._log_error(
-                        event,
-                        f"Not enough free storage to extract {file_type}, required {size} but has {free}",
-                        msg_prefix="Restore failed",
-                    )
-                    return False
+                with tarfile.open(f, mode="r:gz") as tar:
+                    tar.extractall(path=local_path)
 
-                with tempfile.NamedTemporaryFile(suffix=".tar.gz") as f:
-                    event.log(f"Downloading {file_type} from S3...")
-                    client.download_file(
-                        bucket,
-                        f.name,
-                        path,
-                        Callback=ProgressPercentage(f.name, file_type, uploading=False),
-                    )
-
-                    event.log(f"Extracting from {file_type}...")
-                    with tarfile.open(fileobj=f, mode="r:gz") as tar:
-                        tar.extractall(path=local_path)
-
-                # check the storage path exists and contains something
                 if local_path.exists() and any(local_path.iterdir()):
                     return True
 
@@ -907,23 +901,13 @@ Juju Version: {self.charm.model.juju_version!s}
                 )
                 return False
 
-            except ClientError as e:
-                if e.response["Error"]["Code"] == "404":
-                    self._log_error(
-                        event,
-                        f"Could not find object in {bucket}:{path}",
-                        msg_prefix="Restore failed",
-                        exc=e,
-                    )
-
-                else:
-                    self._log_error(
-                        event,
-                        f"Could not read object from {bucket}:{path}",
-                        msg_prefix="Restore failed",
-                        exc=e,
-                    )
-
+            except tarfile.TarError as e:
+                self._log_error(
+                    event,
+                    f"{file_type.capitalize()} is not a valid .tar.gz file or is corrupted.",
+                    msg_prefix="Restore failed",
+                    exc=e,
+                )
             except (FileNotFoundError, OSError) as e:
                 self._log_error(
                     event,
@@ -932,23 +916,75 @@ Juju Version: {self.charm.model.juju_version!s}
                     exc=e,
                 )
 
-            except tarfile.TarError as e:
-                self._log_error(
-                    event,
-                    f"{file_type.capitalize()} is not a valid .tar.gz file or is corrupted.",
-                    msg_prefix="Restore failed",
-                    exc=e,
-                )
-
-            except Exception as e:
-                self._log_error(
-                    event,
-                    f"Could not read content from {bucket}:{path}",
-                    msg_prefix="Restore failed",
-                    exc=e,
-                )
-
         return False
+
+    @contextmanager
+    def _download_file_from_s3(
+        self,
+        event: ActionEvent,
+        s3_path: str,
+        s3_parameters: dict[str, str],
+    ) -> Iterator[Path | None]:
+        """Downloads a file to a temporary location, yielding the temp path if successful"""
+        tmp_path: str | None = None
+        bucket = s3_parameters["bucket"]
+
+        try:
+            with self._s3_client(s3_parameters) as client:
+                with tempfile.NamedTemporaryFile(suffix=Path(s3_path).suffix, delete=False) as f:
+                    tmp_path = f.name
+
+                if (
+                    (size := client.head_object(Bucket=bucket, Key=s3_path)["ContentLength"])
+                    and (free := shutil.disk_usage(tmp_path).free)
+                    and (size >= free)
+                ):
+                    self._log_error(
+                        event,
+                        f"Not enough free storage to download {s3_path}, required {size} but has {free}",
+                        msg_prefix="Restore failed",
+                    )
+
+                client.download_file(
+                    bucket,
+                    s3_path,
+                    tmp_path,
+                )
+
+                yield Path(tmp_path)
+
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "404":
+                self._log_error(
+                    event,
+                    f"Could not find object in {bucket}:{s3_path}",
+                    msg_prefix="Restore failed",
+                    exc=e,
+                )
+
+            else:
+                self._log_error(
+                    event,
+                    f"Could not read object from {bucket}:{s3_path}",
+                    msg_prefix="Restore failed",
+                    exc=e,
+                )
+            yield None
+
+        except Exception as e:
+            self._log_error(
+                event,
+                f"Could not read content from {bucket}:{s3_path}",
+                msg_prefix="Restore failed",
+                exc=e,
+            )
+            yield None
+
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+        return None
 
     def _pre_restore_checks(self, event: ActionEvent) -> bool:
         """Run some checks before starting the restore.
