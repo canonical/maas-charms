@@ -15,9 +15,9 @@ from botocore.exceptions import BotoCoreError, ClientError, ConnectTimeoutError,
 
 from backups import (
     FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
-    UploadProgressPercentage,
     DownloadProgressPercentage,
     RegionsNotAvailableError,
+    UploadProgressPercentage,
 )
 from charm import MaasRegionCharm
 
@@ -1024,7 +1024,9 @@ class TestProgressPercentage(unittest.TestCase):
         _getsize.return_value = 50
 
         # Test creation and initial call
-        progress_percentage = UploadProgressPercentage("test-file", "test-label", update_interval=10)
+        progress_percentage = UploadProgressPercentage(
+            "test-file", "test-label", update_interval=10
+        )
         progress_percentage(25)
         self.assertEqual(progress_percentage._last_percentage, 50)
         logger.info.assert_called_once_with("uploading test-label to s3: 50.00%")
@@ -1049,9 +1051,10 @@ class TestProgressPercentage(unittest.TestCase):
 
     @patch("backups.logger", spec=logging.Logger)
     def test_download_progress_percentage(self, logger):
-
         # Test creation and initial call
-        progress_percentage = DownloadProgressPercentage("test-file", "test-label", size=50, update_interval=10)
+        progress_percentage = DownloadProgressPercentage(
+            "test-file", "test-label", size=50, update_interval=10
+        )
         progress_percentage(25)
         self.assertEqual(progress_percentage._last_percentage, 50)
         logger.info.assert_called_once_with("downloading test-label from s3: 50.00%")
