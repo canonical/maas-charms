@@ -253,7 +253,7 @@ class MaasHelper:
             f"http://{maas_ip}:5240/MAAS/api/2.0/",
             apikey,
         ]
-        subprocess.check_call(login_cmd)
+        subprocess.check_call(login_cmd, stdout=subprocess.DEVNULL)
 
     @staticmethod
     def set_prometheus_metrics(admin_username: str, maas_ip: str, enable: bool) -> None:
