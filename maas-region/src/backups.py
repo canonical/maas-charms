@@ -54,6 +54,7 @@ REFER_TO_DEBUG_LOG = " Please check the juju debug-log for more details."
 MAAS_REGION_RELATION = "maas-cluster"
 
 # filenames
+MODEL_UUID_FILENAME = "model-uuid.txt"
 METADATA_FILENAME = "backup_metadata.json"
 CONTROLLER_LIST_FILENAME = "controllers.txt"
 IMAGE_TAR_FILENAME = "image-storage.tar.gz"
@@ -254,7 +255,7 @@ class MAASBackups(Object):
         # Check model uuid
         s3_parameters, _ = self._retrieve_s3_parameters()
         s3_model_uuid = self._read_content_from_s3(
-            "model-uuid.txt",
+            MODEL_UUID_FILENAME,
             s3_parameters,
         )
 
@@ -353,7 +354,7 @@ class MAASBackups(Object):
         backups = [
             f"Storage bucket name: {s3_bucket:s}",
             f"Backups base path: {s3_path:s}/backup/\n",
-            "{:<20s} | {:<11s} | {:<8s} | {:<8s} | {:<9s} | {:<22s} | {:s}".format(
+            "{:<20s} | {:<11s} | {:<8s} | {:<8s} | {:<10s} | {:<22s} | {:s}".format(
                 "backup-id", "action", "status", "maas", "size", "controllers", "backup-path"
             ),
         ]
@@ -368,7 +369,7 @@ class MAASBackups(Object):
             path,
         ) in backup_list:
             backups.append(
-                f"{backup_id:<20s} | {backup_action:<11s} | {backup_status:<8s} | {version:<8s} | {size:<9s} | {controllers:<22s} | {path:s}"
+                f"{backup_id:<20s} | {backup_action:<11s} | {backup_status:<8s} | {version:<8s} | {size:<10s} | {controllers:<22s} | {path:s}"
             )
         return "\n".join(backups)
 
@@ -461,31 +462,25 @@ class MAASBackups(Object):
                     contents.append(content["Key"].removeprefix(prefix))
                     total_size += content["Size"]
 
-        size = convert_size(total_size)
+        size = as_size(total_size)
         complete_files = set(contents) == {
-            "backup_metadata.json",
-            "controllers.txt",
-            "images-storage.tar.gz",
-            "preseeds.tar.gz",
+            METADATA_FILENAME,
+            CONTROLLER_LIST_FILENAME,
+            IMAGE_TAR_FILENAME,
+            PRESEED_TAR_FILENAME,
         }
 
-        metadata = {}
+        metadata: dict[str, str] = {}
         if metadata_str := self._read_content_from_s3(
-            f"backup/{backup_id}/backup_metadata.json", s3_parameters
+            f"backup/{backup_id}/{METADATA_FILENAME}", s3_parameters
         ):
-            try:
-                metadata = json.loads(metadata_str)
-            except Exception:
-                pass
+            metadata = json.loads(metadata_str)
 
-        controller_ids = []
+        controller_ids: list[str] = []
         if controller_str := self._read_content_from_s3(
-            f"backup/{backup_id}/controllers.txt", s3_parameters
+            f"backup/{backup_id}/{CONTROLLER_LIST_FILENAME}", s3_parameters
         ):
-            try:
-                controller_ids = controller_str.split()
-            except Exception:
-                pass
+            controller_ids = controller_str.strip("\n").split("\n")
 
         completed = metadata.get("success", False) and complete_files
         maas_version = metadata.get("maas_snap_version", "")
@@ -520,7 +515,7 @@ class MAASBackups(Object):
 
         self._upload_content_to_s3(
             self.model.uuid,
-            "model-uuid.txt",
+            MODEL_UUID_FILENAME,
             s3_parameters,
         )
 
@@ -1247,15 +1242,21 @@ Juju Version: {self.charm.model.juju_version!s}
         return None
 
 
-def convert_size(size_bytes):
-    """Convert bytes given in integer to a human readable format.
-
-    Source: https://stackoverflow.com/questions/5194057/better-way-to-convert-file-sizes-in-python
-    """
-    if size_bytes == 0:
-        return "0B"
-    size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
-    i = math.floor(math.log(size_bytes, 1024))
-    p = math.pow(1024, i)
-    s = round(size_bytes / p, 2)
-    return f"{s} {size_name[i]}"
+def as_size(size: int) -> str:
+    """Return a string representation of a number in Binary base."""
+    base = 1024  # extendable to generic SI in future
+    prefixes = {
+        0: "",
+        1: "Ki",
+        2: "Mi",
+        3: "Gi",
+        4: "Ti",
+        5: "Pi",
+        6: "Ei",
+        7: "Zi",
+        8: "Yi",
+        9: "Ri",
+        10: "Qi",
+    }
+    power = math.floor(math.log(size, base))
+    return f"{size / (base**power):.1f}{prefixes.get(power, f' x {base}^{power} ')}B"

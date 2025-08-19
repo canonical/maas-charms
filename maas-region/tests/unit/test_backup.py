@@ -18,6 +18,7 @@ from backups import (
     DownloadProgressPercentage,
     RegionsNotAvailableError,
     UploadProgressPercentage,
+    as_size,
 )
 from charm import MaasRegionCharm
 
@@ -289,8 +290,8 @@ class TestMAASBackups(unittest.TestCase):
             """Storage bucket name: test-bucket
 Backups base path: /test-path/backup/
 
-backup-id            | action      | status   | maas     | size      | controllers            | backup-path
------------------------------------------------------------------------------------------------------------""",
+backup-id            | action      | status   | maas     | size       | controllers            | backup-path
+------------------------------------------------------------------------------------------------------------""",
         )
 
         # Test when there are backups.
@@ -300,7 +301,7 @@ backup-id            | action      | status   | maas     | size      | controlle
                 "full backup",
                 "failed",
                 "3.6.0",
-                "772.56 MB",
+                "772.56 MiB",
                 "abc123, def456, ghi789",
                 "a/b/c",
             ),
@@ -309,7 +310,7 @@ backup-id            | action      | status   | maas     | size      | controlle
                 "full backup",
                 "finished",
                 "3.6.1",
-                "123.56 MB",
+                "123.56 MiB",
                 "abc123, def456, ghi789",
                 "a/b/d",
             ),
@@ -318,7 +319,7 @@ backup-id            | action      | status   | maas     | size      | controlle
                 "full backup",
                 "finished",
                 "3.6.2",
-                "42.42 GB",
+                "42.42 GiB",
                 "abc123, def456, ghi789",
                 "n/a",
             ),
@@ -330,11 +331,11 @@ backup-id            | action      | status   | maas     | size      | controlle
             """Storage bucket name: test-bucket
 Backups base path: /test-path/backup/
 
-backup-id            | action      | status   | maas     | size      | controllers            | backup-path
------------------------------------------------------------------------------------------------------------
-2023-01-01T09:00:00Z | full backup | failed   | 3.6.0    | 772.56 MB | abc123, def456, ghi789 | a/b/c
-2023-01-01T10:00:00Z | full backup | finished | 3.6.1    | 123.56 MB | abc123, def456, ghi789 | a/b/d
-2023-01-01T11:00:00Z | full backup | finished | 3.6.2    | 42.42 GB  | abc123, def456, ghi789 | n/a""",
+backup-id            | action      | status   | maas     | size       | controllers            | backup-path
+------------------------------------------------------------------------------------------------------------
+2023-01-01T09:00:00Z | full backup | failed   | 3.6.0    | 772.56 MiB | abc123, def456, ghi789 | a/b/c
+2023-01-01T10:00:00Z | full backup | finished | 3.6.1    | 123.56 MiB | abc123, def456, ghi789 | a/b/d
+2023-01-01T11:00:00Z | full backup | finished | 3.6.2    | 42.42 GiB  | abc123, def456, ghi789 | n/a""",
         )
 
     @patch("backups.MAASBackups._retrieve_s3_parameters")
@@ -354,14 +355,14 @@ backup-id            | action      | status   | maas     | size      | controlle
         list_backups.return_value = [
             {
                 "id": "2024-10-14T20:27:32Z",
-                "size": "772.56 MB",
+                "size": "772.56 MiB",
                 "controller_ids": ["abc123", "def456", "ghi789"],
                 "completed": False,
                 "maas_version": "3.6.0",
             },
             {
                 "id": "2024-10-14T20:27:32Z",
-                "size": "42.42 GB",
+                "size": "42.42 GiB",
                 "controller_ids": ["abc123", "def456", "ghi789"],
                 "completed": True,
                 "maas_version": "3.6.1",
@@ -373,10 +374,10 @@ backup-id            | action      | status   | maas     | size      | controlle
             """Storage bucket name: test-bucket
 Backups base path: /test-path/backup/
 
-backup-id            | action      | status   | maas     | size      | controllers            | backup-path
------------------------------------------------------------------------------------------------------------
-2024-10-14T20:27:32Z | full backup | failed   | 3.6.0    | 772.56 MB | abc123, def456, ghi789 | /test-path/backup/2024-10-14T20:27:32Z
-2024-10-14T20:27:32Z | full backup | finished | 3.6.1    | 42.42 GB  | abc123, def456, ghi789 | /test-path/backup/2024-10-14T20:27:32Z""",
+backup-id            | action      | status   | maas     | size       | controllers            | backup-path
+------------------------------------------------------------------------------------------------------------
+2024-10-14T20:27:32Z | full backup | failed   | 3.6.0    | 772.56 MiB | abc123, def456, ghi789 | /test-path/backup/2024-10-14T20:27:32Z
+2024-10-14T20:27:32Z | full backup | finished | 3.6.1    | 42.42 GiB  | abc123, def456, ghi789 | /test-path/backup/2024-10-14T20:27:32Z""",
         )
 
     @patch("backups.MAASBackups._get_backup_details")
@@ -392,7 +393,7 @@ backup-id            | action      | status   | maas     | size      | controlle
         }
         backup_details = {
             "id": "123-456",
-            "size": "772.56 MB",
+            "size": "772.56 MiB",
             "controller_ids": ["abc123", "def456", "ghi789"],
             "completed": True,
             "maas_version": "3.6.1",
@@ -1102,3 +1103,8 @@ class TestProgressPercentage(unittest.TestCase):
         progress_percentage(25)
         self.assertEqual(progress_percentage._last_percentage, 150)
         logger.info.assert_called_once_with("downloading test-label from s3: 150.00%")
+
+
+class TestAsSize(unittest.TestCase):
+    def test_as_size(self):
+        self.assertEqual(as_size(1024 * 1024), "1.0MiB")
