@@ -15,8 +15,9 @@ from botocore.exceptions import BotoCoreError, ClientError, ConnectTimeoutError,
 
 from backups import (
     FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
-    ProgressPercentage,
+    DownloadProgressPercentage,
     RegionsNotAvailableError,
+    UploadProgressPercentage,
 )
 from charm import MaasRegionCharm
 
@@ -1019,11 +1020,13 @@ backup-id            | action              | status   | backup-path
 class TestProgressPercentage(unittest.TestCase):
     @patch("backups.logger", spec=logging.Logger)
     @patch("backups.os.path.getsize")
-    def test_progress_percentage(self, _getsize, logger):
+    def test_upload_progress_percentage(self, _getsize, logger):
         _getsize.return_value = 50
 
         # Test creation and initial call
-        progress_percentage = ProgressPercentage("test-file", "test-label", update_interval=10)
+        progress_percentage = UploadProgressPercentage(
+            "test-file", "test-label", update_interval=10
+        )
         progress_percentage(25)
         self.assertEqual(progress_percentage._last_percentage, 50)
         logger.info.assert_called_once_with("uploading test-label to s3: 50.00%")
@@ -1045,3 +1048,31 @@ class TestProgressPercentage(unittest.TestCase):
         progress_percentage(25)
         self.assertEqual(progress_percentage._last_percentage, 150)
         logger.info.assert_called_once_with("uploading test-label to s3: 150.00%")
+
+    @patch("backups.logger", spec=logging.Logger)
+    def test_download_progress_percentage(self, logger):
+        # Test creation and initial call
+        progress_percentage = DownloadProgressPercentage(
+            "test-file", "test-label", size=50, update_interval=10
+        )
+        progress_percentage(25)
+        self.assertEqual(progress_percentage._last_percentage, 50)
+        logger.info.assert_called_once_with("downloading test-label from s3: 50.00%")
+
+        # Test less than update interval
+        logger.reset_mock()
+        progress_percentage(1)
+        self.assertEqual(progress_percentage._last_percentage, 50)
+        logger.info.assert_not_called()
+
+        # Test cumulative progress greater than update interval
+        logger.reset_mock()
+        progress_percentage(24)
+        self.assertEqual(progress_percentage._last_percentage, 100)
+        logger.info.assert_called_once_with("downloading test-label from s3: 100.00%")
+
+        # Test over 100% - unlikely but possible!
+        logger.reset_mock()
+        progress_percentage(25)
+        self.assertEqual(progress_percentage._last_percentage, 150)
+        logger.info.assert_called_once_with("downloading test-label from s3: 150.00%")
