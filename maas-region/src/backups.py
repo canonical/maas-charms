@@ -354,9 +354,7 @@ class MAASBackups(Object):
         backups = [
             f"Storage bucket name: {s3_bucket:s}",
             f"Backups base path: {s3_path:s}/backup/\n",
-            "{:<20s} | {:<11s} | {:<8s} | {:<8s} | {:<10s} | {:<22s} | {:s}".format(
-                "backup-id", "action", "status", "maas", "size", "controllers", "backup-path"
-            ),
+            f"{'backup-id':<20} | {'action':<11} | {'status':<8} | {'maas':<8} | {'size':<10} | {'controllers':<22} | {'backup-path'}",
         ]
         backups.append("-" * len(backups[2]))
         for (
@@ -413,8 +411,8 @@ class MAASBackups(Object):
                 bucket.
         """
         backups = []
-        with self._s3_client(s3_parameters) as s3:
-            paginator = s3.get_paginator("list_objects_v2")
+        with self._s3_client(s3_parameters) as client:
+            paginator = client.get_paginator("list_objects_v2")
             page_iterator = paginator.paginate(
                 Bucket=s3_parameters["bucket"],
                 Prefix=f"{s3_parameters['path'].lstrip('/')}/backup/",
@@ -439,19 +437,9 @@ class MAASBackups(Object):
         total_size = 0
         contents = []
 
-        ca_chain = s3_parameters.get("tls-ca-chain", [])
-        with tempfile.NamedTemporaryFile() if ca_chain else nullcontext() as ca_file:
-            if ca_file:
-                ca = "\n".join(ca_chain)
-                ca_file.write(ca.encode())
-                ca_file.flush()
-
-                s3 = self._get_s3_session_client(s3_parameters, ca_file.name)
-            else:
-                s3 = self._get_s3_session_client(s3_parameters, None)
-
+        with self._s3_client(s3_parameters) as client:
             prefix = f"{s3_parameters['path'].lstrip('/')}/backup/{backup_id}/"
-            paginator = s3.get_paginator("list_objects_v2")
+            paginator = client.get_paginator("list_objects_v2")
             page_iterator = paginator.paginate(
                 Bucket=s3_parameters["bucket"],
                 Prefix=prefix,

@@ -3,6 +3,7 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import json
 import logging
 import subprocess
 import unittest
@@ -14,7 +15,11 @@ from boto3.exceptions import S3UploadFailedError
 from botocore.exceptions import BotoCoreError, ClientError, ConnectTimeoutError, SSLError
 
 from backups import (
+    CONTROLLER_LIST_FILENAME,
     FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
+    IMAGE_TAR_FILENAME,
+    METADATA_FILENAME,
+    PRESEED_TAR_FILENAME,
     DownloadProgressPercentage,
     RegionsNotAvailableError,
     UploadProgressPercentage,
@@ -407,6 +412,83 @@ backup-id            | action      | status   | maas     | size       | controll
         # Test listing backups with TLS CA chain
         s3_parameters["tls-ca-chain"] = ["one", "two"]
         self.assertEqual(self.harness.charm.backup._list_backups(s3_parameters), [backup_details])
+
+    @patch("backups.MAASBackups._get_s3_session_client")
+    @patch("backups.MAASBackups._read_content_from_s3")
+    def test_get_backup_details(self, read_content, _client):
+        self.harness.begin()
+
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
+        backup_id = "2024-10-14T20:27:32Z"
+        prefix = f"{s3_parameters['path'].lstrip('/')}/backup/{backup_id}"
+
+        _client.return_value.get_paginator.return_value.paginate.return_value = [
+            {
+                "Contents": [
+                    {"Key": f"{prefix}/{METADATA_FILENAME}", "Size": 1024},
+                    {"Key": f"{prefix}/{CONTROLLER_LIST_FILENAME}", "Size": 1024},
+                    {"Key": f"{prefix}/{IMAGE_TAR_FILENAME}", "Size": 1024},
+                    {"Key": f"{prefix}/{PRESEED_TAR_FILENAME}", "Size": 1024},
+                ]
+            }
+        ]
+        read_content.side_effect = [
+            json.dumps({"success": True, "maas_snap_version": "3.6.1"}),
+            "abc123\ndef456\nghi789\n",
+        ]
+
+        self.assertEqual(
+            self.harness.charm.backup._get_backup_details(s3_parameters, backup_id),
+            {
+                "id": backup_id,
+                "size": as_size(4 * 1024),
+                "controller_ids": ["abc123", "def456", "ghi789"],
+                "completed": True,
+                "maas_version": "3.6.1",
+            },
+        )
+
+    @patch("backups.MAASBackups._get_s3_session_client")
+    @patch("backups.MAASBackups._read_content_from_s3")
+    def test_get_backup_details__no_s3_data(self, read_content, _client):
+        self.harness.begin()
+
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
+        backup_id = "2024-10-14T20:27:32Z"
+        prefix = f"{s3_parameters['path'].lstrip('/')}/backup/{backup_id}"
+
+        _client.return_value.get_paginator.return_value.paginate.return_value = [
+            {
+                "Contents": [
+                    {"Key": f"{prefix}/{METADATA_FILENAME}", "Size": 1024},
+                    {"Key": f"{prefix}/{CONTROLLER_LIST_FILENAME}", "Size": 1024},
+                    {"Key": f"{prefix}/{IMAGE_TAR_FILENAME}", "Size": 1024},
+                    {"Key": f"{prefix}/{PRESEED_TAR_FILENAME}", "Size": 1024},
+                ]
+            }
+        ]
+        read_content.return_value = ""
+
+        self.assertEqual(
+            self.harness.charm.backup._get_backup_details(s3_parameters, backup_id),
+            {
+                "id": backup_id,
+                "size": as_size(4 * 1024),
+                "controller_ids": [],
+                "completed": False,
+                "maas_version": "",
+            },
+        )
 
     @patch("backups.MAASBackups._retrieve_s3_parameters")
     @patch("backups.MAASBackups._create_bucket_if_not_exists")
@@ -1103,8 +1185,3 @@ class TestProgressPercentage(unittest.TestCase):
         progress_percentage(25)
         self.assertEqual(progress_percentage._last_percentage, 150)
         logger.info.assert_called_once_with("downloading test-label from s3: 150.00%")
-
-
-class TestAsSize(unittest.TestCase):
-    def test_as_size(self):
-        self.assertEqual(as_size(1024 * 1024), "1.0MiB")
