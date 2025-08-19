@@ -90,9 +90,6 @@ class MAASBackups(Object):
         self.framework.observe(
             self.s3_client.on.credentials_changed, self._on_s3_credential_changed
         )
-        # When the leader unit is being removed, s3_client.on.credentials_gone is performed on it (and only on it).
-        # After a new leader is elected, the S3 connection must be reinitialized.
-        self.framework.observe(self.charm.on.leader_elected, self._on_s3_credential_changed)
         self.framework.observe(self.s3_client.on.credentials_gone, self._on_s3_credential_gone)
         self.framework.observe(self.charm.on.create_backup_action, self._on_create_backup_action)
         self.framework.observe(self.charm.on.list_backups_action, self._on_list_backups_action)
@@ -161,23 +158,6 @@ class MAASBackups(Object):
             return False, "Unit is in a blocking state"
 
         return self._are_backup_settings_ok()
-
-    def _can_use_s3_repository(self) -> tuple[bool, str]:
-        """Return whether the charm was configured to use another cluster repository."""
-        # Check model uuid
-        s3_parameters, _ = self._retrieve_s3_parameters()
-        s3_model_uuid = self._read_content_from_s3(
-            "model-uuid.txt",
-            s3_parameters,
-        )
-
-        if s3_model_uuid and s3_model_uuid.strip() != self.model.uuid:
-            logger.debug(
-                f"can_use_s3_repository: incompatible model-uuid s3={s3_model_uuid.strip()}, local={self.model.uuid}"
-            )
-            return False, "the S3 repository has backups from another cluster"
-
-        return True, ""
 
     def _construct_endpoint(self, s3_parameters: dict[str, str]) -> str:
         """Construct the S3 service endpoint using the region.
@@ -367,7 +347,6 @@ class MAASBackups(Object):
 
         s3_parameters, _ = self._retrieve_s3_parameters()
         if not s3_parameters:
-            event.defer()
             return
 
         try:
@@ -376,16 +355,17 @@ class MAASBackups(Object):
             self.charm.unit.status = BlockedStatus(FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE)
             return
 
-        can_use_s3_repository, validation_message = self._can_use_s3_repository()
-        if not can_use_s3_repository:
-            self.charm.unit.status = BlockedStatus(validation_message)
-            return
-
-        self._upload_content_to_s3(
-            self.model.uuid,
-            "model-uuid.txt",
-            s3_parameters,
-        )
+        # Check model uuid
+        if s3_model_uuid := self._read_content_from_s3("model-uuid.txt", s3_parameters):
+            if s3_model_uuid.strip() != self.model.uuid:
+                logger.debug(
+                    f"incompatible model-uuid s3={s3_model_uuid.strip()}, local={self.model.uuid}"
+                )
+                self.charm.unit.status = BlockedStatus(
+                    "the S3 repository has backups from another cluster"
+                )
+        else:
+            self._upload_content_to_s3(self.model.uuid, "model-uuid.txt", s3_parameters)
 
     def _on_s3_credential_gone(self, event) -> None:
         if self.charm.is_blocked and self.charm.unit.status.message in S3_BLOCK_MESSAGES:
@@ -447,9 +427,7 @@ Juju Version: {self.charm.model.juju_version!s}
             success=backup_success,
         )
         if not metadata_success:
-            error_message = (
-                f"Failed to upload backup metadata to S3 for backup-id {backup_id}."
-            )
+            error_message = f"Failed to upload backup metadata to S3 for backup-id {backup_id}."
             logger.error(f"Backup failed: {error_message}")
             event.fail(error_message + REFER_TO_DEBUG_LOG)
             return
@@ -509,9 +487,7 @@ Juju Version: {self.charm.model.juju_version!s}
             regions = self.charm._get_region_system_ids()
         except subprocess.CalledProcessError:
             # Avoid logging the apikey of an Admin user
-            raise RegionsNotAvailableError(
-                "Failed to retrieve region ids from the MAAS API"
-            )
+            raise RegionsNotAvailableError("Failed to retrieve region ids from the MAAS API")
 
         # upload regions
         region_path = os.path.join(s3_path, "controllers.txt")
