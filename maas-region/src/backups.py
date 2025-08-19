@@ -589,7 +589,7 @@ Juju Version: {self.charm.model.juju_version!s}
             with tarfile.open(fileobj=f, mode="w:gz") as tar:
                 tar.add(
                     SNAP_PATH_TO_IMAGES,
-                    arcname=Path(IMAGE_TAR_FILENAME).stem,
+                    arcname="",
                 )
             f.flush()
             event.log("Uploading image archive to S3, see debug-log for progress...")
@@ -607,7 +607,7 @@ Juju Version: {self.charm.model.juju_version!s}
             with tarfile.open(fileobj=f, mode="w:gz") as tar:
                 tar.add(
                     SNAP_PATH_TO_PRESEEDS,
-                    arcname=Path(PRESEED_TAR_FILENAME).stem,
+                    arcname="",
                 )
             f.flush()
             event.log("Uploading preseed archive to S3...")
@@ -897,7 +897,7 @@ Juju Version: {self.charm.model.juju_version!s}
         local_path: Path,
         file_type: str | None = None,
     ) -> bool:
-        file_type = file_type or Path(s3_path).stem
+        file_type = file_type or self._pathname(s3_path)
 
         # Clean before restore
         shutil.rmtree(local_path, ignore_errors=True)
@@ -982,7 +982,7 @@ Juju Version: {self.charm.model.juju_version!s}
                     s3_path,
                     tmp_path,
                     Callback=DownloadProgressPercentage(
-                        f.name, log_label=file_type or Path(s3_path).stem, size=size
+                        f.name, log_label=file_type or self._pathname(s3_path), size=size
                     ),
                 )
 
@@ -1020,6 +1020,9 @@ Juju Version: {self.charm.model.juju_version!s}
                 os.unlink(tmp_path)
 
         return None
+
+    def _pathname(self, pathname: str) -> str:
+        return Path(pathname).name.split(".")[0]
 
     def _pre_restore_checks(self, event: ActionEvent) -> bool:
         """Run some checks before starting the restore.
