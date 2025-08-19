@@ -1,7 +1,7 @@
 ops ~=3.1
 
 # For backup support
-boto3 >= 1.39.10, <1.40.0
+boto3 >=1.40.13, <1.41.0
 botocore >=1.39.10, <1.40.0
 
 # For Grafana agent
