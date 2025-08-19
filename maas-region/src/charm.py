@@ -501,8 +501,6 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_maas_cluster_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
-
-        # Handle cluster joining
         if self.unit.is_leader() and not self._publish_tokens():
             event.defer()
             return

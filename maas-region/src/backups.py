@@ -137,9 +137,7 @@ class MAASBackups(Object):
         self.framework.observe(self.s3_client.on.credentials_gone, self._on_s3_credential_gone)
         self.framework.observe(self.charm.on.create_backup_action, self._on_create_backup_action)
         self.framework.observe(self.charm.on.list_backups_action, self._on_list_backups_action)
-        self.framework.observe(
-            self.charm.on.restore_backup_action, self._on_restore_from_backup_action
-        )
+        self.framework.observe(self.charm.on.restore_backup_action, self._on_restore_backup_action)
 
     def _get_s3_session_resource(
         self, s3_parameters: dict[str, str], ca_file_path: str | None
@@ -680,7 +678,7 @@ Juju Version: {self.charm.model.juju_version!s}
             logger.exception(e)
             event.fail(f"Failed to list MAAS backups with error: {e!s}")
 
-    def _on_restore_from_backup_action(self, event: ActionEvent) -> None:
+    def _on_restore_backup_action(self, event: ActionEvent) -> None:
         if not self._pre_restore_checks(event):
             return
 
@@ -717,6 +715,12 @@ Juju Version: {self.charm.model.juju_version!s}
             controller_id=controller_id,
         )
 
+        event.log(
+            "Restore complete, please run:\n"
+            f"juju integrate {self.model.app.name} <postgresql_app_name>\n"
+            "to restart MAAS"
+        )
+
         self.charm.unit.status = ActiveStatus()
         event.set_results({"restore-status": "restore finished"})
 
@@ -737,7 +741,7 @@ Juju Version: {self.charm.model.juju_version!s}
             event=event, s3_path=s3_path, s3_parameters=s3_parameters, controller_id=controller_id
         ):
             event.fail(
-                "Failed to update MAAS-Region IDs from S3 backup. Check the juju debug-log for more detail."
+                "Failed to update maas-region IDs from S3 backup. Check the juju debug-log for more detail."
             )
             return
 
@@ -762,13 +766,6 @@ Juju Version: {self.charm.model.juju_version!s}
                 "Failed to download and extract images from S3 backup. Check the juju debug-log for more detail."
             )
             return
-
-        # TODO: How do we determine the postgresql name if we don't have a relation yet.
-        event.log(
-            "Restore complete, please run:\n"
-            f"juju add-relation {self.model.app.name} postgresql\n"
-            "to restart MAAS"
-        )
 
     def _check_backup_maas_version(
         self, event: ActionEvent, s3_path: str, s3_parameters: dict[str, str]
@@ -838,8 +835,7 @@ Juju Version: {self.charm.model.juju_version!s}
     def _update_controller_id(
         self, event: ActionEvent, s3_path: str, s3_parameters: dict[str, str], controller_id: str
     ) -> bool:
-        # Fetch the controllers from S3 and the regions from the relation
-
+        """Fetch the controllers from S3 and the regions from the relation."""
         event.log("Downloading controllers list from s3...")
 
         with self._download_file_from_s3(
@@ -869,7 +865,7 @@ Juju Version: {self.charm.model.juju_version!s}
         if len(controllers) != len(regions):
             self._log_error(
                 event,
-                f"Restore failed: The number of MAAS-Region units ({len(regions)}) "
+                f"Restore failed: The number of maas-region units ({len(regions)}) "
                 f"does not match the expected value from the backup ({len(controllers)}).",
                 msg_prefix="Restore failed",
             )
