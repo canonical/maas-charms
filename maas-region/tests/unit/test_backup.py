@@ -1305,7 +1305,7 @@ backup-id            | action      | status   | maas     | size       | controll
         mock_file = MagicMock()
         mock_file.__enter__.return_value.name = f"/tmp/{s3_path}"
         temp_file.return_value = mock_file
-        path_exists.return_value = True
+        path_exists.return_value = False
 
         s3 = client.return_value.__enter__.return_value
         s3.head_object.side_effect = Exception("test-exception")
@@ -1319,7 +1319,7 @@ backup-id            | action      | status   | maas     | size       | controll
 
         disk_usage.assert_not_called()
         path_exists.assert_called_once()
-        unlink.assert_called_once()
+        unlink.assert_not_called()
         event.fail.assert_called_once_with(
             f"Download failed: Could not read content from {bucket}:{s3_path}"
         )
@@ -1931,8 +1931,9 @@ backup-id            | action      | status   | maas     | size       | controll
         download_file.assert_called_once()
         event.fail.assert_called_with("Restore failed: Could not locate snap version in backup")
 
+    @patch("charm.MaasRegionCharm.version", new_callable=PropertyMock(return_value=None))
     @patch("backups.MAASBackups._download_file_from_s3")
-    def test_run_restore__no_snap_instance_version(self, download_file):
+    def test_run_restore__no_snap_instance_version(self, download_file, _version):
         backup_id = "2025-08-23T06:26:00Z"
         s3_parameters = {
             "bucket": "test-bucket",
