@@ -1335,10 +1335,10 @@ backup-id            | action      | status   | maas     | size       | controll
         bucket = "test-bucket"
         s3_path = "test-file.txt"
         s3_parameters = {"bucket": bucket}
-        filename = "dummy.txt"
+        filename = "sample.txt"
         file_content = "test-data"
 
-        # In-memory dummy file
+        # In-memory sample file
         tar_bytes = io.BytesIO()
         with tarfile.open(fileobj=tar_bytes, mode="w:gz") as tar:
             data = file_content.encode()
@@ -1444,7 +1444,7 @@ backup-id            | action      | status   | maas     | size       | controll
         s3_parameters = {"bucket": bucket}
         file_type = "test"
 
-        # In-memory dummy file
+        # In-memory sample file
         tar_bytes = io.BytesIO()
         with tarfile.open(fileobj=tar_bytes, mode="w:gz"):
             pass
@@ -1531,7 +1531,7 @@ backup-id            | action      | status   | maas     | size       | controll
         s3_parameters = {"bucket": bucket}
         file_type = "test"
 
-        # In-memory dummy file
+        # In-memory sample file
         tar_bytes = io.BytesIO()
         with tarfile.open(fileobj=tar_bytes, mode="w:gz"):
             pass
