@@ -40,10 +40,12 @@ from helper import MaasHelper
 logger = logging.getLogger(__name__)
 
 BACKUP_ID_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+ANOTHER_CLUSTER_REPOSITORY_ERROR_MESSAGE = "the S3 repository has backups from another cluster"
 FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE = (
     "failed to access/create the bucket, check your S3 settings"
 )
 S3_BLOCK_MESSAGES = [
+    ANOTHER_CLUSTER_REPOSITORY_ERROR_MESSAGE,
     FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
 ]
 SNAP_PATH_TO_IDS = "/var/snap/maas/common/maas/maas_id"
@@ -481,9 +483,7 @@ class MAASBackups(Object):
                 logger.debug(
                     f"incompatible model-uuid s3={s3_model_uuid.strip()}, local={self.model.uuid}"
                 )
-                self.charm.unit.status = BlockedStatus(
-                    "the S3 repository has backups from another cluster"
-                )
+                self.charm.unit.status = BlockedStatus(ANOTHER_CLUSTER_REPOSITORY_ERROR_MESSAGE)
         else:
             self._upload_content_to_s3(self.model.uuid, "model-uuid.txt", s3_parameters)
 
