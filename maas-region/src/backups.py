@@ -5,6 +5,7 @@
 
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -53,6 +54,7 @@ REFER_TO_DEBUG_LOG = " Please check the juju debug-log for more details."
 MAAS_REGION_RELATION = "maas-cluster"
 
 # filenames
+MODEL_UUID_FILENAME = "model-uuid.txt"
 METADATA_FILENAME = "backup_metadata.json"
 CONTROLLER_LIST_FILENAME = "controllers.txt"
 IMAGE_TAR_FILENAME = "image-storage.tar.gz"
@@ -253,7 +255,7 @@ class MAASBackups(Object):
         # Check model uuid
         s3_parameters, _ = self._retrieve_s3_parameters()
         s3_model_uuid = self._read_content_from_s3(
-            "model-uuid.txt",
+            MODEL_UUID_FILENAME,
             s3_parameters,
         )
 
@@ -344,7 +346,7 @@ class MAASBackups(Object):
 
     def _format_backup_list(
         self,
-        backup_list: list[tuple[str, str, str, str]],
+        backup_list: list[tuple[str, str, str, str, str, str, str]],
         s3_bucket: str,
         s3_path: str,
     ) -> str:
@@ -352,22 +354,20 @@ class MAASBackups(Object):
         backups = [
             f"Storage bucket name: {s3_bucket:s}",
             f"Backups base path: {s3_path:s}/backup/\n",
-            "{:<20s} | {:<19s} | {:<8s} | {:s}".format(
-                "backup-id",
-                "action",
-                "status",
-                "backup-path",
-            ),
+            f"{'backup-id':<20} | {'action':<11} | {'status':<8} | {'maas':<8} | {'size':<10} | {'controllers':<22} | {'backup-path'}",
         ]
         backups.append("-" * len(backups[2]))
         for (
             backup_id,
             backup_action,
             backup_status,
+            version,
+            size,
+            controllers,
             path,
         ) in backup_list:
             backups.append(
-                f"{backup_id:<20s} | {backup_action:<19s} | {backup_status:<8s} | {path:s}"
+                f"{backup_id:<20s} | {backup_action:<11s} | {backup_status:<8s} | {version:<8s} | {size:<10s} | {controllers:<22s} | {path:s}"
             )
         return "\n".join(backups)
 
@@ -380,16 +380,19 @@ class MAASBackups(Object):
         backups = self._list_backups(s3_parameters)
         backup_list = []
         for backup in backups:
-            # TODO: backup_action and backup_status are statically set for now. They can be enriched
-            # with extra content if such functionality is added to the backup mechanism.
+            # TODO: backup_action is statically set for now. It can be enriched with extra content
+            # if such functionality is added to the backup mechanism.
             backup_action = "full backup"
             backup_path = f"/{s3_parameters['path'].lstrip('/')}/backup/{backup['id']}"
-            backup_status = "finished"
+            backup_status = "finished" if backup["completed"] else "failed"
             backup_list.append(
                 (
                     backup["id"],
                     backup_action,
                     backup_status,
+                    backup["maas_version"],
+                    backup["size"],
+                    ", ".join(backup["controller_ids"]),
                     backup_path,
                 )
             )
@@ -408,8 +411,8 @@ class MAASBackups(Object):
                 bucket.
         """
         backups = []
-        with self._s3_client(s3_parameters) as s3:
-            paginator = s3.get_paginator("list_objects_v2")
+        with self._s3_client(s3_parameters) as client:
+            paginator = client.get_paginator("list_objects_v2")
             page_iterator = paginator.paginate(
                 Bucket=s3_parameters["bucket"],
                 Prefix=f"{s3_parameters['path'].lstrip('/')}/backup/",
@@ -418,14 +421,65 @@ class MAASBackups(Object):
             for page in page_iterator:
                 for common_prefix in page.get("CommonPrefixes", []):
                     backups.append(
-                        {
-                            "id": common_prefix["Prefix"]
-                            .lstrip(f"{s3_parameters['path'].lstrip('/')}/backup/")
-                            .rstrip("/")
-                        }
+                        common_prefix["Prefix"]
+                        .lstrip(f"{s3_parameters['path'].lstrip('/')}/backup/")
+                        .rstrip("/")
                     )
 
-        return backups
+        backup_dict_list = []
+
+        for backup in backups:
+            backup_dict_list.append(self._get_backup_details(s3_parameters, backup))
+
+        return backup_dict_list
+
+    def _get_backup_details(self, s3_parameters: dict, backup_id: str) -> dict:
+        total_size = 0
+        contents = []
+
+        with self._s3_client(s3_parameters) as client:
+            prefix = f"{s3_parameters['path'].lstrip('/')}/backup/{backup_id}/"
+            paginator = client.get_paginator("list_objects_v2")
+            page_iterator = paginator.paginate(
+                Bucket=s3_parameters["bucket"],
+                Prefix=prefix,
+                Delimiter="/",
+            )
+            for page in page_iterator:
+                for content in page.get("Contents", []):
+                    contents.append(content["Key"].removeprefix(prefix))
+                    total_size += content["Size"]
+
+        size = as_size(total_size)
+        complete_files = set(contents) == {
+            METADATA_FILENAME,
+            CONTROLLER_LIST_FILENAME,
+            IMAGE_TAR_FILENAME,
+            PRESEED_TAR_FILENAME,
+        }
+
+        metadata: dict[str, str] = {}
+        if metadata_str := self._read_content_from_s3(
+            f"backup/{backup_id}/{METADATA_FILENAME}", s3_parameters
+        ):
+            metadata = json.loads(metadata_str)
+
+        controller_ids: list[str] = []
+        if controller_str := self._read_content_from_s3(
+            f"backup/{backup_id}/{CONTROLLER_LIST_FILENAME}", s3_parameters
+        ):
+            controller_ids = controller_str.strip("\n").split("\n")
+
+        completed = metadata.get("success", False) and complete_files
+        maas_version = metadata.get("maas_snap_version", "")
+
+        return {
+            "id": backup_id,
+            "size": size,
+            "controller_ids": controller_ids,
+            "completed": completed,
+            "maas_version": maas_version,
+        }
 
     def _on_s3_credential_changed(self, event: CredentialsChangedEvent) -> None:
         if not self.charm.unit.is_leader():
@@ -449,7 +503,7 @@ class MAASBackups(Object):
 
         self._upload_content_to_s3(
             self.model.uuid,
-            "model-uuid.txt",
+            MODEL_UUID_FILENAME,
             s3_parameters,
         )
 
@@ -1174,3 +1228,23 @@ Juju Version: {self.charm.model.juju_version!s}
                 )
 
         return None
+
+
+def as_size(size: int) -> str:
+    """Return a string representation of a number in Binary base."""
+    base = 1024  # extendable to generic SI in future
+    prefixes = {
+        0: "",
+        1: "Ki",
+        2: "Mi",
+        3: "Gi",
+        4: "Ti",
+        5: "Pi",
+        6: "Ei",
+        7: "Zi",
+        8: "Yi",
+        9: "Ri",
+        10: "Qi",
+    }
+    power = math.floor(math.log(size, base))
+    return f"{size / (base**power):.1f}{prefixes.get(power, f' x {base}^{power} ')}B"
