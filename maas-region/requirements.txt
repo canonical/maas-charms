@@ -1,8 +1,10 @@
 ops ~=3.1
 
 # For backup support
-boto3 >= 1.39.10, <1.40.0
-botocore >=1.39.10, <1.40.0
+# Botocore and boto3 are updated frequently, so an upper bound is required to allow
+# the latest point release to be installed without the need for many charm releases.
+boto3 >=1.40.12, <1.41.0
+botocore >=1.40.12, <1.41.0
 
 # For Grafana agent
 pydantic < 2

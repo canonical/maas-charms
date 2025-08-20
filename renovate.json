@@ -6,5 +6,11 @@
   "ignoreDeps": [
     "canonical/observability",
     "tj-actions/changed-files"
+  ],
+  "packageRules": [
+    {
+      "description": "Update botocore and boto3 together",
+      "matchPackageNames": ["botocore", "boto3"]
+    }
   ]
 }
