@@ -3,10 +3,16 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import io
 import json
 import logging
+import os
 import subprocess
+import tarfile
+import tempfile
 import unittest
+from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import ops
@@ -18,8 +24,11 @@ from backups import (
     CONTROLLER_LIST_FILENAME,
     FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
     IMAGE_TAR_FILENAME,
+    MAAS_REGION_RELATION,
     METADATA_FILENAME,
     PRESEED_TAR_FILENAME,
+    SNAP_PATH_TO_IMAGES,
+    SNAP_PATH_TO_PRESEEDS,
     DownloadProgressPercentage,
     RegionsNotAvailableError,
     UploadProgressPercentage,
@@ -958,14 +967,6 @@ backup-id            | action      | status   | maas     | size       | controll
             err.message, "Failed to list MAAS backups with error: An unspecified error occurred"
         )
 
-    def test_on_restore_from_backup_action(self):
-        # TODO: implement this
-        pass
-
-    def test_pre_restore_checks(self):
-        # TODO: implement this
-        pass
-
     @patch("charms.data_platform_libs.v0.s3.S3Requirer.get_s3_connection_info")
     def test_retrieve_s3_parameters(self, _get_s3_connection_info):
         self.harness.begin()
@@ -1125,6 +1126,1276 @@ backup-id            | action      | status   | maas     | size       | controll
         _named_temporary_file.assert_called_once()
         download_file.assert_called_once_with("test-path/test-file", buf_obj)
 
+    @patch("backups.os.unlink")
+    @patch("backups.os.path.exists")
+    @patch("backups.tempfile.NamedTemporaryFile")
+    @patch("backups.shutil.disk_usage")
+    @patch("backups.MAASBackups._s3_client")
+    def test_download_file_from_s3(self, client, disk_usage, temp_file, path_exists, unlink):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        s3_path = "test-file.txt"
+        s3_parameters = {"bucket": "test-bucket"}
+        size = 100
+        free = 1000000
+
+        mock_file = MagicMock()
+        mock_file.__enter__.return_value.name = f"/tmp/{s3_path}"
+        temp_file.return_value = mock_file
+        path_exists.return_value = True
+        disk_usage.return_value.free = free
+
+        class FakeS3Client:
+            def head_object(self, *args, **kwargs):
+                return {"ContentLength": size}
+
+            def download_file(self, *args, **kwargs):
+                yield temp_file
+
+        client.return_value.__enter__.return_value = FakeS3Client()
+
+        with self.harness.charm.backup._download_file_from_s3(
+            event=event, s3_path=s3_path, s3_parameters=s3_parameters
+        ) as f:
+            self.assertTrue(f.name.endswith(s3_path))
+
+        disk_usage.assert_called_once()
+        path_exists.assert_called_once()
+        unlink.assert_called_once()
+
+    @patch("backups.os.unlink")
+    @patch("backups.os.path.exists")
+    @patch("backups.tempfile.NamedTemporaryFile")
+    @patch("backups.shutil.disk_usage")
+    @patch("backups.MAASBackups._s3_client")
+    def test_download_file_from_s3__not_enough_free_space(
+        self, client, disk_usage, temp_file, path_exists, unlink
+    ):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        s3_path = "test-file.txt"
+        s3_parameters = {"bucket": "test-bucket"}
+        size = 100
+        free = 10
+
+        mock_file = MagicMock()
+        mock_file.__enter__.return_value.name = f"/tmp/{s3_path}"
+        temp_file.return_value = mock_file
+        path_exists.return_value = True
+        disk_usage.return_value.free = free
+
+        class FakeS3Client:
+            def head_object(self, *args, **kwargs):
+                return {"ContentLength": size}
+
+            def download_file(self, *args, **kwargs):
+                yield temp_file
+
+        client.return_value.__enter__.return_value = FakeS3Client()
+
+        with self.harness.charm.backup._download_file_from_s3(
+            event=event, s3_path=s3_path, s3_parameters=s3_parameters
+        ) as f:
+            self.assertTrue(f.name.endswith(s3_path))
+
+        disk_usage.assert_called_once()
+        path_exists.assert_called_once()
+        unlink.assert_called_once()
+        event.fail.assert_called_once_with(
+            f"Download failed: Not enough free storage to download {s3_path}, required {size} but has {free}"
+        )
+
+    @patch("backups.os.unlink")
+    @patch("backups.os.path.exists")
+    @patch("backups.tempfile.NamedTemporaryFile")
+    @patch("backups.shutil.disk_usage")
+    @patch("backups.MAASBackups._s3_client")
+    def test_download_file_from_s3__could_not_find_object(
+        self, client, disk_usage, temp_file, path_exists, unlink
+    ):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        s3_path = "test-file.txt"
+        bucket = "test-bucket"
+        s3_parameters = {"bucket": bucket}
+
+        mock_file = MagicMock()
+        mock_file.__enter__.return_value.name = f"/tmp/{s3_path}"
+        temp_file.return_value = mock_file
+        path_exists.return_value = True
+
+        s3 = client.return_value.__enter__.return_value
+        s3.head_object.side_effect = ClientError(
+            error_response={"Error": {"Code": "404", "message": ""}},
+            operation_name="",
+        )
+
+        with self.harness.charm.backup._download_file_from_s3(
+            event=event,
+            s3_path=s3_path,
+            s3_parameters=s3_parameters,
+        ) as f:
+            self.assertIsNone(f)
+
+        disk_usage.assert_not_called()
+        path_exists.assert_called_once()
+        unlink.assert_called_once()
+        event.fail.assert_called_once_with(
+            f"Download failed: Could not find object in {bucket}:{s3_path}"
+        )
+
+    @patch("backups.os.unlink")
+    @patch("backups.os.path.exists")
+    @patch("backups.tempfile.NamedTemporaryFile")
+    @patch("backups.shutil.disk_usage")
+    @patch("backups.MAASBackups._s3_client")
+    def test_download_file_from_s3__could_not_read_object(
+        self, client, disk_usage, temp_file, path_exists, unlink
+    ):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        s3_path = "test-file.txt"
+        bucket = "test-bucket"
+        s3_parameters = {"bucket": bucket}
+
+        mock_file = MagicMock()
+        mock_file.__enter__.return_value.name = f"/tmp/{s3_path}"
+        temp_file.return_value = mock_file
+        path_exists.return_value = True
+
+        s3 = client.return_value.__enter__.return_value
+        s3.head_object.side_effect = ClientError(
+            error_response={"Error": {"Code": "SomethingElse", "message": ""}},
+            operation_name="",
+        )
+
+        with self.harness.charm.backup._download_file_from_s3(
+            event=event,
+            s3_path=s3_path,
+            s3_parameters=s3_parameters,
+        ) as f:
+            self.assertIsNone(f)
+
+        disk_usage.assert_not_called()
+        path_exists.assert_called_once()
+        unlink.assert_called_once()
+        event.fail.assert_called_once_with(
+            f"Download failed: Could not read object from {bucket}:{s3_path}"
+        )
+
+    @patch("backups.os.unlink")
+    @patch("backups.os.path.exists")
+    @patch("backups.tempfile.NamedTemporaryFile")
+    @patch("backups.shutil.disk_usage")
+    @patch("backups.MAASBackups._s3_client")
+    def test_download_file_from_s3__could_not_read_content(
+        self, client, disk_usage, temp_file, path_exists, unlink
+    ):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        bucket = "test-bucket"
+        s3_path = "test-file.txt"
+        s3_parameters = {"bucket": bucket}
+
+        mock_file = MagicMock()
+        mock_file.__enter__.return_value.name = f"/tmp/{s3_path}"
+        temp_file.return_value = mock_file
+        path_exists.return_value = False
+
+        s3 = client.return_value.__enter__.return_value
+        s3.head_object.side_effect = Exception("test-exception")
+
+        with self.harness.charm.backup._download_file_from_s3(
+            event=event,
+            s3_path=s3_path,
+            s3_parameters=s3_parameters,
+        ) as f:
+            self.assertIsNone(f)
+
+        disk_usage.assert_not_called()
+        path_exists.assert_called_once()
+        unlink.assert_not_called()
+        event.fail.assert_called_once_with(
+            f"Download failed: Could not read content from {bucket}:{s3_path}"
+        )
+
+    @patch("backups.shutil.rmtree")
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_download_unarchive_from_s3(self, download_file, _rmtree):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        bucket = "test-bucket"
+        s3_path = "test-file.txt"
+        s3_parameters = {"bucket": bucket}
+        filename = "sample.txt"
+        file_content = "test-data"
+
+        # In-memory sample file
+        tar_bytes = io.BytesIO()
+        with tarfile.open(fileobj=tar_bytes, mode="w:gz") as tar:
+            data = file_content.encode()
+            info = tarfile.TarInfo(filename)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        tar_bytes.seek(0)
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            with tempfile.NamedTemporaryFile(delete=False) as f:
+                f.write(tar_bytes.read())
+                tmp_path = f.name
+            try:
+                yield tmp_path
+            finally:
+                os.remove(tmp_path)
+
+        download_file.side_effect = file_return
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_path = Path(tmpdir) / "local_path"
+            self.assertTrue(
+                self.harness.charm.backup._download_and_unarchive_from_s3(
+                    event=event,
+                    s3_path=s3_path,
+                    s3_parameters=s3_parameters,
+                    local_path=local_path,
+                )
+            )
+
+            extracted = local_path / filename
+            self.assertTrue(extracted.exists())
+            self.assertEqual(extracted.read_text(), file_content)
+
+        event.fail.assert_not_called()
+
+    @patch("backups.shutil.rmtree")
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_download_unarchive_from_s3__local_not_removed(self, download_file, _rmtree):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        s3_path = ""
+        s3_parameters = {}
+        file_type = "test"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_path = Path(tmpdir) / "local_path"
+            local_path.mkdir(parents=True)
+
+            self.assertFalse(
+                self.harness.charm.backup._download_and_unarchive_from_s3(
+                    event=event,
+                    s3_path=s3_path,
+                    s3_parameters=s3_parameters,
+                    local_path=local_path,
+                    file_type=file_type,
+                )
+            )
+
+        event.fail.assert_called_with(f"Untar failed: Could not remove existing {file_type}")
+
+    @patch("backups.shutil.rmtree")
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_download_unarchive_from_s3___no_file_on_s3(self, download_file, _rmtree):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        bucket = "test-bucket"
+        s3_path = "test-file.txt"
+        s3_parameters = {"bucket": bucket}
+        file_type = "test"
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            yield None
+
+        download_file.side_effect = file_return
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_path = Path(tmpdir) / "local_path"
+            self.assertFalse(
+                self.harness.charm.backup._download_and_unarchive_from_s3(
+                    event=event,
+                    s3_path=s3_path,
+                    s3_parameters=s3_parameters,
+                    local_path=local_path,
+                    file_type=file_type,
+                )
+            )
+
+        event.fail.assert_called_with(f"Untar failed: Could not read {file_type} from s3")
+
+    @patch("backups.shutil.rmtree")
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_download_unarchive_from_s3__empty_tarfile(self, download_file, _rmtree):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        bucket = "test-bucket"
+        s3_path = "test-file.txt"
+        s3_parameters = {"bucket": bucket}
+        file_type = "test"
+
+        # In-memory sample file
+        tar_bytes = io.BytesIO()
+        with tarfile.open(fileobj=tar_bytes, mode="w:gz"):
+            pass
+        tar_bytes.seek(0)
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            with tempfile.NamedTemporaryFile(delete=False) as f:
+                f.write(tar_bytes.read())
+                tmp_path = f.name
+            try:
+                yield tmp_path
+            finally:
+                os.remove(tmp_path)
+
+        download_file.side_effect = file_return
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_path = Path(tmpdir) / "local_path"
+            self.assertFalse(
+                self.harness.charm.backup._download_and_unarchive_from_s3(
+                    event=event,
+                    s3_path=s3_path,
+                    s3_parameters=s3_parameters,
+                    local_path=local_path,
+                    file_type=file_type,
+                )
+            )
+
+        event.fail.assert_called_with(
+            f"Untar failed: {file_type.capitalize()} from S3 did not contain any files."
+        )
+
+    @patch("backups.tarfile.open")
+    @patch("backups.shutil.rmtree")
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_download_unarchive_from_s3__corrupted_tarfile(self, download_file, _rmtree, open_tar):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        bucket = "test-bucket"
+        s3_path = "test-file.txt"
+        s3_parameters = {"bucket": bucket}
+        file_content = "not a tar file"
+        file_type = "test"
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            fake_file = MagicMock()
+            fake_file.read_text.return_value = file_content
+            yield fake_file
+
+        download_file.side_effect = file_return
+
+        fake_tar = MagicMock()
+        fake_tar.__enter__.side_effect = tarfile.TarError("corrupt")
+        open_tar.return_value = fake_tar
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_path = Path(tmpdir) / "local_path"
+            self.assertFalse(
+                self.harness.charm.backup._download_and_unarchive_from_s3(
+                    event=event,
+                    s3_path=s3_path,
+                    s3_parameters=s3_parameters,
+                    local_path=local_path,
+                    file_type=file_type,
+                )
+            )
+
+        event.fail.assert_called_with(
+            f"Untar failed: {file_type.capitalize()} is not a valid .tar.gz file or is corrupted."
+        )
+
+    @patch("backups.tarfile.TarFile.extractall")
+    @patch("backups.shutil.rmtree")
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_download_unarchive_from_s3__file_error(self, download_file, _rmtree, _extractall):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        bucket = "test-bucket"
+        s3_path = "test-file.txt"
+        s3_parameters = {"bucket": bucket}
+        file_type = "test"
+
+        # In-memory sample file
+        tar_bytes = io.BytesIO()
+        with tarfile.open(fileobj=tar_bytes, mode="w:gz"):
+            pass
+        tar_bytes.seek(0)
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            with tempfile.NamedTemporaryFile(delete=False) as f:
+                f.write(tar_bytes.read())
+                tmp_path = f.name
+            try:
+                yield tmp_path
+            finally:
+                os.remove(tmp_path)
+
+        download_file.side_effect = file_return
+        _extractall.side_effect = OSError("disk error")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_path = Path(tmpdir) / "local_path"
+            self.assertFalse(
+                self.harness.charm.backup._download_and_unarchive_from_s3(
+                    event=event,
+                    s3_path=s3_path,
+                    s3_parameters=s3_parameters,
+                    local_path=local_path,
+                    file_type=file_type,
+                )
+            )
+
+        event.fail.assert_called_with(
+            f"Untar failed: Filesystem error while extracting {file_type}"
+        )
+
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    def test_pre_restore_checks_ok(self, s3_parameters):
+        self.harness.begin()
+        self.harness.add_relation("s3-parameters", "s3-integrator")
+        s3_parameters.return_value = {}, []
+        action_event = MagicMock(spec=ops.ActionEvent)
+        action_event.params = {"backup-id": "2025-08-23T06:26:00Z", "controller-id": "abc123"}
+
+        self.assertTrue(self.harness.charm.backup._pre_restore_checks(event=action_event))
+        action_event.fail.assert_not_called()
+
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    def test_pre_restore_checks_ok__missing_relation(self, s3_parameters):
+        self.harness.begin()
+        s3_parameters.return_value = {}, []
+        action_event = MagicMock(spec=ops.ActionEvent)
+
+        self.assertFalse(self.harness.charm.backup._pre_restore_checks(event=action_event))
+        action_event.fail.assert_called_once_with(
+            "Restore failed: Relation with s3-integrator charm missing, "
+            "cannot create/restore backup."
+        )
+
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    def test_pre_restore_checks_ok__missing_s3_parameters(self, s3_parameters):
+        self.harness.begin()
+        self.harness.add_relation("s3-parameters", "s3-integrator")
+        s3_parameters.return_value = {}, ["bucket"]
+        action_event = MagicMock(spec=ops.ActionEvent)
+
+        self.assertFalse(self.harness.charm.backup._pre_restore_checks(event=action_event))
+        action_event.fail.assert_called_once_with(
+            "Restore failed: Missing S3 parameters: ['bucket']"
+        )
+
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    def test_pre_restore_checks_ok__backup_id_empty(self, s3_parameters):
+        self.harness.begin()
+        self.harness.add_relation("s3-parameters", "s3-integrator")
+        s3_parameters.return_value = {}, []
+        action_event = MagicMock(spec=ops.ActionEvent)
+        action_event.params = {"backup-id": ""}
+
+        self.assertFalse(self.harness.charm.backup._pre_restore_checks(event=action_event))
+        action_event.fail.assert_called_once_with(
+            "Restore failed: The 'backup-id' parameter must be specified to perform a restore"
+        )
+
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    def test_pre_restore_checks_ok__controller_id_empty(self, s3_parameters):
+        self.harness.begin()
+        self.harness.add_relation("s3-parameters", "s3-integrator")
+        s3_parameters.return_value = {}, []
+        action_event = MagicMock(spec=ops.ActionEvent)
+        action_event.params = {"backup-id": "2025-08-23T06:26:00Z", "controller-id": ""}
+
+        self.assertFalse(self.harness.charm.backup._pre_restore_checks(event=action_event))
+        action_event.fail.assert_called_once_with(
+            "Restore failed: The 'controller-id' parameter must be specified to perform a restore"
+        )
+
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    def test_pre_restore_checks_ok__cluster_blocked(self, s3_parameters):
+        self.harness.begin()
+        self.harness.add_relation("s3-parameters", "s3-integrator")
+        self.harness.charm.unit.status = ops.BlockedStatus("fake blocked state")
+        s3_parameters.return_value = {}, []
+        action_event = MagicMock(spec=ops.ActionEvent)
+        action_event.params = {"backup-id": "2025-08-23T06:26:00Z", "controller-id": "abc123"}
+
+        self.assertFalse(self.harness.charm.backup._pre_restore_checks(event=action_event))
+        action_event.fail.assert_called_once_with(
+            "Restore failed: Cluster or unit is in a blocking state"
+        )
+
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    def test_pre_restore_checks_ok__postgresql_relation_exists(self, s3_parameters):
+        self.harness.begin()
+        self.harness.add_relation("s3-parameters", "s3-integrator")
+        self.harness.add_relation("maas-db", "postgresql")
+        s3_parameters.return_value = {}, []
+        action_event = MagicMock(spec=ops.ActionEvent)
+        action_event.params = {"backup-id": "2025-08-23T06:26:00Z", "controller-id": "abc123"}
+
+        self.assertFalse(self.harness.charm.backup._pre_restore_checks(event=action_event))
+        action_event.fail.assert_called_once_with(
+            "Restore failed: PostgreSQL relation still exists, please run:\n"
+            "juju remove-relation maas-region postgresql\n"
+            "then retry this action",
+        )
+
+    @patch("backups.MAASBackups._run_restore")
+    @patch("backups.MAASBackups._list_backups")
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    @patch("backups.MAASBackups._pre_restore_checks")
+    def test_on_restore_backup_action(
+        self, pre_restore_checks, s3_params, list_backups, run_backup
+    ):
+        pre_restore_checks.return_value = True
+        s3_params.return_value = (
+            {
+                "bucket": "test-bucket",
+                "access-key": " test-access-key ",
+                "secret-key": " test-secret-key ",
+                "path": "/test-path",
+            },
+            [],
+        )
+        list_backups.return_value = [
+            {"id": "2025-08-23T06:26:00Z"},
+        ]
+        self.harness.begin()
+        self.harness.run_action(
+            "restore-backup", {"backup-id": "2025-08-23T06:26:00Z", "controller-id": "abc123"}
+        )
+        pre_restore_checks.assert_called_once()
+        s3_params.assert_called_once()
+        list_backups.assert_called_once()
+        run_backup.assert_called_once()
+        self.assertIsInstance(self.harness.charm.unit.status, ops.ActiveStatus)
+
+    @patch("backups.MAASBackups._pre_restore_checks")
+    def test_on_restore_backup_action__fail_pre_restore(self, pre_restore_checks):
+        pre_restore_checks.return_value = False
+        self.harness.begin()
+
+        action = self.harness.run_action(
+            "restore-backup", {"backup-id": "2025-08-23T06:26:00Z", "controller-id": "abc123"}
+        )
+        self.assertEqual(action.results, {})
+
+    @patch("backups.MAASBackups._list_backups")
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    @patch("backups.MAASBackups._pre_restore_checks")
+    def test_on_restore_backup_action__invalid_backup_id(
+        self, pre_restore_checks, s3_params, list_backups
+    ):
+        pre_restore_checks.return_value = True
+        s3_params.return_value = (
+            {
+                "bucket": "test-bucket",
+                "access-key": " test-access-key ",
+                "secret-key": " test-secret-key ",
+                "path": "/test-path",
+            },
+            [],
+        )
+        list_backups.return_value = []
+        backup_id = "2025-08-23T06:26:00Z"
+        self.harness.begin()
+
+        with self.assertRaises(ops.testing.ActionFailed) as e:
+            self.harness.run_action(
+                "restore-backup", {"backup-id": backup_id, "controller-id": ""}
+            )
+        self.assertEqual(e.exception.message, f"Invalid backup-id: {backup_id}")
+
+        pre_restore_checks.assert_called_once()
+        s3_params.assert_called_once()
+        list_backups.assert_called_once()
+
+    @patch("backups.MAASBackups._list_backups")
+    @patch("backups.MAASBackups._retrieve_s3_parameters")
+    @patch("backups.MAASBackups._pre_restore_checks")
+    def test_on_restore_backup_action__failed_backup_listing(
+        self, pre_restore_checks, s3_params, list_backups
+    ):
+        pre_restore_checks.return_value = True
+        s3_params.return_value = (
+            {
+                "bucket": "test-bucket",
+                "access-key": " test-access-key ",
+                "secret-key": " test-secret-key ",
+                "path": "/test-path",
+            },
+            [],
+        )
+        list_backups.side_effect = BotoCoreError()
+        self.harness.begin()
+
+        with self.assertRaises(ops.testing.ActionFailed) as e:
+            self.harness.run_action("restore-backup", {"backup-id": "", "controller-id": ""})
+        self.assertEqual(e.exception.message, "Failed to retrieve backups list")
+
+        pre_restore_checks.assert_called_once()
+        s3_params.assert_called_once()
+        list_backups.assert_called_once()
+
+    @patch("backups.MAASBackups._download_and_unarchive_from_s3")
+    @patch("backups.MAASBackups._update_controller_id")
+    @patch("backups.MAASBackups._check_backup_maas_version")
+    def test_run_restore(self, check_version, update_controller, unarchive):
+        backup_id = "2025-08-23T06:26:00Z"
+        controller_id = "abc123"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
+
+        self.harness.begin()
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.harness.charm.backup._run_restore(
+            event=event,
+            s3_parameters=s3_parameters,
+            backup_id=backup_id,
+            controller_id=controller_id,
+        )
+        check_version.assert_called_once()
+        update_controller.assert_called_once()
+        # specify both an image and a preseed call
+        unarchive.assert_any_call(
+            event=event,
+            s3_parameters=s3_parameters,
+            local_path=Path(SNAP_PATH_TO_PRESEEDS),
+            s3_path=os.path.join(s3_path, PRESEED_TAR_FILENAME).lstrip("/"),
+        )
+        unarchive.assert_any_call(
+            event=event,
+            s3_parameters=s3_parameters,
+            local_path=Path(SNAP_PATH_TO_IMAGES),
+            s3_path=os.path.join(s3_path, IMAGE_TAR_FILENAME).lstrip("/"),
+        )
+        event.fail.assert_not_called()
+
+    @patch("backups.MAASBackups._check_backup_maas_version")
+    def test_run_restore__fail_check_backup(self, check_version):
+        backup_id = "2025-08-23T06:26:00Z"
+        controller_id = "abc123"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        check_version.return_value = False
+
+        self.harness.begin()
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.harness.charm.backup._run_restore(
+            event=event,
+            s3_parameters=s3_parameters,
+            backup_id=backup_id,
+            controller_id=controller_id,
+        )
+        check_version.assert_called_once()
+        event.fail.assert_called_with(
+            "Failed to validate MAAS version from S3 backup. Check the juju debug-log for more detail."
+        )
+
+    @patch(
+        "charm.MaasRegionCharm.version",
+        new_callable=PropertyMock(return_value="3.6.2"),
+    )
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_run_restore__backup_version_ok(self, download_file, _version):
+        backup_id = "2025-08-23T06:26:00Z"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
+        file_content = {"maas_snap_version": "3.6.1"}
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            fake_file = MagicMock()
+            fake_file.read_text.return_value = json.dumps(file_content)
+            yield fake_file
+
+        download_file.side_effect = file_return
+
+        self.harness.begin()
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.assertTrue(
+            self.harness.charm.backup._check_backup_maas_version(
+                event=event,
+                s3_path=s3_path,
+                s3_parameters=s3_parameters,
+            )
+        )
+
+        download_file.assert_called_once()
+        event.fail.assert_not_called()
+
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_run_restore__no_metadata_file(self, download_file):
+        backup_id = "2025-08-23T06:26:00Z"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            yield None
+
+        download_file.side_effect = file_return
+
+        self.harness.begin()
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.assertFalse(
+            self.harness.charm.backup._check_backup_maas_version(
+                event=event,
+                s3_path=s3_path,
+                s3_parameters=s3_parameters,
+            )
+        )
+
+        download_file.assert_called_once()
+        event.fail.assert_called_with("Restore failed: Could not read metadata from s3")
+
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_run_restore__no_snap_metadata_version(self, download_file):
+        backup_id = "2025-08-23T06:26:00Z"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
+        file_content = {}
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            fake_file = MagicMock()
+            fake_file.read_text.return_value = json.dumps(file_content)
+            yield fake_file
+
+        download_file.side_effect = file_return
+
+        self.harness.begin()
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.assertFalse(
+            self.harness.charm.backup._check_backup_maas_version(
+                event=event,
+                s3_path=s3_path,
+                s3_parameters=s3_parameters,
+            )
+        )
+
+        download_file.assert_called_once()
+        event.fail.assert_called_with("Restore failed: Could not locate snap version in backup")
+
+    @patch("charm.MaasRegionCharm.version", new_callable=PropertyMock(return_value=None))
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_run_restore__no_snap_instance_version(self, download_file, _version):
+        backup_id = "2025-08-23T06:26:00Z"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
+        file_content = {"maas_snap_version": "3.6.1"}
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            fake_file = MagicMock()
+            fake_file.read_text.return_value = json.dumps(file_content)
+            yield fake_file
+
+        download_file.side_effect = file_return
+
+        self.harness.begin()
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.assertFalse(
+            self.harness.charm.backup._check_backup_maas_version(
+                event=event,
+                s3_path=s3_path,
+                s3_parameters=s3_parameters,
+            )
+        )
+
+        download_file.assert_called_once()
+        event.fail.assert_called_with(
+            "Restore failed: Could not locate snap version on running MAAS instance"
+        )
+
+    @patch(
+        "charm.MaasRegionCharm.version",
+        new_callable=PropertyMock(return_value="4.0.0"),
+    )
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_run_restore__snap_major_version_different(self, download_file, _version):
+        backup_id = "2025-08-23T06:26:00Z"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
+        file_content = {"maas_snap_version": "3.6.1"}
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            fake_file = MagicMock()
+            fake_file.read_text.return_value = json.dumps(file_content)
+            yield fake_file
+
+        download_file.side_effect = file_return
+
+        self.harness.begin()
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.assertFalse(
+            self.harness.charm.backup._check_backup_maas_version(
+                event=event,
+                s3_path=s3_path,
+                s3_parameters=s3_parameters,
+            )
+        )
+
+        download_file.assert_called_once()
+        event.fail.assert_called_with(
+            "Restore failed: MAAS major version does not match backup major version"
+        )
+
+    @patch(
+        "charm.MaasRegionCharm.version",
+        new_callable=PropertyMock(return_value="3.0.0"),
+    )
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_run_restore__snap_minor_version_different(self, download_file, _version):
+        backup_id = "2025-08-23T06:26:00Z"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
+        file_content = {"maas_snap_version": "3.6.1"}
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            fake_file = MagicMock()
+            fake_file.read_text.return_value = json.dumps(file_content)
+            yield fake_file
+
+        download_file.side_effect = file_return
+
+        self.harness.begin()
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.assertFalse(
+            self.harness.charm.backup._check_backup_maas_version(
+                event=event,
+                s3_path=s3_path,
+                s3_parameters=s3_parameters,
+            )
+        )
+
+        download_file.assert_called_once()
+        event.fail.assert_called_with(
+            "Restore failed: MAAS minor version does not match backup minor version"
+        )
+
+    @patch(
+        "charm.MaasRegionCharm.version",
+        new_callable=PropertyMock(return_value="3.6.0"),
+    )
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_run_restore__snap_point_version_small(self, download_file, _version):
+        backup_id = "2025-08-23T06:26:00Z"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
+        file_content = {"maas_snap_version": "3.6.1"}
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            fake_file = MagicMock()
+            fake_file.read_text.return_value = json.dumps(file_content)
+            yield fake_file
+
+        download_file.side_effect = file_return
+
+        self.harness.begin()
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.assertFalse(
+            self.harness.charm.backup._check_backup_maas_version(
+                event=event,
+                s3_path=s3_path,
+                s3_parameters=s3_parameters,
+            )
+        )
+
+        download_file.assert_called_once()
+        event.fail.assert_called_with(
+            "Restore failed: MAAS point version is not greater or equal to backup point version"
+        )
+
+    @patch("backups.MAASBackups._update_controller_id")
+    @patch("backups.MAASBackups._check_backup_maas_version")
+    def test_run_restore__fail_write_controller(self, check_version, update_controller):
+        backup_id = "2025-08-23T06:26:00Z"
+        controller_id = "abc123"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        check_version.return_value = True
+        update_controller.return_value = False
+
+        self.harness.begin()
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.harness.charm.backup._run_restore(
+            event=event,
+            s3_parameters=s3_parameters,
+            backup_id=backup_id,
+            controller_id=controller_id,
+        )
+        check_version.assert_called_once()
+        update_controller.assert_called_once()
+        event.fail.assert_called_with(
+            "Failed to update maas-region IDs from S3 backup. Check the juju debug-log for more detail."
+        )
+
+    @patch("pathlib.Path.write_text")
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_run_restore__controller_id_update_ok(self, download_file, _write_text):
+        backup_id = "2025-08-23T06:26:00Z"
+        controller_id = "abc123"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
+        file_content = f"{controller_id}\n"
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            fake_file = MagicMock()
+            fake_file.read_text.return_value = file_content
+            yield fake_file
+
+        download_file.side_effect = file_return
+
+        self.harness.begin()
+        self.harness.add_relation(MAAS_REGION_RELATION, self.harness.charm.app.name)
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.assertTrue(
+            self.harness.charm.backup._update_controller_id(
+                event=event,
+                s3_path=s3_path,
+                s3_parameters=s3_parameters,
+                controller_id=controller_id,
+            )
+        )
+
+        download_file.assert_called_once()
+        _write_text.assert_called_once_with(f"{controller_id}\n")
+        event.fail.assert_not_called()
+
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_run_restore__no_controllers_file(self, download_file):
+        backup_id = "2025-08-23T06:26:00Z"
+        controller_id = "abc123"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            yield None
+
+        download_file.side_effect = file_return
+
+        self.harness.begin()
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.assertFalse(
+            self.harness.charm.backup._update_controller_id(
+                event=event,
+                s3_path=s3_path,
+                s3_parameters=s3_parameters,
+                controller_id=controller_id,
+            )
+        )
+
+        download_file.assert_called_once()
+        event.fail.assert_called_with("Restore failed: Could not read controllers list from s3")
+
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_run_restore__no_region_relation(self, download_file):
+        backup_id = "2025-08-23T06:26:00Z"
+        controller_id = "abc123"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
+        file_content = f"{controller_id}\n"
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            fake_file = MagicMock()
+            fake_file.read_text.return_value = file_content
+            yield fake_file
+
+        download_file.side_effect = file_return
+
+        self.harness.begin()
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.assertFalse(
+            self.harness.charm.backup._update_controller_id(
+                event=event,
+                s3_path=s3_path,
+                s3_parameters=s3_parameters,
+                controller_id=controller_id,
+            )
+        )
+
+        download_file.assert_called_once()
+        event.fail.assert_called_with("Restore failed: Could not fetch MAAS regions list")
+
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_run_restore__incorrect_region_count(self, download_file):
+        backup_id = "2025-08-23T06:26:00Z"
+        controller_id = "abc123"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
+        file_content = f"{controller_id}\n"
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            fake_file = MagicMock()
+            fake_file.read_text.return_value = file_content
+            yield fake_file
+
+        download_file.side_effect = file_return
+
+        self.harness.begin()
+        relation_id = self.harness.add_relation(MAAS_REGION_RELATION, self.harness.charm.app.name)
+        self.harness.add_relation_unit(relation_id, "maas-region/0")
+        self.harness.add_relation_unit(relation_id, "maas-region/1")
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.assertFalse(
+            self.harness.charm.backup._update_controller_id(
+                event=event,
+                s3_path=s3_path,
+                s3_parameters=s3_parameters,
+                controller_id=controller_id,
+            )
+        )
+
+        download_file.assert_called_once()
+        event.fail.assert_called_with(
+            "Restore failed: "
+            "Restore failed: The number of maas-region units (2) "
+            "does not match the expected value from the backup (1)."
+        )
+
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_run_restore__invalid_controller_id(self, download_file):
+        backup_id = "2025-08-23T06:26:00Z"
+        controller_id = "abc123"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
+        file_content = "def456"
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            fake_file = MagicMock()
+            fake_file.read_text.return_value = file_content
+            yield fake_file
+
+        download_file.side_effect = file_return
+
+        self.harness.begin()
+        relation_id = self.harness.add_relation(MAAS_REGION_RELATION, self.harness.charm.app.name)
+        self.harness.add_relation_unit(relation_id, "maas-region/0")
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.assertFalse(
+            self.harness.charm.backup._update_controller_id(
+                event=event,
+                s3_path=s3_path,
+                s3_parameters=s3_parameters,
+                controller_id=controller_id,
+            )
+        )
+
+        download_file.assert_called_once()
+        event.fail.assert_called_with(
+            "Restore failed: "
+            f"{controller_id} is not a valid ID from the controllers list; "
+            f"should be one of {file_content}!",
+        )
+
+    @patch("backups.MAASBackups._download_and_unarchive_from_s3")
+    @patch("backups.MAASBackups._update_controller_id")
+    @patch("backups.MAASBackups._check_backup_maas_version")
+    def test_run_restore__fail_download_preseed(self, check_version, update_controller, unarchive):
+        backup_id = "2025-08-23T06:26:00Z"
+        controller_id = "abc123"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        check_version.return_value = True
+        update_controller.return_value = True
+        unarchive.side_effect = [False, False]
+
+        self.harness.begin()
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.harness.charm.backup._run_restore(
+            event=event,
+            s3_parameters=s3_parameters,
+            backup_id=backup_id,
+            controller_id=controller_id,
+        )
+        check_version.assert_called_once()
+        update_controller.assert_called_once()
+        event.fail.assert_called_with(
+            "Failed to download and extract preseeds from S3 backup. Check the juju debug-log for more detail."
+        )
+
+    @patch("backups.MAASBackups._download_and_unarchive_from_s3")
+    @patch("backups.MAASBackups._update_controller_id")
+    @patch("backups.MAASBackups._check_backup_maas_version")
+    def test_run_restore__fail_download_images(self, check_version, update_controller, unarchive):
+        backup_id = "2025-08-23T06:26:00Z"
+        controller_id = "abc123"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        check_version.return_value = True
+        update_controller.return_value = True
+        unarchive.side_effect = [True, False]
+
+        self.harness.begin()
+        event = MagicMock(spec=ops.ActionEvent)
+
+        self.harness.charm.backup._run_restore(
+            event=event,
+            s3_parameters=s3_parameters,
+            backup_id=backup_id,
+            controller_id=controller_id,
+        )
+        check_version.assert_called_once()
+        update_controller.assert_called_once()
+        event.fail.assert_called_with(
+            "Failed to download and extract images from S3 backup. Check the juju debug-log for more detail."
+        )
+
 
 class TestProgressPercentage(unittest.TestCase):
     @patch("backups.logger", spec=logging.Logger)
@@ -1158,6 +2429,12 @@ class TestProgressPercentage(unittest.TestCase):
         self.assertEqual(progress_percentage._last_percentage, 150)
         logger.info.assert_called_once_with("uploading test-label to s3: 150.00%")
 
+        # Test 100% due to empty file
+        logger.reset_mock()
+        progress_percentage._size = 0
+        progress_percentage(25)
+        logger.info.assert_called_once_with("uploading test-label to s3: 100.00% (empty file)")
+
     @patch("backups.logger", spec=logging.Logger)
     def test_download_progress_percentage(self, logger):
         # Test creation and initial call
@@ -1185,3 +2462,9 @@ class TestProgressPercentage(unittest.TestCase):
         progress_percentage(25)
         self.assertEqual(progress_percentage._last_percentage, 150)
         logger.info.assert_called_once_with("downloading test-label from s3: 150.00%")
+
+        # Test 100% due to empty file
+        logger.reset_mock()
+        progress_percentage._size = 0
+        progress_percentage(25)
+        logger.info.assert_called_once_with("downloading test-label from s3: 100.00% (empty file)")
