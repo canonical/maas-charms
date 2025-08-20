@@ -964,7 +964,7 @@ Juju Version: {self.charm.model.juju_version!s}
         ) as f:
             if f is None:
                 self._log_error(
-                    event, f"Could not read {file_type} list from s3", msg_prefix="Untar failed"
+                    event, f"Could not read {file_type} from s3", msg_prefix="Untar failed"
                 )
                 return False
 

@@ -3,10 +3,13 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import io
 import json
 import logging
 import os
 import subprocess
+import tarfile
+import tempfile
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
@@ -1297,8 +1300,8 @@ backup-id            | action      | status   | maas     | size       | controll
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
-        s3_path = "test-file.txt"
         bucket = "test-bucket"
+        s3_path = "test-file.txt"
         s3_parameters = {"bucket": bucket}
 
         mock_file = MagicMock()
@@ -1323,7 +1326,245 @@ backup-id            | action      | status   | maas     | size       | controll
             f"Download failed: Could not read content from {bucket}:{s3_path}"
         )
 
-    # TODO: FAILURE MODES FOR S3
+    @patch("backups.shutil.rmtree")
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_download_unarchive_from_s3(self, download_file, _rmtree):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        bucket = "test-bucket"
+        s3_path = "test-file.txt"
+        s3_parameters = {"bucket": bucket}
+        filename = "dummy.txt"
+        file_content = "test-data"
+
+        # In-memory dummy file
+        tar_bytes = io.BytesIO()
+        with tarfile.open(fileobj=tar_bytes, mode="w:gz") as tar:
+            data = file_content.encode()
+            info = tarfile.TarInfo(filename)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        tar_bytes.seek(0)
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            with tempfile.NamedTemporaryFile(delete=False) as f:
+                f.write(tar_bytes.read())
+                tmp_path = f.name
+            try:
+                yield tmp_path
+            finally:
+                os.remove(tmp_path)
+
+        download_file.side_effect = file_return
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_path = Path(tmpdir) / "local_path"
+            self.assertTrue(
+                self.harness.charm.backup._download_and_unarchive_from_s3(
+                    event=event,
+                    s3_path=s3_path,
+                    s3_parameters=s3_parameters,
+                    local_path=local_path,
+                )
+            )
+
+            extracted = local_path / filename
+            self.assertTrue(extracted.exists())
+            self.assertEqual(extracted.read_text(), file_content)
+
+        event.fail.assert_not_called()
+
+    @patch("backups.shutil.rmtree")
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_download_unarchive_from_s3__local_not_removed(self, download_file, _rmtree):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        s3_path = ""
+        s3_parameters = {}
+        file_type = "test"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_path = Path(tmpdir) / "local_path"
+            local_path.mkdir(parents=True)
+
+            self.assertFalse(
+                self.harness.charm.backup._download_and_unarchive_from_s3(
+                    event=event,
+                    s3_path=s3_path,
+                    s3_parameters=s3_parameters,
+                    local_path=local_path,
+                    file_type=file_type,
+                )
+            )
+
+        event.fail.assert_called_with(f"Untar failed: Could not remove existing {file_type}")
+
+    @patch("backups.shutil.rmtree")
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_download_unarchive_from_s3___no_file_on_s3(self, download_file, _rmtree):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        bucket = "test-bucket"
+        s3_path = "test-file.txt"
+        s3_parameters = {"bucket": bucket}
+        file_type = "test"
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            yield None
+
+        download_file.side_effect = file_return
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_path = Path(tmpdir) / "local_path"
+            self.assertFalse(
+                self.harness.charm.backup._download_and_unarchive_from_s3(
+                    event=event,
+                    s3_path=s3_path,
+                    s3_parameters=s3_parameters,
+                    local_path=local_path,
+                    file_type=file_type,
+                )
+            )
+
+        event.fail.assert_called_with(f"Untar failed: Could not read {file_type} from s3")
+
+    @patch("backups.shutil.rmtree")
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_download_unarchive_from_s3__empty_tarfile(self, download_file, _rmtree):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        bucket = "test-bucket"
+        s3_path = "test-file.txt"
+        s3_parameters = {"bucket": bucket}
+        file_type = "test"
+
+        # In-memory dummy file
+        tar_bytes = io.BytesIO()
+        with tarfile.open(fileobj=tar_bytes, mode="w:gz"):
+            pass
+        tar_bytes.seek(0)
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            with tempfile.NamedTemporaryFile(delete=False) as f:
+                f.write(tar_bytes.read())
+                tmp_path = f.name
+            try:
+                yield tmp_path
+            finally:
+                os.remove(tmp_path)
+
+        download_file.side_effect = file_return
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_path = Path(tmpdir) / "local_path"
+            self.assertFalse(
+                self.harness.charm.backup._download_and_unarchive_from_s3(
+                    event=event,
+                    s3_path=s3_path,
+                    s3_parameters=s3_parameters,
+                    local_path=local_path,
+                    file_type=file_type,
+                )
+            )
+
+        event.fail.assert_called_with(
+            f"Untar failed: {file_type.capitalize()} from S3 did not contain any files."
+        )
+
+    @patch("backups.tarfile.open")
+    @patch("backups.shutil.rmtree")
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_download_unarchive_from_s3__corrupted_tarfile(self, download_file, _rmtree, open_tar):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        bucket = "test-bucket"
+        s3_path = "test-file.txt"
+        s3_parameters = {"bucket": bucket}
+        file_content = "not a tar file"
+        file_type = "test"
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            fake_file = MagicMock()
+            fake_file.read_text.return_value = file_content
+            yield fake_file
+
+        download_file.side_effect = file_return
+
+        fake_tar = MagicMock()
+        fake_tar.__enter__.side_effect = tarfile.TarError("corrupt")
+        open_tar.return_value = fake_tar
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_path = Path(tmpdir) / "local_path"
+            self.assertFalse(
+                self.harness.charm.backup._download_and_unarchive_from_s3(
+                    event=event,
+                    s3_path=s3_path,
+                    s3_parameters=s3_parameters,
+                    local_path=local_path,
+                    file_type=file_type,
+                )
+            )
+
+        event.fail.assert_called_with(
+            f"Untar failed: {file_type.capitalize()} is not a valid .tar.gz file or is corrupted."
+        )
+
+    @patch("backups.tarfile.TarFile.extractall")
+    @patch("backups.shutil.rmtree")
+    @patch("backups.MAASBackups._download_file_from_s3")
+    def test_download_unarchive_from_s3__file_error(self, download_file, _rmtree, _extractall):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        bucket = "test-bucket"
+        s3_path = "test-file.txt"
+        s3_parameters = {"bucket": bucket}
+        file_type = "test"
+
+        # In-memory dummy file
+        tar_bytes = io.BytesIO()
+        with tarfile.open(fileobj=tar_bytes, mode="w:gz"):
+            pass
+        tar_bytes.seek(0)
+
+        @contextmanager
+        def file_return(*args, **kwargs):
+            with tempfile.NamedTemporaryFile(delete=False) as f:
+                f.write(tar_bytes.read())
+                tmp_path = f.name
+            try:
+                yield tmp_path
+            finally:
+                os.remove(tmp_path)
+
+        download_file.side_effect = file_return
+        _extractall.side_effect = OSError("disk error")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_path = Path(tmpdir) / "local_path"
+            self.assertFalse(
+                self.harness.charm.backup._download_and_unarchive_from_s3(
+                    event=event,
+                    s3_path=s3_path,
+                    s3_parameters=s3_parameters,
+                    local_path=local_path,
+                    file_type=file_type,
+                )
+            )
+
+        event.fail.assert_called_with(
+            f"Untar failed: Filesystem error while extracting {file_type}"
+        )
 
     @patch("backups.MAASBackups._retrieve_s3_parameters")
     def test_pre_restore_checks_ok(self, s3_parameters):
