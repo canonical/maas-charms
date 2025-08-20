@@ -953,7 +953,7 @@ Juju Version: {self.charm.model.juju_version!s}
         shutil.rmtree(local_path, ignore_errors=True)
         if local_path.exists():
             self._log_error(
-                event, f"Could not remove existing {file_type}", msg_prefix="Restore failed"
+                event, f"Could not remove existing {file_type}", msg_prefix="Untar failed"
             )
             return False
         local_path.mkdir(parents=True)
@@ -964,7 +964,7 @@ Juju Version: {self.charm.model.juju_version!s}
         ) as f:
             if f is None:
                 self._log_error(
-                    event, f"Could not read {file_type} list from s3", msg_prefix="Restore failed"
+                    event, f"Could not read {file_type} from s3", msg_prefix="Untar failed"
                 )
                 return False
 
@@ -978,7 +978,7 @@ Juju Version: {self.charm.model.juju_version!s}
                 self._log_error(
                     event,
                     f"{file_type.capitalize()} from S3 did not contain any files.",
-                    msg_prefix="Restore failed",
+                    msg_prefix="Untar failed",
                 )
                 return False
 
@@ -986,14 +986,14 @@ Juju Version: {self.charm.model.juju_version!s}
                 self._log_error(
                     event,
                     f"{file_type.capitalize()} is not a valid .tar.gz file or is corrupted.",
-                    msg_prefix="Restore failed",
+                    msg_prefix="Untar failed",
                     exc=e,
                 )
             except (FileNotFoundError, OSError) as e:
                 self._log_error(
                     event,
                     f"Filesystem error while extracting {file_type}",
-                    msg_prefix="Restore failed",
+                    msg_prefix="Untar failed",
                     exc=e,
                 )
 
@@ -1024,7 +1024,7 @@ Juju Version: {self.charm.model.juju_version!s}
                     self._log_error(
                         event,
                         f"Not enough free storage to download {s3_path}, required {size} but has {free}",
-                        msg_prefix="Restore failed",
+                        msg_prefix="Download failed",
                     )
 
                 client.download_file(
@@ -1043,7 +1043,7 @@ Juju Version: {self.charm.model.juju_version!s}
                 self._log_error(
                     event,
                     f"Could not find object in {bucket}:{s3_path}",
-                    msg_prefix="Restore failed",
+                    msg_prefix="Download failed",
                     exc=e,
                 )
 
@@ -1051,7 +1051,7 @@ Juju Version: {self.charm.model.juju_version!s}
                 self._log_error(
                     event,
                     f"Could not read object from {bucket}:{s3_path}",
-                    msg_prefix="Restore failed",
+                    msg_prefix="Download failed",
                     exc=e,
                 )
             yield None
@@ -1060,7 +1060,7 @@ Juju Version: {self.charm.model.juju_version!s}
             self._log_error(
                 event,
                 f"Could not read content from {bucket}:{s3_path}",
-                msg_prefix="Restore failed",
+                msg_prefix="Download failed",
                 exc=e,
             )
             yield None
