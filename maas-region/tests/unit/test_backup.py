@@ -3,6 +3,7 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import json
 import logging
 import subprocess
 import unittest
@@ -14,9 +15,15 @@ from boto3.exceptions import S3UploadFailedError
 from botocore.exceptions import BotoCoreError, ClientError, ConnectTimeoutError, SSLError
 
 from backups import (
+    CONTROLLER_LIST_FILENAME,
     FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
-    ProgressPercentage,
+    IMAGE_TAR_FILENAME,
+    METADATA_FILENAME,
+    PRESEED_TAR_FILENAME,
+    DownloadProgressPercentage,
     RegionsNotAvailableError,
+    UploadProgressPercentage,
+    as_size,
 )
 from charm import MaasRegionCharm
 
@@ -267,8 +274,8 @@ class TestMAASBackups(unittest.TestCase):
             """Storage bucket name: test-bucket
 Backups base path: /test-path/backup/
 
-backup-id            | action              | status   | backup-path
--------------------------------------------------------------------""",
+backup-id            | action      | status   | maas     | size       | controllers            | backup-path
+------------------------------------------------------------------------------------------------------------""",
         )
 
         # Test when there are backups.
@@ -276,19 +283,28 @@ backup-id            | action              | status   | backup-path
             (
                 "2023-01-01T09:00:00Z",
                 "full backup",
-                "failed: fake error",
+                "failed",
+                "3.6.0",
+                "772.56 MiB",
+                "abc123, def456, ghi789",
                 "a/b/c",
             ),
             (
                 "2023-01-01T10:00:00Z",
                 "full backup",
                 "finished",
+                "3.6.1",
+                "123.56 MiB",
+                "abc123, def456, ghi789",
                 "a/b/d",
             ),
             (
                 "2023-01-01T11:00:00Z",
-                "restore",
+                "full backup",
                 "finished",
+                "3.6.2",
+                "42.42 GiB",
+                "abc123, def456, ghi789",
                 "n/a",
             ),
         ]
@@ -299,11 +315,11 @@ backup-id            | action              | status   | backup-path
             """Storage bucket name: test-bucket
 Backups base path: /test-path/backup/
 
-backup-id            | action              | status   | backup-path
--------------------------------------------------------------------
-2023-01-01T09:00:00Z | full backup         | failed: fake error | a/b/c
-2023-01-01T10:00:00Z | full backup         | finished | a/b/d
-2023-01-01T11:00:00Z | restore             | finished | n/a""",
+backup-id            | action      | status   | maas     | size       | controllers            | backup-path
+------------------------------------------------------------------------------------------------------------
+2023-01-01T09:00:00Z | full backup | failed   | 3.6.0    | 772.56 MiB | abc123, def456, ghi789 | a/b/c
+2023-01-01T10:00:00Z | full backup | finished | 3.6.1    | 123.56 MiB | abc123, def456, ghi789 | a/b/d
+2023-01-01T11:00:00Z | full backup | finished | 3.6.2    | 42.42 GiB  | abc123, def456, ghi789 | n/a""",
         )
 
     @patch("backups.MAASBackups._retrieve_s3_parameters")
@@ -321,8 +337,20 @@ backup-id            | action              | status   | backup-path
             [],
         )
         list_backups.return_value = [
-            {"id": "2023-01-01T09:00:00Z"},
-            {"id": "2024-10-14T20:27:32Z"},
+            {
+                "id": "2024-10-14T20:27:32Z",
+                "size": "772.56 MiB",
+                "controller_ids": ["abc123", "def456", "ghi789"],
+                "completed": False,
+                "maas_version": "3.6.0",
+            },
+            {
+                "id": "2024-10-14T20:27:32Z",
+                "size": "42.42 GiB",
+                "controller_ids": ["abc123", "def456", "ghi789"],
+                "completed": True,
+                "maas_version": "3.6.1",
+            },
         ]
 
         self.assertEqual(
@@ -330,14 +358,15 @@ backup-id            | action              | status   | backup-path
             """Storage bucket name: test-bucket
 Backups base path: /test-path/backup/
 
-backup-id            | action              | status   | backup-path
--------------------------------------------------------------------
-2023-01-01T09:00:00Z | full backup         | finished | /test-path/backup/2023-01-01T09:00:00Z
-2024-10-14T20:27:32Z | full backup         | finished | /test-path/backup/2024-10-14T20:27:32Z""",
+backup-id            | action      | status   | maas     | size       | controllers            | backup-path
+------------------------------------------------------------------------------------------------------------
+2024-10-14T20:27:32Z | full backup | failed   | 3.6.0    | 772.56 MiB | abc123, def456, ghi789 | /test-path/backup/2024-10-14T20:27:32Z
+2024-10-14T20:27:32Z | full backup | finished | 3.6.1    | 42.42 GiB  | abc123, def456, ghi789 | /test-path/backup/2024-10-14T20:27:32Z""",
         )
 
+    @patch("backups.MAASBackups._get_backup_details")
     @patch("backups.MAASBackups._get_s3_session_client")
-    def test_list_backups(self, _client):
+    def test_list_backups(self, _client, _backup_details):
         self.harness.begin()
 
         s3_parameters = {
@@ -346,17 +375,98 @@ backup-id            | action              | status   | backup-path
             "secret-key": " test-secret-key ",
             "path": "/test-path",
         }
+        backup_details = {
+            "id": "123-456",
+            "size": "772.56 MiB",
+            "controller_ids": ["abc123", "def456", "ghi789"],
+            "completed": True,
+            "maas_version": "3.6.1",
+        }
         _client.return_value.get_paginator.return_value.paginate.return_value = [
             {"CommonPrefixes": [{"Prefix": "123-456"}]}
         ]
-        self.assertEqual(
-            self.harness.charm.backup._list_backups(s3_parameters), [{"id": "123-456"}]
-        )
+        _backup_details.return_value = backup_details
+        self.assertEqual(self.harness.charm.backup._list_backups(s3_parameters), [backup_details])
 
         # Test listing backups with TLS CA chain
         s3_parameters["tls-ca-chain"] = ["one", "two"]
+        self.assertEqual(self.harness.charm.backup._list_backups(s3_parameters), [backup_details])
+
+    @patch("backups.MAASBackups._get_s3_session_client")
+    @patch("backups.MAASBackups._read_content_from_s3")
+    def test_get_backup_details(self, read_content, _client):
+        self.harness.begin()
+
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
+        backup_id = "2024-10-14T20:27:32Z"
+        prefix = f"{s3_parameters['path'].lstrip('/')}/backup/{backup_id}"
+
+        _client.return_value.get_paginator.return_value.paginate.return_value = [
+            {
+                "Contents": [
+                    {"Key": f"{prefix}/{METADATA_FILENAME}", "Size": 1024},
+                    {"Key": f"{prefix}/{CONTROLLER_LIST_FILENAME}", "Size": 1024},
+                    {"Key": f"{prefix}/{IMAGE_TAR_FILENAME}", "Size": 1024},
+                    {"Key": f"{prefix}/{PRESEED_TAR_FILENAME}", "Size": 1024},
+                ]
+            }
+        ]
+        read_content.side_effect = [
+            json.dumps({"success": True, "maas_snap_version": "3.6.1"}),
+            "abc123\ndef456\nghi789\n",
+        ]
+
         self.assertEqual(
-            self.harness.charm.backup._list_backups(s3_parameters), [{"id": "123-456"}]
+            self.harness.charm.backup._get_backup_details(s3_parameters, backup_id),
+            {
+                "id": backup_id,
+                "size": as_size(4 * 1024),
+                "controller_ids": ["abc123", "def456", "ghi789"],
+                "completed": True,
+                "maas_version": "3.6.1",
+            },
+        )
+
+    @patch("backups.MAASBackups._get_s3_session_client")
+    @patch("backups.MAASBackups._read_content_from_s3")
+    def test_get_backup_details__no_s3_data(self, read_content, _client):
+        self.harness.begin()
+
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
+        backup_id = "2024-10-14T20:27:32Z"
+        prefix = f"{s3_parameters['path'].lstrip('/')}/backup/{backup_id}"
+
+        _client.return_value.get_paginator.return_value.paginate.return_value = [
+            {
+                "Contents": [
+                    {"Key": f"{prefix}/{METADATA_FILENAME}", "Size": 1024},
+                    {"Key": f"{prefix}/{CONTROLLER_LIST_FILENAME}", "Size": 1024},
+                    {"Key": f"{prefix}/{IMAGE_TAR_FILENAME}", "Size": 1024},
+                    {"Key": f"{prefix}/{PRESEED_TAR_FILENAME}", "Size": 1024},
+                ]
+            }
+        ]
+        read_content.return_value = ""
+
+        self.assertEqual(
+            self.harness.charm.backup._get_backup_details(s3_parameters, backup_id),
+            {
+                "id": backup_id,
+                "size": as_size(4 * 1024),
+                "controller_ids": [],
+                "completed": False,
+                "maas_version": "",
+            },
         )
 
     @patch("backups.MAASBackups._create_bucket_if_not_exists")
@@ -1034,11 +1144,13 @@ backup-id            | action              | status   | backup-path
 class TestProgressPercentage(unittest.TestCase):
     @patch("backups.logger", spec=logging.Logger)
     @patch("backups.os.path.getsize")
-    def test_progress_percentage(self, _getsize, logger):
+    def test_upload_progress_percentage(self, _getsize, logger):
         _getsize.return_value = 50
 
         # Test creation and initial call
-        progress_percentage = ProgressPercentage("test-file", "test-label", update_interval=10)
+        progress_percentage = UploadProgressPercentage(
+            "test-file", "test-label", update_interval=10
+        )
         progress_percentage(25)
         self.assertEqual(progress_percentage._last_percentage, 50)
         logger.info.assert_called_once_with("uploading test-label to s3: 50.00%")
@@ -1060,3 +1172,31 @@ class TestProgressPercentage(unittest.TestCase):
         progress_percentage(25)
         self.assertEqual(progress_percentage._last_percentage, 150)
         logger.info.assert_called_once_with("uploading test-label to s3: 150.00%")
+
+    @patch("backups.logger", spec=logging.Logger)
+    def test_download_progress_percentage(self, logger):
+        # Test creation and initial call
+        progress_percentage = DownloadProgressPercentage(
+            "test-file", "test-label", size=50, update_interval=10
+        )
+        progress_percentage(25)
+        self.assertEqual(progress_percentage._last_percentage, 50)
+        logger.info.assert_called_once_with("downloading test-label from s3: 50.00%")
+
+        # Test less than update interval
+        logger.reset_mock()
+        progress_percentage(1)
+        self.assertEqual(progress_percentage._last_percentage, 50)
+        logger.info.assert_not_called()
+
+        # Test cumulative progress greater than update interval
+        logger.reset_mock()
+        progress_percentage(24)
+        self.assertEqual(progress_percentage._last_percentage, 100)
+        logger.info.assert_called_once_with("downloading test-label from s3: 100.00%")
+
+        # Test over 100% - unlikely but possible!
+        logger.reset_mock()
+        progress_percentage(25)
+        self.assertEqual(progress_percentage._last_percentage, 150)
+        logger.info.assert_called_once_with("downloading test-label from s3: 150.00%")
