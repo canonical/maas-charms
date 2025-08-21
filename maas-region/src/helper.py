@@ -11,6 +11,7 @@ from pathlib import Path
 
 import yaml
 from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
+from tenacity import retry, stop_after_delay, wait_fixed
 
 MAAS_SNAP_NAME = "maas"
 MAAS_MODE = Path("/var/snap/maas/common/snap_mode")
@@ -232,6 +233,7 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
+    @retry(reraise=True, stop=stop_after_delay(60), wait=wait_fixed(5))
     def _login_as_admin(admin_username: str, maas_ip: str) -> None:
         """Login to MAAS as an admin user.
 
