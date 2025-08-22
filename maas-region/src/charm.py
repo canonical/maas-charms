@@ -18,7 +18,6 @@ from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_region.v0 import maas
 from charms.maas_site_manager_k8s.v0 import enroll
-from charms.operator_libs_linux.v2.snap import SnapError
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
 from ops.model import SecretNotFoundError
@@ -64,6 +63,18 @@ MAAS_ADMIN_SECRET_LABEL = "maas-admin"
 MAAS_ADMIN_SECRET_KEY = "maas-admin-secret-uri"
 
 MAAS_BACKUP_TYPES = ["full", "differential", "incremental"]
+
+
+class MAASInitializationError(Exception):
+    """Raised when failing to initialize MAAS."""
+
+    pass
+
+
+class PrometheusMetricsConfigurationError(Exception):
+    """Raised when failing to configure MAAS to expose Prometheus metrics."""
+
+    pass
 
 
 @trace_charm(
@@ -213,7 +224,7 @@ class MaasRegionCharm(ops.CharmBase):
         if bind := self.model.get_binding("juju-info"):
             return str(bind.network.bind_address)
         else:
-            raise ops.model.ModelError("Bind address not set in the model")
+            raise ops.model.ModelError("Bind address could not be retrieved")
 
     @property
     def maas_api_url(self) -> str:
@@ -301,23 +312,30 @@ class MaasRegionCharm(ops.CharmBase):
             self.set_peer_data(self.app, MAAS_ADMIN_SECRET_KEY, secret.id)
             return content
 
-    def _initialize_maas(self) -> bool:
+    def _initialize_maas(self) -> None:
         try:
             MaasHelper.setup_region(
                 self.maas_api_url, self.connection_string, self.get_operational_mode()
             )
-            # check maas_api_url existence in case MAAS isn't ready yet
-            if self.maas_api_url and self.unit.is_leader():
-                self._update_tls_config()
-                credentials = self._create_or_get_internal_admin()
+        except subprocess.CalledProcessError:
+            raise MAASInitializationError("Failed to initialize MAAS")
+
+        # check maas_api_url existence in case MAAS isn't ready yet
+        if self.maas_api_url and self.unit.is_leader():
+            self._update_tls_config()
+            credentials = self._create_or_get_internal_admin()
+            try:
                 MaasHelper.set_prometheus_metrics(
                     credentials["username"],
                     self.bind_address,
                     self.config["enable_prometheus_metrics"],  # type: ignore
                 )
-            return True
-        except subprocess.CalledProcessError:
-            return False
+            except subprocess.CalledProcessError:
+                raise PrometheusMetricsConfigurationError(
+                    "Failed to set Prometheus metrics config"
+                )
+
+        self.unit.status = ops.ActiveStatus()
 
     def _publish_tokens(self) -> bool:
         if self.maas_api_url and self.enrollment_token:
@@ -401,7 +419,12 @@ class MaasRegionCharm(ops.CharmBase):
         if secret_uri := self.get_peer_data(self.app, MAAS_ADMIN_SECRET_KEY):
             secret = self.model.get_secret(id=secret_uri)
             username = secret.get_content()["username"]
-            MaasHelper.set_prometheus_metrics(username, self.bind_address, enable)
+            try:
+                MaasHelper.set_prometheus_metrics(username, self.bind_address, enable)
+            except subprocess.CalledProcessError:
+                raise PrometheusMetricsConfigurationError(
+                    "Failed to set Prometheus metrics config"
+                )
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
@@ -450,7 +473,7 @@ class MaasRegionCharm(ops.CharmBase):
         elif not self.maas_api_url:
             ops.WaitingStatus("Waiting for MAAS initialization")
         else:
-            self.unit.status = ops.ActiveStatus()
+            logger.debug("no status change based on prerequisites")
 
     def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
         """Database is ready.
@@ -481,10 +504,7 @@ class MaasRegionCharm(ops.CharmBase):
             event (ops.RelationBrokenEvent): Event from ops framework
         """
         logger.info("Stopping MAAS because database is no longer available")
-        try:
-            MaasHelper.stop()
-        except SnapError as e:
-            logger.exception("An exception occurred when stopping maas. Reason: %s", e.message)
+        MaasHelper.set_running(False)
 
     def _on_api_endpoint_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
@@ -504,17 +524,6 @@ class MaasRegionCharm(ops.CharmBase):
         if self.unit.is_leader() and not self._publish_tokens():
             event.defer()
             return
-        try:
-            creds = self._create_or_get_internal_admin()
-            MaasHelper.set_prometheus_metrics(
-                creds["username"],
-                self.bind_address,
-                self.config["enable_prometheus_metrics"],  # type: ignore
-            )
-        except subprocess.CalledProcessError:
-            # If above failed, it's likely because things aren't ready yet.
-            # we will try again
-            pass
         if cur_mode := MaasHelper.get_maas_mode():
             if self.get_operational_mode() != cur_mode:
                 self._initialize_maas()

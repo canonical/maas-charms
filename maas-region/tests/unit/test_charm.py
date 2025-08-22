@@ -14,7 +14,6 @@ import ops.testing
 import yaml
 from charms.maas_region.v0 import maas
 from charms.maas_site_manager_k8s.v0 import enroll
-from charms.operator_libs_linux.v2.snap import SnapError
 
 from charm import (
     MAAS_API_RELATION,
@@ -107,14 +106,7 @@ class TestDBRelation(unittest.TestCase):
         self.harness.begin()
         db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
         self.harness.remove_relation(db_rel)
-        mock_helper.stop.assert_called_once()
-
-    @patch("charm.MaasHelper", autospec=True)
-    def test_database_removed_error(self, mock_helper):
-        mock_helper.stop.side_effect = SnapError()
-        self.harness.begin()
-        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
-        self.harness.remove_relation(db_rel)
+        mock_helper.set_running.assert_called_once_with(False)
 
 
 class TestMsmEnroll(unittest.TestCase):
@@ -290,23 +282,6 @@ class TestClusterUpdates(unittest.TestCase):
         self.assertEqual(data["api_url"], "http://10.0.0.10:5240/MAAS")
         self.assertEqual(data["regions"], f'["{socket.gethostname()}"]')
         self.assertIn("maas_secret_id", data)  # codespell:ignore
-
-    @patch("charm.MaasHelper", autospec=True)
-    def test_on_maas_cluster_changed_prometheus_enabled(self, mock_helper):
-        mock_helper.get_maas_mode.return_value = "region"
-        mock_helper.get_maas_secret.return_value = "very-secret"
-        mock_helper.create_admin_user.return_value = None
-        self.harness.set_leader(True)
-        self.harness.begin()
-        remote_app = "maas-agent"
-        self.harness.add_relation(
-            maas.DEFAULT_ENDPOINT_NAME,
-            remote_app,
-            unit_data={"unit": f"{remote_app}/0", "hostname": "some_hostname"},
-        )
-        mock_helper.set_prometheus_metrics.assert_called_with(
-            "maas-admin-internal", "10.0.0.10", True
-        )
 
     @patch(
         "charm.MaasRegionCharm.connection_string",
