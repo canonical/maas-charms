@@ -486,6 +486,7 @@ class MAASBackups(Object):
                 self.charm.unit.status = BlockedStatus(ANOTHER_CLUSTER_REPOSITORY_ERROR_MESSAGE)
         else:
             self._upload_content_to_s3(self.model.uuid, "model-uuid.txt", s3_parameters)
+            self.charm.unit.status = ActiveStatus()
 
     def _on_s3_credential_gone(self, event) -> None:
         if self.charm.is_blocked and self.charm.unit.status.message in S3_BLOCK_MESSAGES:
