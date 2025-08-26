@@ -1136,7 +1136,14 @@ backup-id            | action      | status   | maas     | size       | controll
 
         event = MagicMock(spec=ops.ActionEvent)
         s3_path = "test-file.txt"
-        s3_parameters = {"bucket": "test-bucket"}
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         size = 100
         free = 1000000
 
@@ -1176,7 +1183,14 @@ backup-id            | action      | status   | maas     | size       | controll
 
         event = MagicMock(spec=ops.ActionEvent)
         s3_path = "test-file.txt"
-        s3_parameters = {"bucket": "test-bucket"}
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         size = 100
         free = 10
 
@@ -1220,7 +1234,14 @@ backup-id            | action      | status   | maas     | size       | controll
         event = MagicMock(spec=ops.ActionEvent)
         s3_path = "test-file.txt"
         bucket = "test-bucket"
-        s3_parameters = {"bucket": bucket}
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
 
         mock_file = MagicMock()
         mock_file.__enter__.return_value.name = f"/tmp/{s3_path}"
@@ -1260,7 +1281,14 @@ backup-id            | action      | status   | maas     | size       | controll
         event = MagicMock(spec=ops.ActionEvent)
         s3_path = "test-file.txt"
         bucket = "test-bucket"
-        s3_parameters = {"bucket": bucket}
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
 
         mock_file = MagicMock()
         mock_file.__enter__.return_value.name = f"/tmp/{s3_path}"
@@ -1300,7 +1328,14 @@ backup-id            | action      | status   | maas     | size       | controll
         event = MagicMock(spec=ops.ActionEvent)
         bucket = "test-bucket"
         s3_path = "test-file.txt"
-        s3_parameters = {"bucket": bucket}
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
 
         mock_file = MagicMock()
         mock_file.__enter__.return_value.name = f"/tmp/{s3_path}"
@@ -1332,7 +1367,14 @@ backup-id            | action      | status   | maas     | size       | controll
         event = MagicMock(spec=ops.ActionEvent)
         bucket = "test-bucket"
         s3_path = "test-file.txt"
-        s3_parameters = {"bucket": bucket}
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         filename = "sample.txt"
         file_content = "test-data"
 
@@ -1381,7 +1423,15 @@ backup-id            | action      | status   | maas     | size       | controll
 
         event = MagicMock(spec=ops.ActionEvent)
         s3_path = ""
-        s3_parameters = {}
+        bucket="test-bucket"
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         file_type = "test"
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1398,7 +1448,7 @@ backup-id            | action      | status   | maas     | size       | controll
                 )
             )
 
-        event.fail.assert_called_with(f"Untar failed: Could not remove existing {file_type}")
+        event.fail.assert_called_with(f"Filepath operation failed: Could not remove existing {file_type}")
 
     @patch("backups.shutil.rmtree")
     @patch("backups.MAASBackups._download_file_from_s3")
@@ -1408,7 +1458,14 @@ backup-id            | action      | status   | maas     | size       | controll
         event = MagicMock(spec=ops.ActionEvent)
         bucket = "test-bucket"
         s3_path = "test-file.txt"
-        s3_parameters = {"bucket": bucket}
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         file_type = "test"
 
         @contextmanager
@@ -1439,7 +1496,14 @@ backup-id            | action      | status   | maas     | size       | controll
         event = MagicMock(spec=ops.ActionEvent)
         bucket = "test-bucket"
         s3_path = "test-file.txt"
-        s3_parameters = {"bucket": bucket}
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         file_type = "test"
 
         # In-memory sample file
@@ -1485,7 +1549,14 @@ backup-id            | action      | status   | maas     | size       | controll
         event = MagicMock(spec=ops.ActionEvent)
         bucket = "test-bucket"
         s3_path = "test-file.txt"
-        s3_parameters = {"bucket": bucket}
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         file_content = "not a tar file"
         file_type = "test"
 
@@ -1520,13 +1591,20 @@ backup-id            | action      | status   | maas     | size       | controll
     @patch("backups.tarfile.TarFile.extractall")
     @patch("backups.shutil.rmtree")
     @patch("backups.MAASBackups._download_file_from_s3")
-    def test_download_unarchive_from_s3__file_error(self, download_file, _rmtree, _extractall):
+    def test_download_unarchive_from_s3__os_error(self, download_file, _rmtree, _extractall):
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
         bucket = "test-bucket"
         s3_path = "test-file.txt"
-        s3_parameters = {"bucket": bucket}
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         file_type = "test"
 
         # In-memory sample file
