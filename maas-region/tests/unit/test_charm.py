@@ -62,6 +62,9 @@ class TestDBRelation(unittest.TestCase):
 
     @patch("charm.MaasHelper", autospec=True)
     def test_database_connected(self, mock_helper):
+        mock_helper.get_maas_details.return_value = {
+            "maas_url": f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS"
+        }
         self.harness.set_leader(True)
         self.harness.begin()
         db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")

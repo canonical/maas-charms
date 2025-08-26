@@ -318,22 +318,7 @@ class MaasRegionCharm(ops.CharmBase):
                 self.maas_api_url, self.connection_string, self.get_operational_mode()
             )
         except subprocess.CalledProcessError:
-            raise MAASInitializationError("Failed to initialize MAAS")
-
-        # check maas_api_url existence in case MAAS isn't ready yet
-        if self.maas_api_url and self.unit.is_leader():
-            self._update_tls_config()
-            credentials = self._create_or_get_internal_admin()
-            try:
-                MaasHelper.set_prometheus_metrics(
-                    credentials["username"],
-                    self.bind_address,
-                    self.config["enable_prometheus_metrics"],  # type: ignore
-                )
-            except subprocess.CalledProcessError:
-                raise PrometheusMetricsConfigurationError(
-                    "Failed to set Prometheus metrics config"
-                )
+            raise MAASInitializationError("Failed to initialize MAAS") from None
 
         self.unit.status = ops.ActiveStatus()
 
@@ -416,15 +401,13 @@ class MaasRegionCharm(ops.CharmBase):
                 MaasHelper.disable_tls()
 
     def _update_prometheus_config(self, enable: bool) -> None:
-        if secret_uri := self.get_peer_data(self.app, MAAS_ADMIN_SECRET_KEY):
-            secret = self.model.get_secret(id=secret_uri)
-            username = secret.get_content()["username"]
-            try:
-                MaasHelper.set_prometheus_metrics(username, self.bind_address, enable)
-            except subprocess.CalledProcessError:
-                raise PrometheusMetricsConfigurationError(
-                    "Failed to set Prometheus metrics config"
-                )
+        try:
+            credentials = self._create_or_get_internal_admin()
+            MaasHelper.set_prometheus_metrics(credentials["username"], self.bind_address, enable)
+        except subprocess.CalledProcessError:
+            raise PrometheusMetricsConfigurationError(
+                "Failed to set Prometheus metrics config"
+            ) from None
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
@@ -485,6 +468,7 @@ class MaasRegionCharm(ops.CharmBase):
         if self.connection_string:
             self.unit.status = ops.MaintenanceStatus("Initializing the MAAS database")
             self._initialize_maas()
+            self.on.config_changed.emit()
 
     def _on_maasdb_endpoints_changed(self, event: db.DatabaseEndpointsChangedEvent) -> None:
         """Update database DSN.
@@ -496,6 +480,7 @@ class MaasRegionCharm(ops.CharmBase):
         if self.connection_string:
             self.unit.status = ops.MaintenanceStatus("Updating database connection")
             self._initialize_maas()
+            self.on.config_changed.emit()
 
     def _on_maasdb_relation_broken(self, event: ops.RelationBrokenEvent):
         """Stop MAAS snap when database is no longer available.

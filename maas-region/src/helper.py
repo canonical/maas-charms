@@ -199,6 +199,7 @@ class MaasHelper:
         return subprocess.check_output(cmd).decode()
 
     @staticmethod
+    @retry(reraise=True, stop=stop_after_delay(5 * 60), wait=wait_fixed(30))
     def setup_region(maas_url: str, dsn: str, mode: str) -> None:
         """Initialize a Region controller.
 
@@ -226,7 +227,7 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
-    @retry(reraise=True, stop=stop_after_delay(60), wait=wait_fixed(5))
+    @retry(reraise=True, stop=stop_after_delay(5 * 60), wait=wait_fixed(10))
     def _login_as_admin(admin_username: str, maas_ip: str) -> None:
         """Login to MAAS as an admin user.
 
