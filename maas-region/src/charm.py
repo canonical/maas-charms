@@ -584,7 +584,7 @@ class MaasRegionCharm(ops.CharmBase):
             self._initialize_maas()
             if self.unit.is_leader():
                 self._publish_tokens()
-        if self.unit.is_leader():
+        if MaasHelper.get_maas_mode() and self.unit.is_leader():
             self._update_tls_config()
             self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
 
