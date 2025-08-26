@@ -15,7 +15,7 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
 from datetime import datetime
-from io import BytesIO
+from io import BytesIO, RawIOBase
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -119,7 +119,7 @@ class DownloadProgressPercentage(ProgressPercentage):
         self._direction = "from"
 
 
-class ProgressStreamPercentage:
+class ProgressStreamPercentage(RawIOBase):
     """Wrap the progress percentage for use in stream download/uploads."""
 
     def __init__(
@@ -130,12 +130,15 @@ class ProgressStreamPercentage:
         self._stream = stream
         self._progress_callback = progress_callback
 
-    def read(self, chunk: int = -1) -> bytes:
+    def read(self, count: int = -1) -> bytes:
         """Read the filestream one chunk at a time."""
-        chunk = self._stream.read(chunk)
+        chunk = self._stream.read(count)
         if chunk:
             self._progress_callback(len(chunk))
         return chunk
+
+    def readable(self) -> bool:
+        return True
 
     def __getattr__(self, name: str) -> Any:
         """Fetch the attributes of the underlying stream."""
@@ -997,7 +1000,7 @@ Juju Version: {self.charm.model.juju_version!s}
                 msg_prefix=msg_prefix,
                 exc=e,
             )
-        
+
         except (FileNotFoundError, OSError) as e:
             self._log_error(
                 event,
@@ -1013,6 +1016,9 @@ Juju Version: {self.charm.model.juju_version!s}
                 msg_prefix="Download failed",
                 exc=e,
             )
+
+        finally:
+            return
 
     def _download_and_unarchive_from_s3(
         self,
@@ -1072,10 +1078,6 @@ Juju Version: {self.charm.model.juju_version!s}
                 with tarfile.open(fileobj=wrapped_file, mode="r|gz") as tar:
                     tar.extractall(path=local_path)
 
-                # ensure we log the final 100%
-                if (seen := progress._seen_so_far) and (seen < size):
-                    progress(size - seen)
-
                 if local_path.exists() and any(local_path.iterdir()):
                     return True
 
@@ -1101,10 +1103,10 @@ Juju Version: {self.charm.model.juju_version!s}
 
         logger.info(f"Download request for {bucket}:{s3_path}")
 
-        with self._file_exceptions_handler(
-            event=event, s3_paramters=s3_parameters, s3_path=s3_path, operation="download"
-        ):
-            try:
+        try:
+            with self._file_exceptions_handler(
+                event=event, s3_paramters=s3_parameters, s3_path=s3_path, operation="download"
+            ):
                 with self._s3_client(s3_parameters) as client:
                     with tempfile.NamedTemporaryFile(
                         suffix=Path(s3_path).suffix, delete=False
@@ -1119,7 +1121,8 @@ Juju Version: {self.charm.model.juju_version!s}
                             f"Not enough free storage to download {s3_path}, required {size} but has {free}",
                             msg_prefix="Download failed",
                         )
-                        return False
+                        yield None
+                        return
 
                     client.download_file(
                         bucket,
@@ -1131,11 +1134,13 @@ Juju Version: {self.charm.model.juju_version!s}
                     )
 
                     yield Path(tmp_path)
-            finally:
-                if tmp_path and os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
+                    return
 
-        return None
+            yield None
+
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
     def _pathname(self, pathname: str) -> str:
         return Path(pathname).name.split(".")[0]
