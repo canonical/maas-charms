@@ -739,11 +739,7 @@ Juju Version: {self.charm.model.juju_version!s}
             controller_id=controller_id,
         )
 
-        event.log(
-            "Restore complete, please run:\n"
-            f"juju integrate {self.model.app.name} <postgresql_app_name>\n"
-            "to restart MAAS"
-        )
+        event.log("Region restore complete")
 
         self.charm.unit.status = ActiveStatus()
         event.set_results({"restore-status": "restore finished"})
