@@ -480,8 +480,7 @@ backup-id            | action      | status   | maas     | size       | controll
 
     @patch("backups.MAASBackups._create_bucket_if_not_exists")
     @patch("backups.MAASBackups._read_content_from_s3")
-    @patch("backups.MAASBackups._upload_content_to_s3")
-    def test_on_s3_credential_changed(self, upload_to_s3, read_content, create_bucket):
+    def test_on_s3_credential_changed(self, read_content, create_bucket):
         s3_parameters_dict = {
             "bucket": "test-bucket",
             "region": "test-region",
@@ -493,13 +492,12 @@ backup-id            | action      | status   | maas     | size       | controll
             "delete-older-than-days": "9999999",
         }
         read_content.return_value = None
-        self.harness.set_model_uuid("123-456")
         self.harness.begin()
         self.harness.set_leader(True)
         self.harness.add_relation("s3-parameters", "s3-integrator", app_data=s3_parameters_dict)
         s3_parameters_dict["delete-older-than-days"] = 9999999
         create_bucket.assert_called_once_with(s3_parameters_dict)
-        upload_to_s3.assert_called_once_with("123-456", "model-uuid.txt", s3_parameters_dict)
+        self.assertEqual(self.harness.charm.unit.status, ops.ActiveStatus())
 
     @patch("backups.MAASBackups._create_bucket_if_not_exists")
     def test_on_s3_credential_changed__missing_params(self, create_bucket):
@@ -552,53 +550,6 @@ backup-id            | action      | status   | maas     | size       | controll
             self.harness.charm.unit.status,
             ops.BlockedStatus(FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE),
         )
-
-    @patch("backups.MAASBackups._create_bucket_if_not_exists")
-    @patch("backups.MAASBackups._read_content_from_s3")
-    def test_on_s3_credential_changed__cannot_use_s3(self, read_content, create_bucket):
-        s3_parameters_dict = {
-            "bucket": "test-bucket",
-            "region": "test-region",
-            "endpoint": "https://s3.amazonaws.com",
-            "access-key": "test-access-key",
-            "secret-key": "test-secret-key",
-            "path": "/test-path",
-            "s3-uri-style": "host",
-            "delete-older-than-days": "9999999",
-        }
-        read_content.return_value = "wrong"
-        self.harness.begin()
-        self.harness.set_leader(True)
-        self.harness.add_relation("s3-parameters", "s3-integrator", app_data=s3_parameters_dict)
-        s3_parameters_dict["delete-older-than-days"] = 9999999
-        create_bucket.assert_called_once_with(s3_parameters_dict)
-        self.assertEqual(
-            self.harness.charm.unit.status,
-            ops.BlockedStatus("the S3 repository has backups from another cluster"),
-        )
-
-    @patch("backups.MAASBackups._create_bucket_if_not_exists")
-    @patch("backups.MAASBackups._read_content_from_s3")
-    @patch("backups.MAASBackups._upload_content_to_s3")
-    def test_on_s3_credential_changed__same_model(self, upload_to_s3, read_content, create_bucket):
-        s3_parameters_dict = {
-            "bucket": "test-bucket",
-            "region": "test-region",
-            "endpoint": "https://s3.amazonaws.com",
-            "access-key": "test-access-key",
-            "secret-key": "test-secret-key",
-            "path": "/test-path",
-            "s3-uri-style": "host",
-            "delete-older-than-days": "9999999",
-        }
-        read_content.return_value = "123-456"
-        self.harness.set_model_uuid("123-456")
-        self.harness.begin()
-        self.harness.set_leader(True)
-        self.harness.add_relation("s3-parameters", "s3-integrator", app_data=s3_parameters_dict)
-        s3_parameters_dict["delete-older-than-days"] = 9999999
-        create_bucket.assert_called_once_with(s3_parameters_dict)
-        upload_to_s3.assert_not_called()
 
     def test_on_s3_credential_gone(self):
         rel = self.harness.add_relation("s3-parameters", "s3-integrator")

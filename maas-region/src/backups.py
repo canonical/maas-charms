@@ -477,16 +477,7 @@ class MAASBackups(Object):
             self.charm.unit.status = BlockedStatus(FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE)
             return
 
-        # Check model uuid
-        if s3_model_uuid := self._read_content_from_s3("model-uuid.txt", s3_parameters):
-            if s3_model_uuid.strip() != self.model.uuid:
-                logger.debug(
-                    f"incompatible model-uuid s3={s3_model_uuid.strip()}, local={self.model.uuid}"
-                )
-                self.charm.unit.status = BlockedStatus(ANOTHER_CLUSTER_REPOSITORY_ERROR_MESSAGE)
-        else:
-            self._upload_content_to_s3(self.model.uuid, "model-uuid.txt", s3_parameters)
-            self.charm.unit.status = ActiveStatus()
+        self.charm.unit.status = ActiveStatus()
 
     def _on_s3_credential_gone(self, event) -> None:
         if self.charm.is_blocked and self.charm.unit.status.message in S3_BLOCK_MESSAGES:
