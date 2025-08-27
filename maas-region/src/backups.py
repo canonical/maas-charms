@@ -137,9 +137,6 @@ class ProgressStreamPercentage(RawIOBase):
             self._progress_callback(len(chunk))
         return chunk
 
-    def readable(self) -> bool:
-        return True
-
     def __getattr__(self, name: str) -> Any:
         """Fetch the attributes of the underlying stream."""
         return getattr(self._stream, name)
