@@ -15,9 +15,9 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
 from datetime import datetime
-from io import BytesIO, RawIOBase
+from io import BufferedReader, BytesIO
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, cast
 
 from boto3.session import Session
 from botocore import loaders
@@ -119,7 +119,7 @@ class DownloadProgressPercentage(ProgressPercentage):
         self._direction = "from"
 
 
-class ProgressStreamPercentage(RawIOBase):
+class ProgressStreamPercentage:
     """Wrap the progress percentage for use in stream download/uploads."""
 
     def __init__(
@@ -1072,7 +1072,7 @@ Juju Version: {self.charm.model.juju_version!s}
                     stream=file_content, progress_callback=progress
                 )
 
-                with tarfile.open(fileobj=wrapped_file, mode="r|gz") as tar:
+                with tarfile.open(fileobj=cast(BufferedReader, wrapped_file), mode="r|gz") as tar:
                     tar.extractall(path=local_path)
 
                 if local_path.exists() and any(local_path.iterdir()):
