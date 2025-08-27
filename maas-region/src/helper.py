@@ -52,6 +52,13 @@ class MaasHelper:
             maas.ensure(SnapState.Absent)
 
     @staticmethod
+    def stop() -> None:
+        """Stop snap."""
+        maas = SnapCache()[MAAS_SNAP_NAME]
+        if maas.present:
+            maas.stop()
+
+    @staticmethod
     def get_installed_version() -> str | None:
         """Get installed version.
 
@@ -102,7 +109,7 @@ class MaasHelper:
         """Get MAAS operation mode.
 
         Returns:
-            Union[str, None]: mode, or None if not initialized
+            Union[str, None]: mode, or None if not initialised
         """
         try:
             with MAAS_MODE.open() as file:
@@ -199,7 +206,6 @@ class MaasHelper:
         return subprocess.check_output(cmd).decode()
 
     @staticmethod
-    @retry(reraise=True, stop=stop_after_delay(5 * 60), wait=wait_fixed(30))
     def setup_region(maas_url: str, dsn: str, mode: str) -> None:
         """Initialize a Region controller.
 

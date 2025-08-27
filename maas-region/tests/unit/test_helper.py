@@ -47,6 +47,18 @@ class TestHelperSnapCache(unittest.TestCase):
         mock_maas.ensure.assert_not_called()
 
     @patch("helper.SnapCache", autospec=True)
+    def test_stop(self, mock_snap):
+        mock_maas = self._setup_snap(mock_snap, present=True)
+        MaasHelper.stop()
+        mock_maas.stop.assert_called_once()
+
+    @patch("helper.SnapCache", autospec=True)
+    def test_stop_not_present(self, mock_snap):
+        mock_maas = self._setup_snap(mock_snap, present=False)
+        MaasHelper.stop()
+        mock_maas.stop.assert_not_called()
+
+    @patch("helper.SnapCache", autospec=True)
     def test_get_installed_version(self, mock_snap):
         self._setup_snap(mock_snap, present=True, version="12345")
         self.assertEqual(MaasHelper.get_installed_version(), "12345")
