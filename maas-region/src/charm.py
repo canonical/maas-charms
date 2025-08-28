@@ -315,6 +315,7 @@ class MaasRegionCharm(ops.CharmBase):
                     self.bind_address,
                     self.config["enable_prometheus_metrics"],  # type: ignore
                 )
+            self.unit.status = ops.ActiveStatus()
             return True
         except subprocess.CalledProcessError:
             return False
@@ -450,7 +451,7 @@ class MaasRegionCharm(ops.CharmBase):
         elif not self.maas_api_url:
             ops.WaitingStatus("Waiting for MAAS initialization")
         else:
-            self.unit.status = ops.ActiveStatus()
+            logger.debug("no status change based on prerequisites")
 
     def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
         """Database is ready.
