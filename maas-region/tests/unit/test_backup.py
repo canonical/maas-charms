@@ -766,7 +766,7 @@ backup-id            | action      | status   | maas     | size       | controll
         _named_temporary_file.assert_called_once()
 
     @patch("tarfile.open")
-    @patch("charm.MaasRegionCharm._get_region_system_ids")
+    @patch("charm.MaasRegionCharm.get_region_system_ids")
     def test_backup_maas_to_s3(self, get_region_ids, _tar_open):
         event_mock = MagicMock(spec=ops.ActionEvent)
         client_mock = MagicMock()

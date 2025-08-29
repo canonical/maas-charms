@@ -586,15 +586,16 @@ Juju Version: {self.charm.model.juju_version!s}
         # get region ids
         event.log("Retrieving region ids from MAAS...")
         try:
-            regions = self.charm._get_region_system_ids()
+            regions = self.charm.get_region_system_ids()
         except subprocess.CalledProcessError:
             # Avoid logging the apikey of an Admin user
             raise RegionsNotAvailableError("Failed to retrieve region ids from the MAAS API")
 
+        sorted_regions = sorted(regions)
         # upload regions
         region_path = os.path.join(s3_path, CONTROLLER_LIST_FILENAME)
         with tempfile.NamedTemporaryFile(suffix=".txt") as f:
-            f.write("\n".join(regions).encode("utf-8"))
+            f.write("\n".join(sorted_regions).encode("utf-8"))
             f.flush()
             event.log("Uploading region ids to S3...")
             client.upload_file(
