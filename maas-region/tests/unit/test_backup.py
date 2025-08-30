@@ -766,7 +766,7 @@ backup-id            | action      | status   | maas     | size       | controll
         _named_temporary_file.assert_called_once()
 
     @patch("tarfile.open")
-    @patch("charm.MaasRegionCharm._get_region_system_ids")
+    @patch("charm.MaasRegionCharm.get_region_system_ids")
     def test_backup_maas_to_s3(self, get_region_ids, _tar_open):
         event_mock = MagicMock(spec=ops.ActionEvent)
         client_mock = MagicMock()
@@ -823,6 +823,27 @@ backup-id            | action      | status   | maas     | size       | controll
             s3_path="/test-path/test-dir",
         )
         client_mock.upload_file.assert_called()
+
+        # Test system ids are sorted.
+        get_region_ids.return_value = {"zzz", "aaa", "ccc"}
+        event_mock.reset_mock()
+        client_mock.reset_mock()
+        client_mock.upload_file.side_effect = None
+        mock_file = MagicMock()
+        with patch("tempfile.NamedTemporaryFile") as mock_temp_file:
+            mock_temp_file.return_value.__enter__.return_value = mock_file
+            self.harness.charm.backup._backup_maas_to_s3(
+                event=event_mock,
+                client=client_mock,
+                bucket_name="test-bucket",
+                s3_path="/test-path/test-dir",
+            )
+            # Assert the sorted ids are written to the file and upload is called with this filename
+            mock_file.write.assert_called_once_with(b"aaa\nccc\nzzz")
+            call_args = client_mock.upload_file.call_args_list[0]
+            self.assertEqual(call_args[0][0], mock_file.name)
+            self.assertEqual(call_args[0][1], "test-bucket")
+            self.assertEqual(call_args[0][2], "/test-path/test-dir/controllers.txt")
 
     @patch("tempfile.NamedTemporaryFile")
     @patch("backups.MAASBackups._get_s3_session_client")

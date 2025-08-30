@@ -540,7 +540,7 @@ class TestCharmActions(unittest.TestCase):
         admin.return_value = {"username": "admin"}
         get_regions.return_value = {"region-1", "region-2"}
         self.harness.begin()
-        regions = self.harness.charm._get_region_system_ids()
+        regions = self.harness.charm.get_region_system_ids()
         self.assertEqual(regions, {"region-1", "region-2"})
 
     @patch("charm.MaasRegionCharm._create_or_get_internal_admin")
@@ -548,7 +548,7 @@ class TestCharmActions(unittest.TestCase):
         admin.side_effect = subprocess.CalledProcessError(1, "maas")
         self.harness.begin()
         with self.assertRaises(subprocess.CalledProcessError):
-            self.harness.charm._get_region_system_ids()
+            self.harness.charm.get_region_system_ids()
 
     @patch(
         "charm.MaasRegionCharm.bind_address",
@@ -561,4 +561,4 @@ class TestCharmActions(unittest.TestCase):
         get_regions.side_effect = subprocess.CalledProcessError(1, "maas")
         self.harness.begin()
         with self.assertRaises(subprocess.CalledProcessError):
-            self.harness.charm._get_region_system_ids()
+            self.harness.charm.get_region_system_ids()
