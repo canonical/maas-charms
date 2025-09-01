@@ -330,7 +330,15 @@ class MaasRegionCharm(ops.CharmBase):
             return True
         return False
 
-    def _get_region_system_ids(self) -> set[str]:
+    def get_region_system_ids(self) -> set[str]:
+        """Get the system IDs of all regions in the MAAS cluster.
+
+        Returns:
+            set[str]: set of system IDs
+
+        Raises:
+            CalledProcessError: failed to get the regions
+        """
         credentials = self._create_or_get_internal_admin()
         return MaasHelper.get_regions(
             admin_username=credentials["username"], maas_ip=self.bind_address
