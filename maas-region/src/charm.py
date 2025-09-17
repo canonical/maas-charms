@@ -301,10 +301,12 @@ class MaasRegionCharm(ops.CharmBase):
             self.set_peer_data(self.app, MAAS_ADMIN_SECRET_KEY, secret.id)
             return content
 
-    def _initialize_maas(self) -> bool:
+    def _initialize_maas(self, override_mode: str | None = None) -> bool:
         try:
             MaasHelper.setup_region(
-                self.maas_api_url, self.connection_string, self.get_operational_mode()
+                self.maas_api_url,
+                self.connection_string,
+                override_mode or self.get_operational_mode(),
             )
             # check maas_api_url existence in case MAAS isn't ready yet
             if self.maas_api_url and self.unit.is_leader():
@@ -411,6 +413,14 @@ class MaasRegionCharm(ops.CharmBase):
             secret = self.model.get_secret(id=secret_uri)
             username = secret.get_content()["username"]
             MaasHelper.set_prometheus_metrics(username, self.bind_address, enable)
+
+    def _update_rack_mode(self, enable: bool) -> None:
+        target_mode = "region+rack" if enable else "region"
+
+        if cur_mode := MaasHelper.get_maas_mode():
+            if cur_mode != target_mode:
+                logger.debug(f"Setting MAAS to {target_mode} mode")
+                self._initialize_maas(override_mode=target_mode)
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
@@ -602,6 +612,8 @@ class MaasRegionCharm(ops.CharmBase):
         if self.unit.is_leader():
             self._update_tls_config()
             self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
+        # Region + rack mode
+        self._update_rack_mode(self.config["enable_rack_mode"])
 
     def _on_msm_created(self, event: ops.RelationCreatedEvent) -> None:
         """MAAS Site Manager relation established.

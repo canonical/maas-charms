@@ -49,8 +49,6 @@ peers:
 provides:
   api:
     interface: http
-  maas-region:
-    interface: maas_controller
   cos-agent:
     interface: cos_agent
 
@@ -177,4 +175,8 @@ config:
     enable_prometheus_metrics:
       default: true
       description: Whether to enable Prometheus metrics for MAAS
+      type: boolean
+    enable_rack_mode:
+      default: false
+      description: Whether to configure MAAS as running in region+rack mode
       type: boolean
