@@ -414,6 +414,19 @@ class TestClusterUpdates(unittest.TestCase):
             "maas-admin-internal", "10.0.0.10", False
         )
 
+    @patch("charm.MaasHelper", autospec=True)
+    def test_config_change_rack_mode_updated(self, mock_helper):
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        mock_helper.setup_region.return_value = None
+        mock_helper.create_admin_user.return_value = None
+        self.harness.set_leader(True)
+        self.harness.begin_with_initial_hooks()
+        self.harness.update_config({"enable_rack_mode": False})
+        mock_helper.setup_region.assert_called_once_with(
+            f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "postgres://", "region+rack"
+        )
+
 
 class TestCharmActions(unittest.TestCase):
     def setUp(self):
@@ -509,16 +522,14 @@ class TestCharmActions(unittest.TestCase):
         rel_id = self.harness.add_relation(
             MAAS_PEER_NAME,
             "maas-region",
-            unit_data={"system-name": json.dumps(socket.gethostname())},
+            unit_data={
+                "system-name": json.dumps(socket.gethostname()),
+                "rack-mode": json.dumps(True),
+            },
         )
         self.harness.add_relation_unit(rel_id, "maas-region/1")
         self.harness.update_relation_data(
             rel_id, "maas-region/1", {"system-name": json.dumps("other-host")}
-        )
-        self.harness.add_relation(
-            maas.DEFAULT_ENDPOINT_NAME,
-            "maas-agent",
-            unit_data={"unit": "maas-agent/0", "hostname": "agent-0"},
         )
         self.harness.begin()
         output = self.harness.run_action("list-controllers")
@@ -526,7 +537,7 @@ class TestCharmActions(unittest.TestCase):
             json.loads(output.results["controllers"]),
             {
                 "regions": sorted([socket.gethostname(), "other-host"]),
-                "agents": ["agent-0"],
+                "agents": [socket.gethostname()],
             },
         )
 

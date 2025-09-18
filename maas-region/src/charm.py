@@ -308,11 +308,6 @@ class MaasRegionCharm(ops.CharmBase):
                 self.connection_string,
                 self.get_operational_mode(),
             )
-            self.set_peer_data(
-                self.model.unit,
-                "rack-mode",
-                self.get_operational_mode() == "region+rack",
-            )
             # check maas_api_url existence in case MAAS isn't ready yet
             if self.maas_api_url and self.unit.is_leader():
                 self._update_tls_config()
@@ -358,16 +353,6 @@ class MaasRegionCharm(ops.CharmBase):
                 if addr := self.get_peer_data(u, "system-name"):
                     eps += [addr]
         return list(set(eps))
-
-    def _get_agents(self) -> list[str]:
-        agents = []
-        if peers := self.peers:
-            for u in peers.units:
-                if (self.get_peer_data(u, "rack-mode")) and (
-                    addr := self.get_peer_data(u, "system-name")
-                ):
-                    agents.append(addr)
-        return list(set(agents))
 
     def _update_ha_proxy(self) -> None:
         region_port = (
@@ -590,7 +575,6 @@ class MaasRegionCharm(ops.CharmBase):
                 "controllers": json.dumps(
                     {
                         "regions": sorted(self._get_regions()),
-                        "agents": sorted(self._get_agents()),
                     }
                 ),
             }
