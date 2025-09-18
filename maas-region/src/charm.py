@@ -354,6 +354,14 @@ class MaasRegionCharm(ops.CharmBase):
                     eps += [addr]
         return list(set(eps))
 
+    def _get_agents(self) -> list[str]:
+        agents = []
+        if peers := self.peers:
+            for u in peers.units:
+                if (self.get_peer_data(u, "rack-mode")) and (addr := self.get_peer_data(u, "system-name")):
+                    agents.append(addr)
+        return list(set(agents))
+
     def _update_ha_proxy(self) -> None:
         region_port = (
             MAAS_HTTPS_PORT if self.config["tls_mode"] == "passthrough" else MAAS_HTTP_PORT
@@ -421,6 +429,7 @@ class MaasRegionCharm(ops.CharmBase):
             if cur_mode != target_mode:
                 logger.debug(f"Setting MAAS to {target_mode} mode")
                 self._initialize_maas()
+                self.set_peer_data(self.model.unit, "rack-mode", self.get_operational_mode() == "region+rack")
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
@@ -575,7 +584,7 @@ class MaasRegionCharm(ops.CharmBase):
                 "controllers": json.dumps(
                     {
                         "regions": sorted(self._get_regions()),
-                        "agents": sorted(self.maas_region.gather_rack_units().keys()),
+                        "agents": sorted(self._get_agents()),
                     }
                 ),
             }

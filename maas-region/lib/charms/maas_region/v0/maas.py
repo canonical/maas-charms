@@ -261,23 +261,3 @@ class MaasRegionProvider(Object):
                     maas_secret_id=secret_id,
                 )
                 local_app_databag.dump(relation.data[self.model.app])
-
-    def gather_rack_units(self) -> dict[str, ops.model.Unit]:
-        """Get a map of Rack units.
-
-        Returns:
-            dict[str, ops.model.Unit]: map of units
-        """
-        data: dict[str, ops.model.Unit] = {}
-        for relation in self._relations:
-            if not relation.app:
-                continue
-            for worker_unit in relation.units:
-                try:
-                    worker_data = MaasRequirerUnitData.load(relation.data[worker_unit])  # type: ignore
-                    hostname = worker_data.hostname
-                except TypeError as e:
-                    log.debug(f"invalid databag contents: {e}")
-                    continue
-                data[hostname] = worker_unit
-        return data
