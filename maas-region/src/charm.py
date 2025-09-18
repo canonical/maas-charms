@@ -308,6 +308,11 @@ class MaasRegionCharm(ops.CharmBase):
                 self.connection_string,
                 self.get_operational_mode(),
             )
+            self.set_peer_data(
+                self.model.unit,
+                "rack-mode",
+                self.get_operational_mode() == "region+rack",
+            )
             # check maas_api_url existence in case MAAS isn't ready yet
             if self.maas_api_url and self.unit.is_leader():
                 self._update_tls_config()
@@ -358,7 +363,9 @@ class MaasRegionCharm(ops.CharmBase):
         agents = []
         if peers := self.peers:
             for u in peers.units:
-                if (self.get_peer_data(u, "rack-mode")) and (addr := self.get_peer_data(u, "system-name")):
+                if (self.get_peer_data(u, "rack-mode")) and (
+                    addr := self.get_peer_data(u, "system-name")
+                ):
                     agents.append(addr)
         return list(set(agents))
 
@@ -429,7 +436,6 @@ class MaasRegionCharm(ops.CharmBase):
             if cur_mode != target_mode:
                 logger.debug(f"Setting MAAS to {target_mode} mode")
                 self._initialize_maas()
-                self.set_peer_data(self.model.unit, "rack-mode", self.get_operational_mode() == "region+rack")
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
