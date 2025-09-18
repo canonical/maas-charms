@@ -39,6 +39,7 @@ MAAS_PROXY_PORT = 80
 MAAS_HTTP_PORT = 5240
 MAAS_HTTPS_PORT = 5443
 MAAS_REGION_METRICS_PORT = 5239
+MAAS_AGENT_METRICS_PORT = 5248
 MAAS_CLUSTER_METRICS_PORT = MAAS_HTTP_PORT
 
 MAAS_REGION_PORTS = [
@@ -54,6 +55,7 @@ MAAS_REGION_PORTS = [
     ops.Port("tcp", MAAS_HTTP_PORT),  # API
     ops.Port("tcp", MAAS_HTTPS_PORT),  # API
     ops.Port("tcp", MAAS_REGION_METRICS_PORT),
+    ops.Port("tcp", MAAS_AGENT_METRICS_PORT),
     *[ops.Port("tcp", p) for p in range(5241, 5247 + 1)],  # Internal services
     *[ops.Port("tcp", p) for p in range(5250, 5270 + 1)],  # RPC Workers
     *[ops.Port("tcp", p) for p in range(5270, 5274 + 1)],  # Temporal
@@ -138,6 +140,8 @@ class MaasRegionCharm(ops.CharmBase):
             metrics_endpoints=[
                 {"path": "/metrics", "port": MAAS_REGION_METRICS_PORT},
                 {"path": "/MAAS/metrics", "port": MAAS_CLUSTER_METRICS_PORT},
+                {"path": "/metrics/agent", "port": MAAS_AGENT_METRICS_PORT},
+                {"path": "/metrics/temporal", "port": MAAS_HTTP_PORT},
             ],
             metrics_rules_dir="./src/prometheus",
             logs_rules_dir="./src/loki",
