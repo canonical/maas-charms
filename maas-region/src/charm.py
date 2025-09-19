@@ -57,7 +57,6 @@ MAAS_REGION_PORTS = [
     ops.Port("tcp", MAAS_HTTP_PORT),  # API
     ops.Port("tcp", MAAS_HTTPS_PORT),  # API
     ops.Port("tcp", MAAS_REGION_METRICS_PORT),
-    ops.Port("tcp", MAAS_AGENT_METRICS_PORT),
     *[ops.Port("tcp", p) for p in range(5241, 5247 + 1)],  # Internal services
     *[ops.Port("tcp", p) for p in range(5250, 5270 + 1)],  # RPC Workers
     *[ops.Port("tcp", p) for p in range(5270, 5274 + 1)],  # Temporal
@@ -136,23 +135,18 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(api_events.relation_departed, self._on_api_endpoint_changed)
         self.framework.observe(api_events.relation_broken, self._on_api_endpoint_changed)
 
-        # COS
-        metrics_endpoints = [
-            {"path": "/metrics", "port": MAAS_REGION_METRICS_PORT},
-            {"path": "/MAAS/metrics", "port": MAAS_CLUSTER_METRICS_PORT},
-            {"path": "/metrics/temporal", "port": MAAS_HTTP_PORT},
-        ]
-        if self.config["enable_rack_mode"]:
-            metrics_endpoints.append(
-                {"path": MAAS_AGENT_METRICS_ENDPOINT, "port": MAAS_AGENT_METRICS_PORT}
-            )
         self._grafana_agent = cos_agent.COSAgentProvider(
             self,
-            metrics_endpoints=metrics_endpoints,
+            metrics_endpoints=[
+                {"path": "/metrics", "port": MAAS_REGION_METRICS_PORT},
+                {"path": "/MAAS/metrics", "port": MAAS_CLUSTER_METRICS_PORT},
+                {"path": "/metrics/temporal", "port": MAAS_HTTP_PORT},
+            ],
             metrics_rules_dir="./src/prometheus",
             logs_rules_dir="./src/loki",
             dashboard_dirs=["./src/grafana_dashboards"],
         )
+        self._toggle_agent_metric_endpoints(bool(self.config["enable_rack_mode"]))
         self.tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
         self.charm_tracing_endpoint, _ = charm_tracing_config(self.tracing, None)
 
@@ -278,11 +272,27 @@ class MaasRegionCharm(ops.CharmBase):
             bool: True if successful
         """
         try:
-            self.unit.set_ports(*MAAS_REGION_PORTS)
+            ports = MAAS_REGION_PORTS
+            # Optional port
+            if self.config["enable_rack_mode"]:
+                ports.append(ops.Port("tcp", MAAS_AGENT_METRICS_PORT))
+            self.unit.set_ports(*ports)
         except ops.model.ModelError:
             logger.exception("failed to open service ports")
             return False
         return True
+
+    def _toggle_agent_metric_endpoints(self, add_rack_metric_endpoints: bool):
+        if add_rack_metric_endpoints:
+            self._grafana_agent._metrics_endpoints.append(
+                {"path": MAAS_AGENT_METRICS_ENDPOINT, "port": MAAS_AGENT_METRICS_PORT}
+            )
+        else:
+            self._grafana_agent._metrics_endpoints = [
+                endpoint
+                for endpoint in self._grafana_agent._metrics_endpoints
+                if endpoint["path"] != MAAS_AGENT_METRICS_ENDPOINT
+            ]
 
     def _create_or_get_internal_admin(self) -> dict[str, str]:
         """Create an internal admin user if one does not already exist.
@@ -604,16 +614,9 @@ class MaasRegionCharm(ops.CharmBase):
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
         # configure metrics endpoints
-        if self.config["enable_rack_mode"]:
-            self._grafana_agent._metrics_endpoints.append(
-                {"path": MAAS_AGENT_METRICS_ENDPOINT, "port": MAAS_AGENT_METRICS_PORT}
-            )
-        else:
-            self._grafana_agent._metrics_endpoints = [
-                endpoint
-                for endpoint in self._grafana_agent._metrics_endpoints
-                if endpoint["path"] != MAAS_AGENT_METRICS_ENDPOINT
-            ]
+        self._toggle_agent_metric_endpoints(bool(self.config["enable_rack_mode"]))
+        # open/close the relevant ports
+        self._setup_network()
 
         self._update_ha_proxy()
         maas_details = MaasHelper.get_maas_details()
