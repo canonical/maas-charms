@@ -142,7 +142,6 @@ class MaasRegionCharm(ops.CharmBase):
         # Charm actions
         self.framework.observe(self.on.create_admin_action, self._on_create_admin_action)
         self.framework.observe(self.on.get_api_key_action, self._on_get_api_key_action)
-        self.framework.observe(self.on.list_controllers_action, self._on_list_controllers_action)
         self.framework.observe(self.on.get_api_endpoint_action, self._on_get_api_endpoint_action)
 
         # Charm configuration
@@ -210,15 +209,6 @@ class MaasRegionCharm(ops.CharmBase):
             if unit and (addr := relation.data[unit].get("public-address")):
                 return f"http://{addr}:{MAAS_PROXY_PORT}/MAAS"
         return f"http://{self.bind_address}:{MAAS_HTTP_PORT}/MAAS"
-
-    @property
-    def maas_id(self) -> str | None:
-        """Reports the MAAS ID.
-
-        Returns:
-            str: the ID, or None if not initialized
-        """
-        return MaasHelper.get_maas_id()
 
     def get_operational_mode(self) -> str:
         """Get expected MAAS mode.
@@ -317,14 +307,6 @@ class MaasRegionCharm(ops.CharmBase):
             admin_username=credentials["username"], maas_ip=self.bind_address
         )
 
-    def _get_regions(self) -> list[str]:
-        eps = [socket.gethostname()]
-        if peers := self.peers:
-            for u in peers.units:
-                if addr := self.get_peer_data(u, "system-name"):
-                    eps += [addr]
-        return list(set(eps))
-
     def _update_ha_proxy(self) -> None:
         region_port = (
             MAAS_HTTPS_PORT if self.config["tls_mode"] == "passthrough" else MAAS_HTTP_PORT
@@ -384,14 +366,6 @@ class MaasRegionCharm(ops.CharmBase):
             secret = self.model.get_secret(id=secret_uri)
             username = secret.get_content()["username"]
             MaasHelper.set_prometheus_metrics(username, self.bind_address, enable)
-
-    def _update_rack_mode(self, enable: bool) -> None:
-        target_mode = "region+rack" if enable else "region"
-
-        if cur_mode := MaasHelper.get_maas_mode():
-            if cur_mode != target_mode:
-                logger.debug(f"Setting MAAS to {target_mode} mode")
-                self._initialize_maas()
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
@@ -515,18 +489,6 @@ class MaasRegionCharm(ops.CharmBase):
         except subprocess.CalledProcessError:
             event.fail(f"Failed to get key for user {username}")
 
-    def _on_list_controllers_action(self, event: ops.ActionEvent):
-        """Handle the list-controllers action."""
-        event.set_results(
-            {
-                "controllers": json.dumps(
-                    {
-                        "regions": sorted(self._get_regions()),
-                    }
-                ),
-            }
-        )
-
     def _on_get_api_endpoint_action(self, event: ops.ActionEvent):
         """Handle the get-api-endpoint action."""
         if url := self.maas_api_url:
@@ -551,14 +513,14 @@ class MaasRegionCharm(ops.CharmBase):
                 )
         self._update_ha_proxy()
         maas_details = MaasHelper.get_maas_details()
-        if self.connection_string and maas_details.get("maas_url") != self.maas_api_url:
+        # the MAAS initialisation details have changed
+        if (self.connection_string and maas_details.get("maas_url") != self.maas_api_url) or (
+            MaasHelper.get_maas_mode() != self.get_operational_mode()
+        ):
             self._initialize_maas()
         if self.unit.is_leader():
             self._update_tls_config()
             self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
-
-        # Region + rack mode
-        self._update_rack_mode(self.config["enable_rack_mode"])  # type: ignore
 
     def _on_msm_created(self, event: ops.RelationCreatedEvent) -> None:
         """MAAS Site Manager relation established.

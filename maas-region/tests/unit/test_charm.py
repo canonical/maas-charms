@@ -438,38 +438,6 @@ class TestCharmActions(unittest.TestCase):
         output = self.harness.run_action("get-api-endpoint")
         self.assertEqual(output.results["api-url"], "http://10.0.0.10:5240/MAAS")
 
-    def test_list_controllers_action_solo(self):
-        self.harness.set_leader(True)
-        self.harness.begin()
-        output = self.harness.run_action("list-controllers")
-        self.assertEqual(
-            json.loads(output.results["controllers"]),
-            {"regions": [socket.gethostname()]},
-        )
-
-    def test_list_controllers_action_complex(self):
-        self.harness.set_leader(True)
-        rel_id = self.harness.add_relation(
-            MAAS_PEER_NAME,
-            "maas-region",
-            unit_data={
-                "system-name": json.dumps(socket.gethostname()),
-                "rack-mode": json.dumps(True),
-            },
-        )
-        self.harness.add_relation_unit(rel_id, "maas-region/1")
-        self.harness.update_relation_data(
-            rel_id, "maas-region/1", {"system-name": json.dumps("other-host")}
-        )
-        self.harness.begin()
-        output = self.harness.run_action("list-controllers")
-        self.assertEqual(
-            json.loads(output.results["controllers"]),
-            {
-                "regions": sorted([socket.gethostname(), "other-host"]),
-            },
-        )
-
     @patch(
         "charm.MaasRegionCharm.bind_address",
         new_callable=PropertyMock(return_value="10.0.0.10"),

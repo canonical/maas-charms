@@ -78,8 +78,6 @@ actions:
       username:
         type: string
         description: Username for the new account.
-  list-controllers:
-    description: List charmed MAAS controllers
   get-api-endpoint:
     description: Get MAAS API URL
   create-backup:
