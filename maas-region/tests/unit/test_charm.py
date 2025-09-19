@@ -12,7 +12,6 @@ from unittest.mock import PropertyMock, call, patch
 import ops
 import ops.testing
 import yaml
-from charms.maas_region.v0 import maas
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 
