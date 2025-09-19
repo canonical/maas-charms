@@ -16,7 +16,6 @@ import ops
 import yaml
 from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
-from charms.maas_region.v0 import maas
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
@@ -70,7 +69,6 @@ MAAS_BACKUP_TYPES = ["full", "differential", "incremental"]
     tracing_endpoint="charm_tracing_endpoint",
     extra_types=[
         cos_agent.COSAgentProvider,
-        maas.MaasRegionProvider,
         db.DatabaseRequires,
         MaasHelper,
         MAASBackups,
@@ -96,14 +94,6 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.start, self._on_start)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
-
-        # MAAS Region
-        self.maas_region = maas.MaasRegionProvider(self)
-        maas_region_events = self.on[maas.DEFAULT_ENDPOINT_NAME]
-        self.framework.observe(maas_region_events.relation_joined, self._on_maas_cluster_changed)
-        self.framework.observe(maas_region_events.relation_changed, self._on_maas_cluster_changed)
-        self.framework.observe(maas_region_events.relation_departed, self._on_maas_cluster_changed)
-        self.framework.observe(maas_region_events.relation_broken, self._on_maas_cluster_changed)
 
         maas_peer_events = self.on[MAAS_PEER_NAME]
         self.framework.observe(maas_peer_events.relation_joined, self._on_maas_peer_changed)
@@ -193,15 +183,6 @@ class MaasRegionCharm(ops.CharmBase):
             str: the version, or None if not installed
         """
         return MaasHelper.get_installed_version()
-
-    @property
-    def enrollment_token(self) -> str | None:
-        """Reports the enrollment token.
-
-        Returns:
-            str: the token, or None if not available
-        """
-        return MaasHelper.get_maas_secret()
 
     @property
     def bind_address(self) -> str:
@@ -321,16 +302,6 @@ class MaasRegionCharm(ops.CharmBase):
             return True
         except subprocess.CalledProcessError:
             return False
-
-    def _publish_tokens(self) -> bool:
-        if self.maas_api_url and self.enrollment_token:
-            self.maas_region.publish_enroll_token(
-                self.maas_api_url,
-                self._get_regions(),
-                self.enrollment_token,
-            )
-            return True
-        return False
 
     def get_region_system_ids(self) -> set[str]:
         """Get the system IDs of all regions in the MAAS cluster.
@@ -509,34 +480,10 @@ class MaasRegionCharm(ops.CharmBase):
         logger.info(event)
         self._update_ha_proxy()
         self._initialize_maas()
-        if self.unit.is_leader():
-            self._publish_tokens()
 
     def _on_maas_peer_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
         self.set_peer_data(self.unit, "system-name", socket.gethostname())
-        if self.unit.is_leader():
-            self._publish_tokens()
-
-    def _on_maas_cluster_changed(self, event: ops.RelationEvent) -> None:
-        logger.info(event)
-        if self.unit.is_leader() and not self._publish_tokens():
-            event.defer()
-            return
-        try:
-            creds = self._create_or_get_internal_admin()
-            MaasHelper.set_prometheus_metrics(
-                creds["username"],
-                self.bind_address,
-                self.config["enable_prometheus_metrics"],  # type: ignore
-            )
-        except subprocess.CalledProcessError:
-            # If above failed, it's likely because things aren't ready yet.
-            # we will try again
-            pass
-        if cur_mode := MaasHelper.get_maas_mode():
-            if self.get_operational_mode() != cur_mode:
-                self._initialize_maas()
 
     def _on_create_admin_action(self, event: ops.ActionEvent):
         """Handle the create-admin action.
@@ -606,8 +553,6 @@ class MaasRegionCharm(ops.CharmBase):
         maas_details = MaasHelper.get_maas_details()
         if self.connection_string and maas_details.get("maas_url") != self.maas_api_url:
             self._initialize_maas()
-            if self.unit.is_leader():
-                self._publish_tokens()
         if self.unit.is_leader():
             self._update_tls_config()
             self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore

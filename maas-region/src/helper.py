@@ -395,16 +395,3 @@ class MaasHelper:
         """
         cmd = ["/snap/bin/maas", "msm", "enrol", "--yes", token]
         subprocess.check_call(cmd)
-
-    @staticmethod
-    def get_maas_secret() -> str | None:
-        """Get MAAS enrollment secret token.
-
-        Returns:
-            Union[str, None]: token, or None if not present
-        """
-        try:
-            with MAAS_SECRET.open() as file:
-                return file.readline().strip()
-        except OSError:
-            return None

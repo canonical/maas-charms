@@ -275,7 +275,6 @@ class TestClusterUpdates(unittest.TestCase):
     @patch("charm.MaasHelper", autospec=True)
     def test_on_maas_cluster_changed_prometheus_enabled(self, mock_helper):
         mock_helper.get_maas_mode.return_value = "region"
-        mock_helper.get_maas_secret.return_value = "very-secret"
         mock_helper.create_admin_user.return_value = None
         self.harness.set_leader(True)
         self.harness.update_config({"enable_rack_mode": False})
@@ -292,7 +291,6 @@ class TestClusterUpdates(unittest.TestCase):
     @patch("charm.MaasHelper", autospec=True)
     def test_ha_proxy_update_api_url(self, mock_helper, _mock_conn_id):
         mock_helper.get_maas_mode.return_value = "region"
-        mock_helper.get_maas_secret.return_value = "very-secret"
         self.harness.set_leader(True)
         self.harness.begin()
         self.harness.add_relation(
