@@ -7,7 +7,7 @@ import json
 import socket
 import subprocess
 import unittest
-from unittest.mock import PropertyMock, patch, call
+from unittest.mock import PropertyMock, call, patch
 
 import ops
 import ops.testing
@@ -343,9 +343,9 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.set_leader(True)
         self.harness.update_config({"enable_rack_mode": True})
         self.harness.begin_with_initial_hooks()
-        mock_helper.setup_region.assert_has_calls([
-            call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region+rack")
-        ])
+        mock_helper.setup_region.assert_has_calls(
+            [call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region+rack")]
+        )
 
     @patch("charm.MaasHelper", autospec=True)
     def test_config_change_rack_mode_updated(self, mock_helper):
@@ -357,10 +357,12 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.update_config({"enable_rack_mode": False})
         self.harness.begin_with_initial_hooks()
         self.harness.update_config({"enable_rack_mode": True})
-        mock_helper.setup_region.assert_has_calls([
-            call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region"),
-            call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region+rack")
-        ])
+        mock_helper.setup_region.assert_has_calls(
+            [
+                call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region"),
+                call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region+rack"),
+            ]
+        )
 
 
 class TestCharmActions(unittest.TestCase):
