@@ -279,13 +279,9 @@ class TestClusterUpdates(unittest.TestCase):
         mock_helper.get_maas_secret.return_value = "very-secret"
         mock_helper.create_admin_user.return_value = None
         self.harness.set_leader(True)
+        self.harness.update_config({"enable_rack_mode": False})
         self.harness.begin()
-        remote_app = "maas-agent"
-        self.harness.add_relation(
-            maas.DEFAULT_ENDPOINT_NAME,
-            remote_app,
-            unit_data={"unit": f"{remote_app}/0", "hostname": "some_hostname"},
-        )
+        self.harness.update_config({"enable_rack_mode": True})
         mock_helper.set_prometheus_metrics.assert_called_with(
             "maas-admin-internal", "10.0.0.10", True
         )
