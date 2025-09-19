@@ -42,6 +42,8 @@ MAAS_REGION_METRICS_PORT = 5239
 MAAS_AGENT_METRICS_PORT = 5248
 MAAS_CLUSTER_METRICS_PORT = MAAS_HTTP_PORT
 
+MAAS_AGENT_METRICS_ENDPOINT = "/metrics/agent"
+
 MAAS_REGION_PORTS = [
     ops.Port("udp", 53),  # named
     ops.Port("udp", 67),  # dhcpd
@@ -135,14 +137,18 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(api_events.relation_broken, self._on_api_endpoint_changed)
 
         # COS
+        metrics_endpoints = [
+            {"path": "/metrics", "port": MAAS_REGION_METRICS_PORT},
+            {"path": "/MAAS/metrics", "port": MAAS_CLUSTER_METRICS_PORT},
+            {"path": "/metrics/temporal", "port": MAAS_HTTP_PORT},
+        ]
+        if self.config["enable_rack_mode"]:
+            metrics_endpoints.append(
+                {"path": MAAS_AGENT_METRICS_ENDPOINT, "port": MAAS_AGENT_METRICS_PORT}
+            )
         self._grafana_agent = cos_agent.COSAgentProvider(
             self,
-            metrics_endpoints=[
-                {"path": "/metrics", "port": MAAS_REGION_METRICS_PORT},
-                {"path": "/MAAS/metrics", "port": MAAS_CLUSTER_METRICS_PORT},
-                {"path": "/metrics/agent", "port": MAAS_AGENT_METRICS_PORT},
-                {"path": "/metrics/temporal", "port": MAAS_HTTP_PORT},
-            ],
+            metrics_endpoints=metrics_endpoints,
             metrics_rules_dir="./src/prometheus",
             logs_rules_dir="./src/loki",
             dashboard_dirs=["./src/grafana_dashboards"],
@@ -597,6 +603,18 @@ class MaasRegionCharm(ops.CharmBase):
                 raise ValueError(
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
+        # configure metrics endpoints
+        if self.config["enable_rack_mode"]:
+            self._grafana_agent._metrics_endpoints.append(
+                {"path": MAAS_AGENT_METRICS_ENDPOINT, "port": MAAS_AGENT_METRICS_PORT}
+            )
+        else:
+            self._grafana_agent._metrics_endpoints = [
+                endpoint
+                for endpoint in self._grafana_agent._metrics_endpoints
+                if endpoint["path"] != MAAS_AGENT_METRICS_ENDPOINT
+            ]
+
         self._update_ha_proxy()
         maas_details = MaasHelper.get_maas_details()
         if self.connection_string and maas_details.get("maas_url") != self.maas_api_url:
