@@ -47,7 +47,6 @@ async def test_region_integration(ops_test: OpsTest):
 
     Assert that the charm is active if the integration is established.
     """
-
     # Deploy the region charm and wait for active/idle status
     await asyncio.gather(
         ops_test.model.deploy(
