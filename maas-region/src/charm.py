@@ -135,6 +135,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(api_events.relation_departed, self._on_api_endpoint_changed)
         self.framework.observe(api_events.relation_broken, self._on_api_endpoint_changed)
 
+        # COS
         self._grafana_agent = cos_agent.COSAgentProvider(
             self,
             metrics_endpoints=[
