@@ -52,7 +52,7 @@ async def test_region_integration(ops_test: OpsTest):
 
     # Deploy the region charm and wait for active/idle status
     await asyncio.gather(
-        ops_test.model.deploy(region_charm, application_name="maas-region"),
+        ops_test.model.deploy(region_charm, application_name="maas-region", revision=211),
         ops_test.model.wait_for_idle(
             apps=["maas-region"], status="waiting", raise_on_blocked=True, timeout=1000
         ),
