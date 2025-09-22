@@ -146,7 +146,7 @@ class MaasRegionCharm(ops.CharmBase):
             logs_rules_dir="./src/loki",
             dashboard_dirs=["./src/grafana_dashboards"],
         )
-        self._toggle_agent_metric_endpoints(bool(self.config["enable_rack_mode"]))
+        self._toggle_agent_metric_endpoints()
         self.tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
         self.charm_tracing_endpoint, _ = charm_tracing_config(self.tracing, None)
 
@@ -282,8 +282,8 @@ class MaasRegionCharm(ops.CharmBase):
             return False
         return True
 
-    def _toggle_agent_metric_endpoints(self, add_rack_metric_endpoints: bool):
-        if add_rack_metric_endpoints:
+    def _toggle_agent_metric_endpoints(self):
+        if self.config["enable_rack_mode"]:
             self._grafana_agent._metrics_endpoints.append(
                 {"path": MAAS_AGENT_METRICS_ENDPOINT, "port": MAAS_AGENT_METRICS_PORT}
             )
@@ -614,7 +614,7 @@ class MaasRegionCharm(ops.CharmBase):
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
         # configure metrics endpoints
-        self._toggle_agent_metric_endpoints(bool(self.config["enable_rack_mode"]))
+        self._toggle_agent_metric_endpoints()
         # open/close the relevant ports
         self._setup_network()
 
