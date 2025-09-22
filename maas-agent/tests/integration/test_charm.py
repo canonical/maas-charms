@@ -47,11 +47,16 @@ async def test_region_integration(ops_test: OpsTest):
 
     Assert that the charm is active if the integration is established.
     """
-    # Build and deploy region charm from local source folder
 
     # Deploy the region charm and wait for active/idle status
     await asyncio.gather(
-        ops_test.model.deploy("maas-region", application_name="maas-region", series="noble", revision=211),
+        ops_test.model.deploy(
+            "maas-region",
+            application_name="maas-region",
+            channel="latest/edge",
+            series="noble",
+            revision=211,
+        ),
         ops_test.model.wait_for_idle(
             apps=["maas-region"], status="waiting", raise_on_blocked=True, timeout=1000
         ),
