@@ -3,8 +3,6 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
-import json
-import socket
 import subprocess
 import unittest
 from unittest.mock import PropertyMock, call, patch
