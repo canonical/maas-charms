@@ -180,5 +180,5 @@ config:
       type: boolean
     enable_rack_mode:
       default: false
-      description: A dummy config option to test.
+      description: A placeholder config option to test.
       type: boolean
