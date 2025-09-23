@@ -272,7 +272,6 @@ class MaasRegionCharm(ops.CharmBase):
         has_agent = self.config["enable_rack_mode"]
         return MAAS_REGION_RACK_PORTS if has_agent else MAAS_REGION_PORTS
 
-
     def set_peer_data(self, app_or_unit: ops.Application | ops.Unit, key: str, data: Any) -> None:
         """Put information into the peer data bucket."""
         if not self.peers:

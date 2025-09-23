@@ -178,3 +178,7 @@ config:
       default: true
       description: Whether to enable Prometheus metrics for MAAS
       type: boolean
+    enable_rack_mode:
+      default: false
+      description: Whether to enable region+rack mode for this MAAS controller
+      type: boolean
