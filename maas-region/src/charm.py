@@ -136,18 +136,22 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(api_events.relation_broken, self._on_api_endpoint_changed)
 
         # COS
+        endpoints = [
+            {"path": "/metrics", "port": MAAS_REGION_METRICS_PORT},
+            {"path": "/MAAS/metrics", "port": MAAS_CLUSTER_METRICS_PORT},
+            {"path": "/metrics/temporal", "port": MAAS_HTTP_PORT},
+        ]
+        if self.config["enable_rack_mode"]:
+            endpoints.append(
+                {"path": MAAS_AGENT_METRICS_ENDPOINT, "port": MAAS_AGENT_METRICS_PORT}
+            )
         self._grafana_agent = cos_agent.COSAgentProvider(
             self,
-            metrics_endpoints=[
-                {"path": "/metrics", "port": MAAS_REGION_METRICS_PORT},
-                {"path": "/MAAS/metrics", "port": MAAS_CLUSTER_METRICS_PORT},
-                {"path": "/metrics/temporal", "port": MAAS_HTTP_PORT},
-            ],
+            metrics_endpoints=endpoints,
             metrics_rules_dir="./src/prometheus",
             logs_rules_dir="./src/loki",
             dashboard_dirs=["./src/grafana_dashboards"],
         )
-        self._toggle_agent_metric_endpoints()
         self.tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
         self.charm_tracing_endpoint, _ = charm_tracing_config(self.tracing, None)
 
@@ -282,18 +286,6 @@ class MaasRegionCharm(ops.CharmBase):
             logger.exception("failed to open service ports")
             return False
         return True
-
-    def _toggle_agent_metric_endpoints(self):
-        if self.config["enable_rack_mode"]:
-            self._grafana_agent._metrics_endpoints.append(
-                {"path": MAAS_AGENT_METRICS_ENDPOINT, "port": MAAS_AGENT_METRICS_PORT}
-            )
-        else:
-            self._grafana_agent._metrics_endpoints = [
-                endpoint
-                for endpoint in self._grafana_agent._metrics_endpoints
-                if endpoint["path"] != MAAS_AGENT_METRICS_ENDPOINT
-            ]
 
     def _create_or_get_internal_admin(self) -> dict[str, str]:
         """Create an internal admin user if one does not already exist.
@@ -614,11 +606,9 @@ class MaasRegionCharm(ops.CharmBase):
                 raise ValueError(
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
-        # configure metrics endpoints
-        self._toggle_agent_metric_endpoints()
         # open/close the relevant ports
-        self._setup_network()
-
+        if self.config["enable_rack_mode"] != MaasHelper.get_maas_mode():
+            self._setup_network()
         self._update_ha_proxy()
         maas_details = MaasHelper.get_maas_details()
         if self.connection_string and maas_details.get("maas_url") != self.maas_api_url:
