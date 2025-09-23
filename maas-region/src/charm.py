@@ -514,10 +514,19 @@ class MaasRegionCharm(ops.CharmBase):
         self._update_ha_proxy()
         maas_details = MaasHelper.get_maas_details()
         # the MAAS initialisation details have changed
-        if (self.connection_string and maas_details.get("maas_url") != self.maas_api_url) or (
-            MaasHelper.get_maas_mode() != self.get_operational_mode()
-        ):
+        init_details = {
+            "API URL": self.connection_string
+            and maas_details.get("maas_url") != self.maas_api_url,
+            f"Mode ({self.get_operational_mode()})": MaasHelper.get_maas_mode()
+            != self.get_operational_mode(),
+        }
+        if any(init_details.values()):
+            changes = [k for k, v in init_details.items() if v]
+            self.unit.status = ops.MaintenanceStatus(
+                f"re-initialising maas with new {', '.join(changes)}..."
+            )
             self._initialize_maas()
+
         if self.unit.is_leader():
             self._update_tls_config()
             self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
