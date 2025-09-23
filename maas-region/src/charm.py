@@ -60,6 +60,21 @@ MAAS_REGION_PORTS = [
     *[ops.Port("tcp", p) for p in range(5280, 5284 + 1)],  # Temporal
 ]
 
+MAAS_RACK_METRICS_PORT = 5249
+MAAS_RACK_PORTS = [
+    ops.Port("udp", 53),  # named
+    ops.Port("udp", 67),  # dhcpd
+    ops.Port("udp", 69),  # tftp
+    ops.Port("udp", 123),  # chrony
+    ops.Port("udp", 323),  # chrony
+    ops.Port("tcp", 53),  # named
+    ops.Port("tcp", 5240),  # nginx primary
+    *[ops.Port("tcp", p) for p in range(5241, 5247 + 1)],  # Internal services
+    ops.Port("tcp", 5248),
+    ops.Port("tcp", MAAS_RACK_METRICS_PORT),
+]
+MAAS_REGION_RACK_PORTS = list(set(MAAS_REGION_PORTS).union(MAAS_RACK_PORTS))
+
 MAAS_ADMIN_SECRET_LABEL = "maas-admin"
 MAAS_ADMIN_SECRET_KEY = "maas-admin-secret-uri"
 
@@ -248,6 +263,16 @@ class MaasRegionCharm(ops.CharmBase):
         has_agent = self.maas_region.gather_rack_units().get(socket.gethostname())
         return "region+rack" if has_agent else "region"
 
+    def get_required_ports(self) -> list[ops.Port]:
+        """Get expected MAAS ports based on operational mode.
+
+        Returns:
+            list[ops.Port]
+        """
+        has_agent = self.config["enable_rack_mode"]
+        return MAAS_REGION_RACK_PORTS if has_agent else MAAS_REGION_PORTS
+
+
     def set_peer_data(self, app_or_unit: ops.Application | ops.Unit, key: str, data: Any) -> None:
         """Put information into the peer data bucket."""
         if not self.peers:
@@ -268,7 +293,7 @@ class MaasRegionCharm(ops.CharmBase):
             bool: True if successful
         """
         try:
-            self.unit.set_ports(*MAAS_REGION_PORTS)
+            self.unit.set_ports(*self.get_required_ports())
         except ops.model.ModelError:
             logger.exception("failed to open service ports")
             return False
@@ -303,6 +328,7 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _initialize_maas(self) -> bool:
         try:
+            self._setup_network()
             MaasHelper.setup_region(
                 self.maas_api_url, self.connection_string, self.get_operational_mode()
             )
