@@ -114,14 +114,6 @@ class TestHelperFiles(unittest.TestCase):
     def test_get_maas_mode_not_initialised(self, _):
         self.assertIsNone(MaasHelper.get_maas_mode())
 
-    @patch("pathlib.Path.open", new_callable=lambda: mock_open(read_data="secret\n"))
-    def test_get_maas_secret(self, _):
-        self.assertEqual(MaasHelper.get_maas_secret(), "secret")
-
-    @patch("pathlib.Path.open", side_effect=OSError)
-    def test_get_maas_secret_not_initialised(self, _):
-        self.assertIsNone(MaasHelper.get_maas_secret())
-
     @patch("pathlib.Path.read_text")
     def test_is_tls_enabled_no(self, mock_read_text):
         mock_read_text.return_value = "listen 80"

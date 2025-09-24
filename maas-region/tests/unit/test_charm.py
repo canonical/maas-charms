@@ -3,16 +3,13 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
-import json
-import socket
 import subprocess
 import unittest
-from unittest.mock import PropertyMock, patch
+from unittest.mock import PropertyMock, call, patch
 
 import ops
 import ops.testing
 import yaml
-from charms.maas_region.v0 import maas
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 
@@ -274,36 +271,13 @@ class TestClusterUpdates(unittest.TestCase):
             )
 
     @patch("charm.MaasHelper", autospec=True)
-    def test_on_maas_cluster_changed_new_agent(self, mock_helper):
-        mock_helper.get_maas_mode.return_value = "region"
-        mock_helper.get_maas_secret.return_value = "very-secret"
-        self.harness.set_leader(True)
-        self.harness.begin()
-        remote_app = "maas-agent"
-        rel_id = self.harness.add_relation(
-            maas.DEFAULT_ENDPOINT_NAME,
-            remote_app,
-            unit_data={"unit": f"{remote_app}/0", "hostname": "some_hostname"},
-        )
-        mock_helper.setup_region.assert_not_called()
-        data = self.harness.get_relation_data(rel_id, "maas-region")
-        self.assertEqual(data["api_url"], "http://10.0.0.10:5240/MAAS")
-        self.assertEqual(data["regions"], f'["{socket.gethostname()}"]')
-        self.assertIn("maas_secret_id", data)  # codespell:ignore
-
-    @patch("charm.MaasHelper", autospec=True)
     def test_on_maas_cluster_changed_prometheus_enabled(self, mock_helper):
         mock_helper.get_maas_mode.return_value = "region"
-        mock_helper.get_maas_secret.return_value = "very-secret"
         mock_helper.create_admin_user.return_value = None
         self.harness.set_leader(True)
+        self.harness.update_config({"enable_rack_mode": False})
         self.harness.begin()
-        remote_app = "maas-agent"
-        self.harness.add_relation(
-            maas.DEFAULT_ENDPOINT_NAME,
-            remote_app,
-            unit_data={"unit": f"{remote_app}/0", "hostname": "some_hostname"},
-        )
+        self.harness.update_config({"enable_rack_mode": True})
         mock_helper.set_prometheus_metrics.assert_called_with(
             "maas-admin-internal", "10.0.0.10", True
         )
@@ -315,7 +289,6 @@ class TestClusterUpdates(unittest.TestCase):
     @patch("charm.MaasHelper", autospec=True)
     def test_ha_proxy_update_api_url(self, mock_helper, _mock_conn_id):
         mock_helper.get_maas_mode.return_value = "region"
-        mock_helper.get_maas_secret.return_value = "very-secret"
         self.harness.set_leader(True)
         self.harness.begin()
         self.harness.add_relation(
@@ -323,68 +296,6 @@ class TestClusterUpdates(unittest.TestCase):
         )
         mock_helper.setup_region.assert_called_once_with(
             f"http://proxy.maas:{MAAS_PROXY_PORT}/MAAS",
-            "postgres://",
-            "region",
-        )
-
-    @patch(
-        "charm.MaasRegionCharm.connection_string",
-        new_callable=PropertyMock(return_value="postgres://"),
-    )
-    @patch("charm.MaasHelper", autospec=True)
-    def test_on_maas_cluster_changed_new_agent_same_machine(self, mock_helper, _mock_conn_id):
-        mock_helper.get_maas_mode.return_value = "region"
-        mock_helper.get_maas_secret.return_value = "very-secret"
-        my_hostname = socket.gethostname()
-        self.harness.set_leader(True)
-        self.harness.begin()
-        remote_app = "maas-agent"
-        self.harness.add_relation(
-            maas.DEFAULT_ENDPOINT_NAME,
-            remote_app,
-            unit_data={"unit": f"{remote_app}/0", "hostname": my_hostname},
-        )
-        mock_helper.setup_region.assert_called_once_with(
-            f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
-            "postgres://",
-            "region+rack",
-        )
-
-    @patch("charm.MaasHelper", autospec=True)
-    def test_on_maas_cluster_changed_remove_agent(self, mock_helper):
-        mock_helper.get_maas_mode.return_value = "region"
-        mock_helper.get_maas_secret.return_value = "very-secret"
-        self.harness.set_leader(True)
-        remote_app = "maas-agent"
-        rel_id = self.harness.add_relation(
-            maas.DEFAULT_ENDPOINT_NAME,
-            remote_app,
-            unit_data={"unit": f"{remote_app}/0", "hostname": "some_hostname"},
-        )
-        self.harness.begin()
-        self.harness.remove_relation_unit(rel_id, f"{remote_app}/0")
-        mock_helper.setup_region.assert_not_called()
-
-    @patch(
-        "charm.MaasRegionCharm.connection_string",
-        new_callable=PropertyMock(return_value="postgres://"),
-    )
-    @patch("charm.MaasHelper", autospec=True)
-    def test_on_maas_cluster_changed_remove_agent_same_machine(self, mock_helper, _mock_conn_id):
-        mock_helper.get_maas_mode.return_value = "region+rack"
-        mock_helper.get_maas_secret.return_value = "very-secret"
-        my_hostname = socket.gethostname()
-        self.harness.set_leader(True)
-        remote_app = "maas-agent"
-        rel_id = self.harness.add_relation(
-            maas.DEFAULT_ENDPOINT_NAME,
-            remote_app,
-            unit_data={"unit": f"{remote_app}/0", "hostname": my_hostname},
-        )
-        self.harness.begin()
-        self.harness.remove_relation_unit(rel_id, f"{remote_app}/0")
-        mock_helper.setup_region.assert_called_once_with(
-            f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
             "postgres://",
             "region",
         )
@@ -412,6 +323,36 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.update_config({"enable_prometheus_metrics": False})
         mock_helper.set_prometheus_metrics.assert_called_with(
             "maas-admin-internal", "10.0.0.10", False
+        )
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_config_change_rack_mode_enabled(self, mock_helper):
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        mock_helper.setup_region.return_value = None
+        mock_helper.create_admin_user.return_value = None
+        self.harness.set_leader(True)
+        self.harness.update_config({"enable_rack_mode": True})
+        self.harness.begin_with_initial_hooks()
+        mock_helper.setup_region.assert_has_calls(
+            [call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region+rack")]
+        )
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_config_change_rack_mode_updated(self, mock_helper):
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        mock_helper.setup_region.return_value = None
+        mock_helper.create_admin_user.return_value = None
+        self.harness.set_leader(True)
+        self.harness.update_config({"enable_rack_mode": False})
+        self.harness.begin_with_initial_hooks()
+        self.harness.update_config({"enable_rack_mode": True})
+        mock_helper.setup_region.assert_has_calls(
+            [
+                call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region"),
+                call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region+rack"),
+            ]
         )
 
 
@@ -494,41 +435,6 @@ class TestCharmActions(unittest.TestCase):
         self.harness.begin()
         output = self.harness.run_action("get-api-endpoint")
         self.assertEqual(output.results["api-url"], "http://10.0.0.10:5240/MAAS")
-
-    def test_list_controllers_action_solo(self):
-        self.harness.set_leader(True)
-        self.harness.begin()
-        output = self.harness.run_action("list-controllers")
-        self.assertEqual(
-            json.loads(output.results["controllers"]),
-            {"regions": [socket.gethostname()], "agents": []},
-        )
-
-    def test_list_controllers_action_complex(self):
-        self.harness.set_leader(True)
-        rel_id = self.harness.add_relation(
-            MAAS_PEER_NAME,
-            "maas-region",
-            unit_data={"system-name": json.dumps(socket.gethostname())},
-        )
-        self.harness.add_relation_unit(rel_id, "maas-region/1")
-        self.harness.update_relation_data(
-            rel_id, "maas-region/1", {"system-name": json.dumps("other-host")}
-        )
-        self.harness.add_relation(
-            maas.DEFAULT_ENDPOINT_NAME,
-            "maas-agent",
-            unit_data={"unit": "maas-agent/0", "hostname": "agent-0"},
-        )
-        self.harness.begin()
-        output = self.harness.run_action("list-controllers")
-        self.assertEqual(
-            json.loads(output.results["controllers"]),
-            {
-                "regions": sorted([socket.gethostname(), "other-host"]),
-                "agents": ["agent-0"],
-            },
-        )
 
     @patch(
         "charm.MaasRegionCharm.bind_address",
