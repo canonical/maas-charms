@@ -49,8 +49,6 @@ peers:
 provides:
   api:
     interface: http
-  maas-region:
-    interface: maas_controller
   cos-agent:
     interface: cos_agent
 
@@ -80,8 +78,6 @@ actions:
       username:
         type: string
         description: Username for the new account.
-  list-controllers:
-    description: List charmed MAAS controllers
   get-api-endpoint:
     description: Get MAAS API URL
   create-backup:
@@ -180,5 +176,5 @@ config:
       type: boolean
     enable_rack_mode:
       default: false
-      description: Whether to enable region+rack mode for this MAAS controller
+      description: Whether to configure MAAS as running in region+rack mode
       type: boolean
