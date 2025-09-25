@@ -548,7 +548,7 @@ class MaasRegionCharm(ops.CharmBase):
         if any(init_details.values()):
             changes = [k for k, v in init_details.items() if v]
             self.unit.status = ops.MaintenanceStatus(
-                f"re-initialising maas with new {', '.join(changes)}..."
+                f"re-initialising maas with new: {', '.join(changes)}..."
             )
             self._initialize_maas()
 
