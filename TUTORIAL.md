@@ -8,7 +8,6 @@ Create some environment variables to facilitate this tutorial
 # LaunchPad ID
 export LP_ID="my-lp-id"
 export MAAS_REGION_CHARM=./maas-region/maas-region_ubuntu-24.04-amd64.charm
-export MAAS_AGENT_CHARM=./maas-agent/maas-agent_ubuntu-24.04-amd64.charm
 ```
 
 ## Install required packages
@@ -213,10 +212,11 @@ juju add-unit -m controller haproxy -n 2 --to 1,2
 
 ## Install MAAS
 
-Deploy Region using the charm
+Deploy Region (In region+Rack mode) using the charm
 
 ```shell
 juju deploy -m controller ${MAAS_REGION_CHARM} --to 0
+juju config maas-region enable_rack_mode=true
 juju status --watch 10s  # wait for it to initialize
 ```
 
@@ -232,14 +232,6 @@ Create an Admin user
 
 ```shell
 juju run -m controller maas-region/leader create-admin username=maas password=maas email=maas@example.com ssh-import=lp:${LP_ID}
-```
-
-Deploy Rack/Agent using the charm
-
-```shell
-juju deploy -m controller ${MAAS_AGENT_CHARM} --to 1
-juju integrate -m controller maas-agent maas-region
-juju add-unit -m controller maas-agent --to 2
 ```
 
 Get the MAAS URL
