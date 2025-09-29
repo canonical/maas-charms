@@ -545,9 +545,6 @@ class MaasRegionCharm(ops.CharmBase):
                 raise ValueError(
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
-        # open/close the relevant ports
-        if self.config["enable_rack_mode"] != MaasHelper.get_maas_mode():
-            self._setup_network()
         self._update_ha_proxy()
         maas_details = MaasHelper.get_maas_details()
         # the MAAS initialisation details have changed
