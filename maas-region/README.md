@@ -16,7 +16,7 @@ More information: <https://charmhub.io/maas-region>
 Describe your charm in one or two sentences.
 
 [!NOTE] As of MAAS-Region latest/edge rev 212, logic for interacting with the MAAS Agent charm has been removed, and MAAS-Agent end-of-life.
-To maintain functionality, the reccomendation is to deploy MAAS Region with `enable_rack_mode=true` configuration set.
+To maintain functionality, the recommendation is to deploy MAAS Region with `enable_rack_mode=true` configuration set.
 
 For any use cases still dependent on MAAS Agent, you will need to deploy alongside MAAS Region Revision 211 or below, as all revisions afterwards have had the relation logic removed.
 
