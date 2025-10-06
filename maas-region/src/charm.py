@@ -141,7 +141,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(api_events.relation_broken, self._on_api_endpoint_changed)
 
         # COS
-        endpoints: list[dict[str, Any]] = [
+        endpoints = [
             {"path": "/metrics", "port": MAAS_REGION_METRICS_PORT},
             {"path": "/MAAS/metrics", "port": MAAS_CLUSTER_METRICS_PORT},
             {"path": "/metrics/temporal", "port": MAAS_HTTP_PORT},
