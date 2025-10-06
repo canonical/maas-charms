@@ -15,7 +15,7 @@ from typing import Any
 import ops
 import yaml
 from charms.data_platform_libs.v0 import data_interfaces as db
-from charms.grafana_agent.v0 import _MetricsEndpointDict, cos_agent
+from charms.grafana_agent.v0 import cos_agent
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
@@ -141,7 +141,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(api_events.relation_broken, self._on_api_endpoint_changed)
 
         # COS
-        endpoints: list[_MetricsEndpointDict] = [
+        endpoints: list[cos_agent._MetricsEndpointDict] = [
             {"path": "/metrics", "port": MAAS_REGION_METRICS_PORT},
             {"path": "/MAAS/metrics", "port": MAAS_CLUSTER_METRICS_PORT},
             {"path": "/metrics/temporal", "port": MAAS_HTTP_PORT},
