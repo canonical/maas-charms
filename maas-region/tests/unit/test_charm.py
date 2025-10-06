@@ -200,6 +200,7 @@ class TestClusterUpdates(unittest.TestCase):
 
         ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
         self.assertEqual(len(ha_data), 1)
+        self.assertEqual(ha_data[0]["service_port"], 80)
         self.assertIn("service_name", ha_data[0])  # codespell:ignore
         self.assertIn("service_host", ha_data[0])  # codespell:ignore
         self.assertEqual(len(ha_data[0]["servers"]), 1)
@@ -216,6 +217,7 @@ class TestClusterUpdates(unittest.TestCase):
 
         ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
         self.assertEqual(len(ha_data), 2)
+        self.assertEqual(ha_data[0]["service_port"], 443)
         self.assertIn("service_name", ha_data[1])  # codespell:ignore
         self.assertIn("service_host", ha_data[1])  # codespell:ignore
         self.assertEqual(len(ha_data[1]["servers"]), 1)
@@ -239,6 +241,7 @@ class TestClusterUpdates(unittest.TestCase):
 
         ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
         self.assertEqual(len(ha_data), 2)
+        self.assertEqual(ha_data[0]["service_port"], 443)
         self.assertIn("service_name", ha_data[1])  # codespell:ignore
         self.assertIn("service_host", ha_data[1])  # codespell:ignore
         self.assertEqual(len(ha_data[1]["servers"]), 1)

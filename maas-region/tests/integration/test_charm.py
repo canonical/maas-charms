@@ -95,7 +95,12 @@ async def test_tls_mode(ops_test: OpsTest):
             apps=["haproxy"], status="active", raise_on_blocked=True, timeout=1000
         ),
     )
-    await ops_test.model.integrate(f"{APP_NAME}", "haproxy")
+    await asyncio.gather(
+        ops_test.model.integrate(f"{APP_NAME}", "haproxy"),
+        ops_test.model.wait_for_idle(
+            apps=["haproxy"], status="active", raise_on_blocked=True, timeout=1000
+        ),
+    )
 
     # the relation may take some time beyond the above await to fully apply
     start = time.time()
