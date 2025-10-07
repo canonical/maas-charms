@@ -15,9 +15,9 @@ More information: <https://charmhub.io/maas-agent>
 
 Describe your charm in one or two sentences.
 
-[!Note]
-The MAAS Agent charm is now considered end of life, and further updates will be stopped.
-To maintain functionality, the MAAS Region charm can now be deployed in [Region+Rack](https://charmhub.io/maas-region/docs/setting-up-and-configuring-charmed-maas) mode by supplying `enable_rack_mode=true` as a configuration option.
+> [!Note]
+> The MAAS Agent charm is now considered end of life, and further updates will be stopped.
+> To maintain functionality, the MAAS Region charm can now be deployed in [Region+Rack](https://charmhub.io/maas-region/docs/setting-up-and-configuring-charmed-maas) mode by supplying `enable_rack_mode=true` as a configuration option.
 
 For any use cases still dependent on MAAS Agent, You will need to deploy alongside MAAS Region Revision 211 or below, as all revisions afterwards have had the relation logic removed.
 
