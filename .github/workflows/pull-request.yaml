@@ -16,13 +16,3 @@ jobs:
       juju-channel: 3.6/stable
       python-version: "3.10"
       provider: lxd
-
-  pull-request-agent:
-    name: PR Agent
-    uses: canonical/observability/.github/workflows/charm-pull-request.yaml@v0
-    secrets: inherit
-    with:
-      charm-path: maas-agent
-      juju-channel: 3.6/stable
-      python-version: "3.10"
-      provider: lxd
