@@ -35,14 +35,3 @@ jobs:
           echo "open_prs=$OPEN_PRS" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ secrets.OBSERVABILITY_NOCTUA_TOKEN }}
-
-  update-lib-agent:
-    name: Check libraries
-    needs: detect-open-prs
-    if: needs.detect-open-prs.outputs.open_prs == '0'
-    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@v0
-    secrets: inherit
-    with:
-      charm-path: maas-agent
-      commit-username: maas-lander
-      commit-email: 115650013+maas-lander@users.noreply.github.com
