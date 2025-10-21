@@ -80,6 +80,8 @@ actions:
         description: Username for the new account.
   get-api-endpoint:
     description: Get MAAS API URL
+  get-maas-secret:
+    description: Get MAAS secret
   create-backup:
     description: Create a backup of MAAS data not stored in the database.
   restore-backup:

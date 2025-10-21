@@ -436,6 +436,22 @@ class TestCharmActions(unittest.TestCase):
         output = self.harness.run_action("get-api-endpoint")
         self.assertEqual(output.results["api-url"], "http://10.0.0.10:5240/MAAS")
 
+    @patch("charm.MaasHelper", autospec=True)
+    def test_get_maas_secret_action(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        mock_helper.get_maas_secret.return_value = "0123456789ab0123456789"
+        output = self.harness.run_action("get-maas-secret")
+        self.assertEqual(output.results["maas-secret"], "0123456789ab0123456789")
+
+    def test_get_maas_secret_action_fail(self):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        with self.assertRaises(ops.testing.ActionFailed) as e:
+            self.harness.run_action("get-maas-secret")
+        err = e.exception
+        self.assertEqual(err.message, "MAAS is not initialized yet")
+
     @patch(
         "charm.MaasRegionCharm.bind_address",
         new_callable=PropertyMock(return_value="10.0.0.10"),
