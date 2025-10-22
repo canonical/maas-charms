@@ -41,14 +41,14 @@ requires:
     interface: s3
     limit: 1
     optional: true
+  haproxy-route:
+    interface: haproxy-route
 
 peers:
   maas-cluster:
     interface: maas_peers
 
 provides:
-  api:
-    interface: http
   cos-agent:
     interface: cos_agent
 

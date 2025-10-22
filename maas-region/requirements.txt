@@ -8,6 +8,8 @@ boto3 >=1.40.12, <1.41.0
 botocore >=1.40.12, <1.41.0
 
 # For Grafana agent
-pydantic < 2
 cosl
 opentelemetry-exporter-otlp-proto-http>=1.21.0
+
+# haproxy
+pydantic > 2.8

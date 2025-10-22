@@ -13,9 +13,9 @@ import subprocess
 from typing import Any
 
 import ops
-import yaml
 from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
+from charms.haproxy.v1.haproxy_route import HaproxyRouteRequirer
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
@@ -28,12 +28,13 @@ from helper import MaasHelper
 logger = logging.getLogger(__name__)
 
 MAAS_PEER_NAME = "maas-cluster"
-MAAS_API_RELATION = "api"
+MAAS_HA_PROXY_RELATION = "haproxy-route"
 MAAS_DB_NAME = "maas-db"
 
 MAAS_SNAP_CHANNEL = "3.6/stable"
 
 MAAS_PROXY_PORT = 80
+MAAS_TLS_PROXY_PORT = 443
 
 MAAS_HTTP_PORT = 5240
 MAAS_HTTPS_PORT = 5443
@@ -104,6 +105,8 @@ class MaasRegionCharm(ops.CharmBase):
     )  # no TLS, termination at HA Proxy, passthrough to MAAS
     _INTERNAL_ADMIN_USER = "maas-admin-internal"
 
+    _enable_ha = None
+
     def __init__(self, *args):
         super().__init__(*args)
 
@@ -135,10 +138,14 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.msm.on.removed, self._on_msm_removed)
 
         # HAProxy
-        api_events = self.on[MAAS_API_RELATION]
-        self.framework.observe(api_events.relation_changed, self._on_api_endpoint_changed)
-        self.framework.observe(api_events.relation_departed, self._on_api_endpoint_changed)
-        self.framework.observe(api_events.relation_broken, self._on_api_endpoint_changed)
+        self.ha_proxy = HaproxyRouteRequirer(
+            self,
+            MAAS_HA_PROXY_RELATION,
+            service="maas",
+            ports=[MAAS_PROXY_PORT],
+        )
+        self.framework.observe(self.ha_proxy.on.ready, self._on_haproxy_route_changed)
+        self.framework.observe(self.ha_proxy.on.removed, self._on_haproxy_route_changed)
 
         # COS
         endpoints: list[cos_agent._MetricsEndpointDict] = [
@@ -229,11 +236,9 @@ class MaasRegionCharm(ops.CharmBase):
         """
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
-        if relation := self.model.get_relation(MAAS_API_RELATION):
-            unit = next(iter(relation.units), None)
-            if unit and (addr := relation.data[unit].get("public-address")):
-                return f"http://{addr}:{MAAS_PROXY_PORT}/MAAS"
-        return f"http://{self.bind_address}:{MAAS_HTTP_PORT}/MAAS"
+        protocol = "https" if self.config["tls_mode"] == "passthrough" else "http"
+        port = MAAS_HTTPS_PORT if self.config["tls_mode"] == "passthrough" else MAAS_HTTP_PORT
+        return f"{protocol}://{self.bind_address}:{port}/MAAS"
 
     def get_operational_mode(self) -> str:
         """Get expected MAAS mode.
@@ -343,44 +348,31 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
     def _update_ha_proxy(self) -> None:
-        region_port = (
-            MAAS_HTTPS_PORT if self.config["tls_mode"] == "passthrough" else MAAS_HTTP_PORT
-        )
-        if relation := self.model.get_relation(MAAS_API_RELATION):
-            app_name = f"api-{self.app.name}"
-            data = [
-                {
-                    "service_name": "haproxy_service" if MAAS_PROXY_PORT == 80 else app_name,
-                    "service_host": "0.0.0.0",
-                    "service_port": MAAS_PROXY_PORT,
-                    "service_options": ["mode http", "balance leastconn"],
-                    "servers": [
-                        (
-                            f"{app_name}-{self.unit.name.replace('/', '-')}",
-                            self.bind_address,
-                            region_port,
-                            [],
-                        )
-                    ],
-                },
-            ]
-            if self.config["tls_mode"] != "disabled":
-                data.append(
-                    {
-                        "service_name": "agent_service",
-                        "service_host": "0.0.0.0",
-                        "service_port": MAAS_PROXY_PORT,
-                        "servers": [
-                            (
-                                f"{app_name}-{self.unit.name.replace('/', '-')}",
-                                self.bind_address,
-                                MAAS_HTTP_PORT,
-                                [],
-                            )
-                        ],
-                    }
-                )
-            relation.data[self.unit]["services"] = yaml.safe_dump(data)
+        enable_ha = self.model.get_relation(MAAS_HA_PROXY_RELATION) is not None
+        tls_enabled = self.config["tls_mode"] == "passthrough"
+
+        # if HA is enabled, do that
+        if enable_ha:
+            logger.info("Enabling HA")
+            self.ha_proxy.provide_haproxy_route_requirements(
+                service="maas_tls" if tls_enabled else "maas",
+                ports=[MAAS_TLS_PROXY_PORT] if tls_enabled else [MAAS_PROXY_PORT],
+                protocol="https" if tls_enabled else "http",
+                hosts=[self.maas_api_url.split(":")[1].strip("//")],
+                check_interval=10,
+                check_port=MAAS_HTTPS_PORT if tls_enabled else MAAS_HTTP_PORT,
+                retry_count=3,
+                retry_redispatch=True,
+                http_server_close=True,
+            )
+        else:
+            logger.info("Disabling HA")
+
+        # update MAAS if HA status changed
+        if self._enable_ha != enable_ha:
+            logger.info("HA Status changed, reinitialising MAAS")
+            self._initialize_maas()
+        self._enable_ha = enable_ha
 
     def _update_tls_config(self) -> None:
         """Enable or disable TLS in MAAS."""
@@ -485,10 +477,9 @@ class MaasRegionCharm(ops.CharmBase):
         except SnapError as e:
             logger.exception("An exception occurred when stopping maas. Reason: %s", e.message)
 
-    def _on_api_endpoint_changed(self, event: ops.RelationEvent) -> None:
+    def _on_haproxy_route_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
         self._update_ha_proxy()
-        self._initialize_maas()
 
     def _on_maas_peer_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
