@@ -128,6 +128,16 @@ class TestHelperFiles(unittest.TestCase):
     def test_is_tls_enabled_not_initalized(self, _):
         self.assertEqual(MaasHelper.is_tls_enabled(), None)
 
+    @patch(
+        "pathlib.Path.open", new_callable=lambda: mock_open(read_data="0123456789ab0123456789\n")
+    )
+    def test_get_maas_secret(self, _):
+        self.assertEqual(MaasHelper.get_maas_secret(), "0123456789ab0123456789")
+
+    @patch("pathlib.Path.open", side_effect=OSError)
+    def test_get_maas_secret_not_initialised(self, _):
+        self.assertIsNone(MaasHelper.get_maas_secret())
+
 
 class TestHelperSetup(unittest.TestCase):
     @patch("helper.subprocess.check_call")

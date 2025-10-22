@@ -73,7 +73,7 @@ MAAS_RACK_PORTS = [
     ops.Port("tcp", 5240),  # nginx primary
     *[ops.Port("tcp", p) for p in range(5241, 5247 + 1)],  # Internal services
     ops.Port("tcp", MAAS_RACK_METRICS_PORT),
-    ops.Port("tcp", MAAS_AGENT_METRICS_PORT)
+    ops.Port("tcp", MAAS_AGENT_METRICS_PORT),
 ]
 MAAS_REGION_RACK_PORTS = list(set(MAAS_REGION_PORTS).union(MAAS_RACK_PORTS))
 
@@ -167,6 +167,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.create_admin_action, self._on_create_admin_action)
         self.framework.observe(self.on.get_api_key_action, self._on_get_api_key_action)
         self.framework.observe(self.on.get_api_endpoint_action, self._on_get_api_endpoint_action)
+        self.framework.observe(self.on.get_maas_secret_action, self._on_get_maas_secret_action)
 
         # Charm configuration
         self.framework.observe(self.on.config_changed, self._on_config_changed)
@@ -527,6 +528,13 @@ class MaasRegionCharm(ops.CharmBase):
         """Handle the get-api-endpoint action."""
         if url := self.maas_api_url:
             event.set_results({"api-url": url})
+        else:
+            event.fail("MAAS is not initialized yet")
+
+    def _on_get_maas_secret_action(self, event: ops.ActionEvent):
+        """Handle the get-maas-secret action."""
+        if secret := MaasHelper.get_maas_secret():
+            event.set_results({"maas-secret": secret})
         else:
             event.fail("MAAS is not initialized yet")
 
