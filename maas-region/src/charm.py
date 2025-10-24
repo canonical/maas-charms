@@ -15,7 +15,7 @@ from typing import Any
 import ops
 from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
-from charms.haproxy.v1.haproxy_route import HaproxyRouteRequirer
+from charms.haproxy.v1.haproxy_route import HaproxyRouteRequirer, LoadBalancingAlgorithm
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
@@ -227,6 +227,10 @@ class MaasRegionCharm(ops.CharmBase):
         else:
             raise ops.model.ModelError("Bind address not set in the model")
 
+    def _push_ip(self) -> None:
+        if relation := self.peers:
+            relation.data[self.unit]["bind_address"] = self.bind_address
+
     @property
     def maas_api_url(self) -> str:
         """Get MAAS API URL.
@@ -234,11 +238,24 @@ class MaasRegionCharm(ops.CharmBase):
         Returns:
             str: The API URL
         """
+        self._push_ip()
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
         protocol = "https" if self.config["tls_mode"] == "passthrough" else "http"
         port = MAAS_HTTPS_PORT if self.config["tls_mode"] == "passthrough" else MAAS_HTTP_PORT
         return f"{protocol}://{self.bind_address}:{port}/MAAS"
+
+    @property
+    def maas_ips(self) -> list[str]:
+        """Get the MAAS IPs.
+
+        Returns:
+            list[str]: The list of connected MAAS IPs
+        """
+        relation = self.peers
+        relation.data[self.unit]["bind_address"] = self.bind_address
+        unit_ips = {relation.data[unit]["bind_address"] for unit in relation.units}
+        return list(unit_ips.union({self.bind_address}))
 
     def get_operational_mode(self) -> str:
         """Get expected MAAS mode.
@@ -351,19 +368,24 @@ class MaasRegionCharm(ops.CharmBase):
         enable_ha = self.model.get_relation(MAAS_HA_PROXY_RELATION) is not None
         tls_enabled = self.config["tls_mode"] == "passthrough"
 
+        logger.info("MAAS IPs: " + "; ".join(self.maas_ips))
+
         # if HA is enabled, do that
         if enable_ha:
             logger.info("Enabling HA")
             self.ha_proxy.provide_haproxy_route_requirements(
                 service="maas_tls" if tls_enabled else "maas",
-                ports=[MAAS_TLS_PROXY_PORT] if tls_enabled else [MAAS_PROXY_PORT],
+                ports=[MAAS_HTTPS_PORT] if tls_enabled else [MAAS_HTTP_PORT],
                 protocol="https" if tls_enabled else "http",
-                hosts=[self.maas_api_url.split(":")[1].strip("//")],
+                hosts=self.maas_ips,
                 check_interval=10,
-                check_port=MAAS_HTTPS_PORT if tls_enabled else MAAS_HTTP_PORT,
+                check_port=MAAS_TLS_PROXY_PORT if tls_enabled else MAAS_PROXY_PORT,
                 retry_count=3,
                 retry_redispatch=True,
                 http_server_close=True,
+                load_balancing_algorithm=LoadBalancingAlgorithm.SRCIP,
+                unit_address=self.bind_address,
+                server_timeout=900,
             )
         else:
             logger.info("Disabling HA")
@@ -479,6 +501,7 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_haproxy_route_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
+        self._push_ip()
         self._update_ha_proxy()
 
     def _on_maas_peer_changed(self, event: ops.RelationEvent) -> None:
@@ -544,6 +567,7 @@ class MaasRegionCharm(ops.CharmBase):
                 raise ValueError(
                     "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode=passthrough"
                 )
+        self._push_ip()
         self._update_ha_proxy()
         maas_details = MaasHelper.get_maas_details()
         # the MAAS initialisation details have changed
