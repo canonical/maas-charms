@@ -364,10 +364,10 @@ class MaasRegionCharm(ops.CharmBase):
         scheme = "http" if http else "https"
 
         logger.info(f"Updating MAAS HA to {mode} with {scheme}:{port}")
-        # self.ingress.provide_ingress_requirements(
-        #     port=port,
-        #     scheme=scheme
-        # )
+        self.ingress.provide_ingress_requirements(
+            port=port,
+            scheme=scheme
+        )
 
     def _update_tls_config(self) -> None:
         """Enable or disable TLS in MAAS."""
