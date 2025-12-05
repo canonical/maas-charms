@@ -41,6 +41,9 @@ requires:
     interface: s3
     limit: 1
     optional: true
+  ingress:
+    interface: ingress
+    limit: 1
 
 peers:
   maas-cluster:
@@ -158,7 +161,8 @@ config:
       type: string
     tls_mode:
       default: "disabled"
-      description: Whether to enable TLS termination at HA Proxy ('termination'), at MAAS ('passthrough'), or no TLS ('disabled')
+      # In future, we can re-enable termination at MAAS ('passthrough'). The current HAProxy implementation does not allow this
+      description: Whether to enable TLS termination at HA Proxy ('termination'), or no TLS ('disabled')
       type: string
     ssl_cert_content:
       default: ""
