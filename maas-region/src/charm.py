@@ -363,7 +363,7 @@ class MaasRegionCharm(ops.CharmBase):
         port = MAAS_HTTP_PORT if http else MAAS_HTTPS_PORT
         scheme = "http" if http else "https"
 
-        logger.info(f"Updating MAAS HA to {mode} with {scheme}:{port}")
+        logger.info(f"Updating MAAS HA to {mode} with {scheme}@{port}")
         self.ingress.provide_ingress_requirements(
             port=port,
             scheme=scheme
