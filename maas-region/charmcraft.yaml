@@ -161,7 +161,8 @@ config:
       type: string
     tls_mode:
       default: "disabled"
-      description: Whether to enable TLS termination at HA Proxy ('termination'), at MAAS ('passthrough'), or no TLS ('disabled')
+      # In future, we can reenable termination at MAAS ('passthrough'). The current HAProxy implementation does not allow this
+      description: Whether to enable TLS termination at HA Proxy ('termination'), or no TLS ('disabled')
       type: string
     ssl_cert_content:
       default: ""
