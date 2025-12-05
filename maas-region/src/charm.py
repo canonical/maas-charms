@@ -13,7 +13,6 @@ import subprocess
 from typing import Any
 
 import ops
-import yaml
 from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_site_manager_k8s.v0 import enroll
@@ -358,52 +357,11 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
     def _update_ha_proxy(self) -> None:
-        # set up the ingress
         http = self.config["tls_mode"] in ["disabled", "termination"]
         self.ingress.provide_ingress_requirements(
             port=MAAS_HTTP_PORT if http else MAAS_HTTPS_PORT,
             scheme="http" if http else "https",
         )
-
-        # XXX: Is this superfluous
-        region_port = (
-            MAAS_HTTPS_PORT if self.config["tls_mode"] == "passthrough" else MAAS_HTTP_PORT
-        )
-        if relation := self.model.get_relation(MAAS_API_RELATION):
-            app_name = f"api-{self.app.name}"
-            data = [
-                {
-                    "service_name": "haproxy_service" if MAAS_PROXY_PORT == 80 else app_name,
-                    "service_host": "0.0.0.0",
-                    "service_port": MAAS_PROXY_PORT,
-                    "service_options": ["mode http", "balance leastconn"],
-                    "servers": [
-                        (
-                            f"{app_name}-{self.unit.name.replace('/', '-')}",
-                            self.bind_address,
-                            region_port,
-                            [],
-                        )
-                    ],
-                },
-            ]
-            if self.config["tls_mode"] != "disabled":
-                data.append(
-                    {
-                        "service_name": "agent_service",
-                        "service_host": "0.0.0.0",
-                        "service_port": MAAS_PROXY_PORT,
-                        "servers": [
-                            (
-                                f"{app_name}-{self.unit.name.replace('/', '-')}",
-                                self.bind_address,
-                                MAAS_HTTP_PORT,
-                                [],
-                            )
-                        ],
-                    }
-                )
-            relation.data[self.unit]["services"] = yaml.safe_dump(data)
 
     def _update_tls_config(self) -> None:
         """Enable or disable TLS in MAAS."""
