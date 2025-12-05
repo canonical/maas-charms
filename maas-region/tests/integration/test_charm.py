@@ -42,7 +42,7 @@ async def test_build_and_deploy(ops_test: OpsTest):
 async def test_charm_version_is_set(ops_test: OpsTest):
     status = await ops_test.model.get_status()
     version = status.applications[APP_NAME].workload_version
-    assert version.startswith("3.6.")
+    assert version.startswith("3.7.")
 
 
 @pytest.mark.abort_on_fail
