@@ -149,6 +149,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.ingress = IngressPerAppRequirer(
             self,
             relation_name=MAAS_INGRESS_RELATION,
+            port=MAAS_HTTP_PORT,
             scheme="http",
         )
         self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
@@ -357,11 +358,16 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
     def _update_ha_proxy(self) -> None:
-        http = self.config["tls_mode"] in ["disabled", "termination"]
-        self.ingress.provide_ingress_requirements(
-            port=MAAS_HTTP_PORT if http else MAAS_HTTPS_PORT,
-            scheme="http" if http else "https",
-        )
+        mode = self.config["tls_mode"]
+        http = mode in ["disabled", "termination"]
+        port = MAAS_HTTP_PORT if http else MAAS_HTTPS_PORT
+        scheme = "http" if http else "https"
+
+        logger.info(f"Updating MAAS HA to {mode} with {scheme}:{port}")
+        # self.ingress.provide_ingress_requirements(
+        #     port=port,
+        #     scheme=scheme
+        # )
 
     def _update_tls_config(self) -> None:
         """Enable or disable TLS in MAAS."""
