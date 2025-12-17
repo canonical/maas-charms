@@ -43,7 +43,7 @@ requires:
     optional: true
   ingress:
     interface: ingress
-    limit: 1
+    limit: 2
 
 peers:
   maas-cluster:
