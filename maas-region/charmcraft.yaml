@@ -35,11 +35,11 @@ requires:
   tracing:
     interface: tracing
     limit: 1
-    optional: false
+    optional: true
   maas-site-manager:
     interface: site_manager_enroll
     limit: 1
-    optional: false
+    optional: true
   s3-parameters:
     interface: s3
     limit: 1
@@ -53,7 +53,7 @@ peers:
 provides:
   api:
     interface: http
-    optional: false
+    optional: true
   cos-agent:
     interface: cos_agent
     optional: true
