@@ -13,13 +13,17 @@ import subprocess
 from typing import Any
 
 import ops
-import yaml
 from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
+from charms.traefik_k8s.v2.ingress import (
+    IngressPerAppReadyEvent,
+    IngressPerAppRequirer,
+    IngressPerAppRevokedEvent,
+)
 from ops.model import SecretNotFoundError
 
 from backups import MAASBackups
@@ -30,6 +34,7 @@ logger = logging.getLogger(__name__)
 MAAS_PEER_NAME = "maas-cluster"
 MAAS_API_RELATION = "api"
 MAAS_DB_NAME = "maas-db"
+MAAS_INGRESS_RELATION = "ingress"
 
 MAAS_SNAP_CHANNEL = "3.7/stable"
 
@@ -139,6 +144,16 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(api_events.relation_changed, self._on_api_endpoint_changed)
         self.framework.observe(api_events.relation_departed, self._on_api_endpoint_changed)
         self.framework.observe(api_events.relation_broken, self._on_api_endpoint_changed)
+
+        # Ingress
+        self.ingress = IngressPerAppRequirer(
+            self,
+            relation_name=MAAS_INGRESS_RELATION,
+            port=MAAS_HTTP_PORT,
+            scheme="http",
+        )
+        self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
+        self.framework.observe(self.ingress.on.revoked, self._on_ingress_revoked)
 
         # COS
         endpoints: list[cos_agent._MetricsEndpointDict] = [
@@ -343,44 +358,16 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
     def _update_ha_proxy(self) -> None:
-        region_port = (
-            MAAS_HTTPS_PORT if self.config["tls_mode"] == "passthrough" else MAAS_HTTP_PORT
+        mode = self.config["tls_mode"]
+        http = mode in ["disabled", "termination"]
+        port = MAAS_HTTP_PORT if http else MAAS_HTTPS_PORT
+        scheme = "http" if http else "https"
+
+        logger.info(f"Updating MAAS HA to {mode} with {scheme}@{port}")
+        self.ingress.provide_ingress_requirements(
+            port=port,
+            scheme=scheme
         )
-        if relation := self.model.get_relation(MAAS_API_RELATION):
-            app_name = f"api-{self.app.name}"
-            data = [
-                {
-                    "service_name": "haproxy_service" if MAAS_PROXY_PORT == 80 else app_name,
-                    "service_host": "0.0.0.0",
-                    "service_port": MAAS_PROXY_PORT,
-                    "service_options": ["mode http", "balance leastconn"],
-                    "servers": [
-                        (
-                            f"{app_name}-{self.unit.name.replace('/', '-')}",
-                            self.bind_address,
-                            region_port,
-                            [],
-                        )
-                    ],
-                },
-            ]
-            if self.config["tls_mode"] != "disabled":
-                data.append(
-                    {
-                        "service_name": "agent_service",
-                        "service_host": "0.0.0.0",
-                        "service_port": MAAS_PROXY_PORT,
-                        "servers": [
-                            (
-                                f"{app_name}-{self.unit.name.replace('/', '-')}",
-                                self.bind_address,
-                                MAAS_HTTP_PORT,
-                                [],
-                            )
-                        ],
-                    }
-                )
-            relation.data[self.unit]["services"] = yaml.safe_dump(data)
 
     def _update_tls_config(self) -> None:
         """Enable or disable TLS in MAAS."""
@@ -489,6 +476,14 @@ class MaasRegionCharm(ops.CharmBase):
         logger.info(event)
         self._update_ha_proxy()
         self._initialize_maas()
+
+    def _on_ingress_ready(self, event: IngressPerAppReadyEvent) -> None:
+        logger.info(event)
+        logger.info(f"Ingress available: {event.url}")
+
+    def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent) -> None:
+        logger.info(event)
+        logger.info("Ingress revoked for unit")
 
     def _on_maas_peer_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
