@@ -44,6 +44,14 @@ requires:
     interface: s3
     limit: 1
     optional: true
+  ingress-tcp:
+    interface: haproxy-route-tcp
+    limit: 1
+    optional: true
+  ingress-tcp-tls:
+    interface: haproxy-route-tcp
+    limit: 1
+    optional: true
 
 peers:
   initialize:
@@ -166,9 +174,9 @@ config:
         instead.
       type: string
     tls_mode:
-      default: "disabled"
-      description: Whether to enable TLS termination at HA Proxy ('termination'), at MAAS ('passthrough'), or no TLS ('disabled')
-      type: string
+      default: false
+      description: Whether to enable TLS at MAAS (enabled), or no TLS (disabled)
+      type: boolean
     ssl_cert_content:
       default: ""
       description: SSL certificate for tls_mode='passthrough'
