@@ -144,9 +144,8 @@ class MaasRegionCharm(ops.CharmBase):
             check_fall=3,
             check_interval=2,
         )
-        self.framework.observe(self.http_route.on.relation_changed, self._reconcile_ha_proxy)
-        self.framework.observe(self.http_route.on.relation_broken, self._reconcile_ha_proxy)
-        self.framework.observe(self.http_route.on.relation_departed, self._reconcile_ha_proxy)
+        self.framework.observe(self.http_route.on.ready, self._reconcile_ha_proxy)
+        self.framework.observe(self.http_route.on.removed, self._reconcile_ha_proxy)
 
         self.https_route = HaproxyRouteTcpRequirer(
             self,
@@ -163,9 +162,8 @@ class MaasRegionCharm(ops.CharmBase):
             check_fall=3,
             check_interval=2,
         )
-        self.framework.observe(self.https_route.on.relation_changed, self._reconcile_ha_proxy)
-        self.framework.observe(self.https_route.on.relation_broken, self._reconcile_ha_proxy)
-        self.framework.observe(self.https_route.on.relation_departed, self._reconcile_ha_proxy)
+        self.framework.observe(self.https_route.on.ready, self._reconcile_ha_proxy)
+        self.framework.observe(self.https_route.on.removed, self._reconcile_ha_proxy)
 
         # COS
         endpoints: list[cos_agent._MetricsEndpointDict] = [
