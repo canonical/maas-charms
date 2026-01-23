@@ -141,7 +141,7 @@ class MaasRegionCharm(ops.CharmBase):
             load_balancing_consistent_hashing=True,
             load_balancing_algorithm=LoadBalancingAlgorithm.SRCIP,
             check_rise=2,
-            check_fail=3,
+            check_fall=3,
             check_interval=2,
         )
         self.framework.observe(self.http_route.on.relation_changed, self._reconcile_ha_proxy)
@@ -160,7 +160,7 @@ class MaasRegionCharm(ops.CharmBase):
             load_balancing_consistent_hashing=True,
             load_balancing_algorithm=LoadBalancingAlgorithm.SRCIP,
             check_rise=2,
-            check_fail=3,
+            check_fall=3,
             check_interval=2,
         )
         self.framework.observe(self.https_route.on.relation_changed, self._reconcile_ha_proxy)
