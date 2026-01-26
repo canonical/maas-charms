@@ -173,21 +173,17 @@ config:
         leader and MAAS API port. If application is related to HAProxy, the proxy port is used
         instead.
       type: string
-    tls_mode:
-      default: false
-      description: Whether to enable TLS at MAAS (enabled), or no TLS (disabled)
-      type: boolean
     ssl_cert_content:
       default: ""
-      description: SSL certificate for tls_mode='passthrough'
+      description: SSL certificate for MAAS TLS
       type: string
     ssl_key_content:
       default: ""
-      description: SSL private key for tls_mode='passthrough'
+      description: SSL private key for MAAS TLS
       type: string
     ssl_cacert_content:
       default: ""
-      description: CA Certificates chain in PEM format
+      description: CA Certificates chain in PEM format for MAAS TLS
       type: string
     enable_prometheus_metrics:
       default: true
