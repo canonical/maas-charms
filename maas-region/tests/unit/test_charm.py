@@ -208,7 +208,6 @@ class TestClusterUpdates(unittest.TestCase):
     @patch("charm.MaasHelper", autospec=True)
     def test_ha_proxy_data_tls_termination(self, mock_helper):
         self.harness.set_leader(True)
-        self.harness.update_config({"tls_mode": "termination"})
         self.harness.begin()
         ha = self.harness.add_relation(
             MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
@@ -227,7 +226,6 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.set_leader(True)
         self.harness.update_config(
             {
-                "tls_mode": "passthrough",
                 "ssl_cert_content": "BEGIN CERTIFICATE",
                 "ssl_key_content": "BEGIN_PRIVATE_KEY",
             }
@@ -253,7 +251,7 @@ class TestClusterUpdates(unittest.TestCase):
             MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
         )
         with self.assertRaises(ValueError):
-            self.harness.update_config({"tls_mode": "invalid_mode"})
+            self.harness.update_config({"cacert": "invalid_mode"})
 
         ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
         self.assertEqual(len(ha_data), 1)
@@ -266,9 +264,7 @@ class TestClusterUpdates(unittest.TestCase):
             MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
         )
         with self.assertRaises(ValueError):
-            self.harness.update_config(
-                {"tls_mode": "passthrough", "ssl_cert_content": "test_cert"}
-            )
+            self.harness.update_config({"ssl_cert_content": "test_cert"})
 
     @patch("charm.MaasHelper", autospec=True)
     def test_on_maas_cluster_changed_prometheus_enabled(self, mock_helper):

@@ -198,6 +198,14 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.config_changed, self._on_config_changed)
 
     @property
+    def tls_enabled(self) -> bool:
+        """If MAAS is meant to run in TLS mode."""
+        return any(
+            key in self.config
+            for key in ["ssl_cert_content", "ssl_key_content", "ssl_cacert_content"]
+        )
+
+    @property
     def is_blocked(self) -> bool:
         """If the unit is in a blocked state."""
         return isinstance(self.unit.status, ops.BlockedStatus)
@@ -397,7 +405,7 @@ class MaasRegionCharm(ops.CharmBase):
             return False
 
         hosts = self.maas_ips
-        tls_mode = self.config["tls_mode"]
+        tls_mode = self.tls_enabled
         http_exists = self.http_route.relation is not None
         https_exists = self.https_route.relation is not None
 
@@ -431,7 +439,7 @@ class MaasRegionCharm(ops.CharmBase):
     def _update_tls_config(self) -> None:
         """Enable or disable TLS in MAAS."""
         if (tls_enabled := MaasHelper.is_tls_enabled()) is not None:
-            if not tls_enabled and self.config["tls_mode"]:
+            if not tls_enabled and self.tls_enabled:
                 MaasHelper.create_tls_files(
                     self.config["ssl_cert_content"],  # type: ignore
                     self.config["ssl_key_content"],  # type: ignore
@@ -439,7 +447,7 @@ class MaasRegionCharm(ops.CharmBase):
                 )
                 MaasHelper.enable_tls()
                 MaasHelper.delete_tls_files()
-            elif tls_enabled and not self.config["tls_mode"]:
+            elif tls_enabled and not self.tls_enabled:
                 MaasHelper.disable_tls()
 
     def _update_prometheus_config(self, enable: bool) -> None:
@@ -582,7 +590,7 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_config_changed(self, event: ops.ConfigChangedEvent):
         # validate tls certificate and key
-        if self.config["tls_mode"]:
+        if self.tls_enabled:
             cert = self.config["ssl_cert_content"]
             key = self.config["ssl_key_content"]
             if not cert or not key:
