@@ -293,12 +293,12 @@ class MaasRegionCharm(ops.CharmBase):
         Return:
             list[str]: The list of connected MAAS IPs
         """
-        relation = self.peers
-        assert relation is not None, "Could not fetch region relaiton"
-        self._write_ip()
+        if relation := self.peers:
+            self._write_ip()
 
-        region_ips = {relation.data[unit]["bind_address"] for unit in relation.units}
-        return list(region_ips.union({self.bind_address}))
+            region_ips = {relation.data[unit]["bind_address"] for unit in relation.units}
+            return list(region_ips.union({self.bind_address}))
+        return [self.bind_address]
 
     def get_operational_mode(self) -> str:
         """Get expected MAAS mode.
