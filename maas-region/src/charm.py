@@ -208,7 +208,7 @@ class MaasRegionCharm(ops.CharmBase):
     def tls_enabled(self) -> bool:
         """If MAAS is meant to run in TLS mode."""
         return any(
-            key in self.config
+            self.config.get(key)
             for key in ["ssl_cert_content", "ssl_key_content", "ssl_cacert_content"]
         )
 
@@ -451,7 +451,6 @@ class MaasRegionCharm(ops.CharmBase):
         if https_exists:
             self.https_route.provide_haproxy_route_tcp_requirements(hosts=hosts)
 
-        self.unit.status = ops.ActiveStatus()
         return True
 
     def _update_tls_config(self) -> None:
