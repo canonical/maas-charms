@@ -46,6 +46,9 @@ requires:
     optional: true
 
 peers:
+  maas_init:
+    interface: rolling_ops
+    optional: false
   maas-cluster:
     interface: maas_peers
     optional: false
@@ -187,3 +190,6 @@ config:
       default: false
       description: Whether to configure MAAS as running in region+rack mode
       type: boolean
+charm-libs:
+  - lib: rolling-ops.v0
+    version: "0"
