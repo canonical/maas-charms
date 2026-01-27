@@ -207,10 +207,11 @@ class MaasRegionCharm(ops.CharmBase):
     @property
     def tls_enabled(self) -> bool:
         """If MAAS is meant to run in TLS mode."""
-        return any(
-            self.config.get(key)
-            for key in ["ssl_cert_content", "ssl_key_content", "ssl_cacert_content"]
-        )
+        ssl_cfg_keys = ["ssl_cert_content", "ssl_key_content", "ssl_cacert_content"]
+        for key in ssl_cfg_keys:
+            if self.config[key]:
+                return True
+        return False
 
     @property
     def is_blocked(self) -> bool:
@@ -418,40 +419,24 @@ class MaasRegionCharm(ops.CharmBase):
             admin_username=credentials["username"], maas_ip=self.bind_address
         )
 
-    def _reconcile_ha_proxy(self, event: ops.EventBase) -> bool:
+    def _reconcile_ha_proxy(self, event: ops.EventBase) -> None:
         if not self.unit.is_leader():
-            return False
+            return
+
+        if not self.peers:
+            event.defer()
+            return
 
         hosts = self.maas_ips
-        tls_mode = self.tls_enabled
-        http_exists = self.http_route.relation is not None
-        https_exists = self.https_route.relation is not None
 
-        if tls_mode and http_exists and not https_exists:
-            self.unit.status = ops.BlockedStatus(
-                "Invalid HAProxy configuration: Missing TLS relation."
-            )
-            return False
-
-        elif https_exists and not http_exists:
-            self.unit.status = ops.BlockedStatus(
-                "Invalid HAProxy configuration: Missing HTTP relation."
-            )
-            return False
-
-        elif https_exists and not tls_mode:
-            self.unit.status = ops.BlockedStatus(
-                "Invalid HAProxy configuration: "
-                "Cannot have TLS relation when `tls_mode` is not set."
-            )
-            return False
-
-        if http_exists:
-            self.http_route.provide_haproxy_route_tcp_requirements(hosts=hosts)
-        if https_exists:
-            self.https_route.provide_haproxy_route_tcp_requirements(hosts=hosts)
-
-        return True
+        try:
+            if self.http_route.relation:
+                self.http_route.provide_haproxy_route_tcp_requirements(hosts=hosts, port=80)
+            if self.https_route.relation:
+                self.https_route.provide_haproxy_route_tcp_requirements(hosts=hosts, port=443)
+        except Exception as e:
+            logger.exception("Failed to reconcile HAProxy: %s", e)
+            event.defer()
 
     def _update_tls_config(self) -> None:
         """Enable or disable TLS in MAAS."""
@@ -518,7 +503,24 @@ class MaasRegionCharm(ops.CharmBase):
         elif not self.connection_string:
             e.add_status(ops.WaitingStatus("Waiting for database DSN"))
         elif not self.maas_api_url:
-            ops.WaitingStatus("Waiting for MAAS initialization")
+            e.add_status(ops.WaitingStatus("Waiting for MAAS initialization"))
+        elif (
+            self.tls_enabled
+            and self.http_route.relation is not None
+            and self.https_route.relation is None
+        ):
+            e.add_status(ops.BlockedStatus("Invalid HAProxy configuration: Missing TLS relation."))
+        elif self.http_route.relation is None and self.https_route.relation is not None:
+            e.add_status(
+                ops.BlockedStatus("Invalid HAProxy configuration: Missing HTTP relation.")
+            )
+        elif not self.tls_enabled and self.https_route.relation is not None:
+            e.add_status(
+                ops.BlockedStatus(
+                    "Invalid HAProxy configuration: "
+                    "Cannot have TLS relation when MAAS TLS is not enabled."
+                )
+            )
         else:
             logger.debug("no status change based on prerequisites")
 
