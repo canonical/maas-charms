@@ -18,7 +18,7 @@ from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
-from charms.rolling_ops.v0.rollingops import RollingOpsManager
+from charms.rolling_ops.v0.rollingops import RollingOpsManager, RunWithLock
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
 from ops.model import SecretNotFoundError
@@ -175,12 +175,8 @@ class MaasRegionCharm(ops.CharmBase):
 
         # Rolling Ops manager - used to coordinate actions between units
         self.maas_init_manager = RollingOpsManager(
-            charm=self, relation="maas_init", callback=self._on_first_maas_init
+            charm=self, relation="maas_init", callback=self._on_rolling_maas_init
         )
-
-    def _on_first_maas_init(self, event: ops.RelationEvent) -> None:
-        """Handle additional actions when MAAS init runs for the first time."""
-        self._initialize_maas()
 
     @property
     def is_blocked(self) -> bool:
@@ -337,6 +333,17 @@ class MaasRegionCharm(ops.CharmBase):
             return True
         except subprocess.CalledProcessError:
             return False
+
+    def _on_rolling_maas_init(self, _: RunWithLock):
+        """Run MAAS initialization.
+
+        Required for RollingOpsManager, which expects a callback that
+        takes a CharmBase object and EventBase object as arguments.
+
+        Args:
+            _ (RunWithLock): Event passed in by RollingOpsManager, not used.
+        """
+        self._initialize_maas()
 
     def get_region_system_ids(self) -> set[str]:
         """Get the system IDs of all regions in the MAAS cluster.
