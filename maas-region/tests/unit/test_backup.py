@@ -41,6 +41,7 @@ class TestMAASBackups(unittest.TestCase):
     def setUp(self):
         self.harness = ops.testing.Harness(MaasRegionCharm)
         self.addCleanup(self.harness.cleanup)
+        self.harness.add_relation("maas_init", "maas-region")
 
     @patch("boto3.session.Session.resource")
     @patch("backups.Config")
