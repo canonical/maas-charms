@@ -478,7 +478,6 @@ class MaasRegionCharm(ops.CharmBase):
         if self.connection_string:
             self.unit.status = ops.MaintenanceStatus("Initializing the MAAS database")
             self.on["maas-init"].acquire_lock.emit()
-            # self._initialize_maas()
 
     def _on_maasdb_endpoints_changed(self, event: db.DatabaseEndpointsChangedEvent) -> None:
         """Update database DSN.
