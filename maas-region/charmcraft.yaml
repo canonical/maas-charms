@@ -190,6 +190,3 @@ config:
       default: false
       description: Whether to configure MAAS as running in region+rack mode
       type: boolean
-charm-libs:
-  - lib: rolling-ops.v0
-    version: "0"
