@@ -10,13 +10,10 @@ from subprocess import check_output
 
 import pytest
 import yaml
+from conftest import APP_NAME, POSTGRESQL_CHANNEL
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
-
-METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
-APP_NAME = METADATA["name"]
-
 
 @pytest.mark.abort_on_fail
 async def test_build_and_deploy(ops_test: OpsTest):
@@ -55,7 +52,7 @@ async def test_database_integration(ops_test: OpsTest):
         ops_test.model.deploy(
             "postgresql",
             application_name="postgresql",
-            channel="16/beta",
+            channel=POSTGRESQL_CHANNEL,
             series="noble",
             trust=True,
             # workaround for https://bugs.launchpad.net/maas/+bug/2097079

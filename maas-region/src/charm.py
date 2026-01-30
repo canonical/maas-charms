@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 MAAS_PEER_NAME = "maas-cluster"
 MAAS_API_RELATION = "api"
 MAAS_DB_NAME = "maas-db"
+MAAS_INIT_RELATION = "maas_init"
 
 MAAS_SNAP_CHANNEL = "3.7/stable"
 
@@ -173,9 +174,9 @@ class MaasRegionCharm(ops.CharmBase):
         # Charm configuration
         self.framework.observe(self.on.config_changed, self._on_config_changed)
 
-        # Rolling Ops manager - used to coordinate actions between units
+        # MAAS initialize manager, used to coordinate sequential inits
         self.maas_init_manager = RollingOpsManager(
-            charm=self, relation="maas_init", callback=self._on_rolling_maas_init
+            charm=self, relation=MAAS_INIT_RELATION, callback=self._on_rolling_maas_init
         )
 
     @property
