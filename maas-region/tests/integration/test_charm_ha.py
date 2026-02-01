@@ -21,7 +21,11 @@ async def test_multi_node_build(ops_test: OpsTest):
             num_units=3,
         ),
         ops_test.model.wait_for_idle(
-            apps=[APP_NAME], status="waiting", raise_on_blocked=True, timeout=1000, wait_for_exact_units=3,
+            apps=[APP_NAME],
+            status="waiting",
+            raise_on_blocked=True,
+            timeout=1000,
+            wait_for_exact_units=3,
         ),
     )
 
@@ -36,18 +40,15 @@ async def test_maas_peer_relations(ops_test: OpsTest):
         raise ValueError("Model is not set")
 
     relation_names = [
-        relation.endpoints[0].name
-        for relation in ops_test.model.relations
-        if relation.is_peer
+        relation.endpoints[0].name for relation in ops_test.model.relations if relation.is_peer
     ]
-    assert (
-        MAAS_PEER_NAME in relation_names
-    ), f"'{MAAS_PEER_NAME}' peer relation not found. Relations: {relation_names}"
+    assert MAAS_PEER_NAME in relation_names, (
+        f"'{MAAS_PEER_NAME}' peer relation not found. Relations: {relation_names}"
+    )
 
-    assert (
-        MAAS_INIT_RELATION in relation_names
-    ), f"'{MAAS_INIT_RELATION}' peer relation not found. Relations: {relation_names}"
-
+    assert MAAS_INIT_RELATION in relation_names, (
+        f"'{MAAS_INIT_RELATION}' peer relation not found. Relations: {relation_names}"
+    )
 
 
 @pytest.mark.abort_on_fail
