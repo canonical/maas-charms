@@ -13,6 +13,9 @@ async def test_multi_node_build(ops_test: OpsTest):
     """
     charm = await ops_test.build_charm(".")
 
+    if ops_test.model is None:
+        raise ValueError("Model is not set")
+
     await asyncio.gather(
         ops_test.model.deploy(
             charm,
@@ -57,6 +60,9 @@ async def test_multi_node_database_integration(ops_test: OpsTest):
 
     Assert that the charm is active if the integration is established.
     """
+    if ops_test.model is None:
+        raise ValueError("Model is not set")
+
     await asyncio.gather(
         ops_test.model.deploy(
             "postgresql",
