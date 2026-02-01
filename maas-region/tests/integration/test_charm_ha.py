@@ -1,7 +1,7 @@
 import asyncio
 
 import pytest
-from conftest import APP_NAME, POSTGRESQL_CHANNEL
+from conftest import APP_NAME, MAAS_INIT_RELATION, MAAS_PEER_NAME, POSTGRESQL_CHANNEL
 from pytest_operator.plugin import OpsTest
 
 
@@ -11,10 +11,8 @@ async def test_multi_node_build(ops_test: OpsTest):
 
     Assert on the unit status before any relations/configurations take place.
     """
-    # Build and deploy charm from local source folder
     charm = await ops_test.build_charm(".")
 
-    # Deploy 3 units of the charm and wait for waiting/idle status
     await asyncio.gather(
         ops_test.model.deploy(
             charm,
@@ -29,7 +27,31 @@ async def test_multi_node_build(ops_test: OpsTest):
 
 
 @pytest.mark.abort_on_fail
-async def test_mutli_node_database_integration(ops_test: OpsTest):
+async def test_maas_peer_relations(ops_test: OpsTest):
+    """Verify that the charm establishes its peer relations when multiple units are deployed.
+
+    Assert that the relations are established when the units are related.
+    """
+    if ops_test.model is None:
+        raise ValueError("Model is not set")
+
+    relation_names = [
+        relation.endpoints[0].name
+        for relation in ops_test.model.relations
+        if relation.is_peer
+    ]
+    assert (
+        MAAS_PEER_NAME in relation_names
+    ), f"'{MAAS_PEER_NAME}' peer relation not found. Relations: {relation_names}"
+
+    assert (
+        MAAS_INIT_RELATION in relation_names
+    ), f"'{MAAS_INIT_RELATION}' peer relation not found. Relations: {relation_names}"
+
+
+
+@pytest.mark.abort_on_fail
+async def test_multi_node_database_integration(ops_test: OpsTest):
     """Verify that the charm integrates with the database when multiple units are deployed.
 
     Assert that the charm is active if the integration is established.
@@ -43,8 +65,6 @@ async def test_mutli_node_database_integration(ops_test: OpsTest):
             trust=True,
             # workaround for https://bugs.launchpad.net/maas/+bug/2097079
             config={"plugin_audit_enable": False},
-            # workaround for https://bugs.launchpad.net/maas/+bug/2097079, https://github.com/canonical/postgresql-operator/issues/1001
-            revision=758,
         ),
         ops_test.model.wait_for_idle(
             apps=["postgresql"], status="active", raise_on_blocked=True, timeout=1000
