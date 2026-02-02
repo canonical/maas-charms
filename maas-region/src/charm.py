@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 MAAS_PEER_NAME = "maas-cluster"
 MAAS_API_RELATION = "api"
 MAAS_DB_NAME = "maas-db"
-MAAS_INIT_RELATION = "maas_init"
+MAAS_INIT_RELATION = "intialize"
 
 MAAS_SNAP_CHANNEL = "3.7/stable"
 
