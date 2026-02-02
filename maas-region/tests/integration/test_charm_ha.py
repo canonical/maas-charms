@@ -20,7 +20,6 @@ async def test_multi_node_build(ops_test: OpsTest):
         ops_test.model.deploy(
             charm,
             application_name=APP_NAME,
-            config={"tls_mode": "termination"},
             num_units=3,
         ),
         ops_test.model.wait_for_idle(
