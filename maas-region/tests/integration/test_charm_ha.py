@@ -1,7 +1,7 @@
 import asyncio
 
 import pytest
-from conftest import APP_NAME, MAAS_INIT_RELATION, MAAS_PEER_NAME, POSTGRESQL_CHANNEL
+from conftest import APP_NAME, POSTGRESQL_CHANNEL
 from pytest_operator.plugin import OpsTest
 
 
@@ -45,13 +45,13 @@ async def test_maas_peer_relations(ops_test: OpsTest):
     relation_names = [
         relation.endpoints[0].name for relation in ops_test.model.relations if relation.is_peer
     ]
-    assert MAAS_PEER_NAME in relation_names, (
-        f"'{MAAS_PEER_NAME}' peer relation not found. Relations: {relation_names}"
-    )
+    assert (
+        "maas-cluster" in relation_names
+    ), f"'maas-cluster' peer relation not found. Relations: {relation_names}"
 
-    assert MAAS_INIT_RELATION in relation_names, (
-        f"'{MAAS_INIT_RELATION}' peer relation not found. Relations: {relation_names}"
-    )
+    assert (
+        "maas_init" in relation_names
+    ), f"'maas_init' peer relation not found. Relations: {relation_names}"
 
 
 @pytest.mark.abort_on_fail
