@@ -18,6 +18,7 @@ from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
+from charms.rolling_ops.v0.rollingops import RollingOpsManager, RunWithLock
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
 from ops.model import SecretNotFoundError
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 MAAS_PEER_NAME = "maas-cluster"
 MAAS_API_RELATION = "api"
 MAAS_DB_NAME = "maas-db"
+MAAS_INIT_RELATION = "initialize"
 
 MAAS_SNAP_CHANNEL = "3.7/stable"
 
@@ -171,6 +173,11 @@ class MaasRegionCharm(ops.CharmBase):
 
         # Charm configuration
         self.framework.observe(self.on.config_changed, self._on_config_changed)
+
+        # MAAS initialize manager, used to coordinate sequential inits
+        self.maas_init_manager = RollingOpsManager(
+            charm=self, relation=MAAS_INIT_RELATION, callback=self._on_rolling_maas_init
+        )
 
     @property
     def is_blocked(self) -> bool:
@@ -328,6 +335,17 @@ class MaasRegionCharm(ops.CharmBase):
         except subprocess.CalledProcessError:
             return False
 
+    def _on_rolling_maas_init(self, _: RunWithLock):
+        """Run MAAS initialization.
+
+        Required for RollingOpsManager, which expects a callback that
+        takes a CharmBase object and EventBase object as arguments.
+
+        Args:
+            _ (RunWithLock): Event passed in by RollingOpsManager, not used.
+        """
+        self._initialize_maas()
+
     def get_region_system_ids(self) -> set[str]:
         """Get the system IDs of all regions in the MAAS cluster.
 
@@ -460,7 +478,7 @@ class MaasRegionCharm(ops.CharmBase):
         logger.info(f"MAAS database credentials received for user '{event.username}'")
         if self.connection_string:
             self.unit.status = ops.MaintenanceStatus("Initializing the MAAS database")
-            self._initialize_maas()
+            self.on[MAAS_INIT_RELATION].acquire_lock.emit()
 
     def _on_maasdb_endpoints_changed(self, event: db.DatabaseEndpointsChangedEvent) -> None:
         """Update database DSN.
