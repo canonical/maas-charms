@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 MAAS_PEER_NAME = "maas-cluster"
 MAAS_API_RELATION = "api"
 MAAS_DB_NAME = "maas-db"
-MAAS_INIT_RELATION = "intialize"
+MAAS_INIT_RELATION = "initialize"
 
 MAAS_SNAP_CHANNEL = "3.7/stable"
 
@@ -478,7 +478,7 @@ class MaasRegionCharm(ops.CharmBase):
         logger.info(f"MAAS database credentials received for user '{event.username}'")
         if self.connection_string:
             self.unit.status = ops.MaintenanceStatus("Initializing the MAAS database")
-            self.on["maas-init"].acquire_lock.emit()
+            self.on[MAAS_INIT_RELATION].acquire_lock.emit()
 
     def _on_maasdb_endpoints_changed(self, event: db.DatabaseEndpointsChangedEvent) -> None:
         """Update database DSN.

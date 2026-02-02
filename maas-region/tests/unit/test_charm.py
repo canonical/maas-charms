@@ -57,7 +57,7 @@ class TestDBRelation(unittest.TestCase):
         self.harness = ops.testing.Harness(MaasRegionCharm)
         self.harness.add_network("10.0.0.10")
         self.addCleanup(self.harness.cleanup)
-        self.harness.add_relation("maas_init", "maas-region")
+        self.harness.add_relation("initialize", "maas-region")
 
     @patch("charm.MaasHelper", autospec=True)
     def test_database_connected(self, mock_helper):
