@@ -46,13 +46,13 @@ filterwarnings = [
   "ignore::DeprecationWarning",
 ]
 
+[tool.coverage.report]
+show_missing = true
+
 # Formatting tools configuration
 
 [tool.coverage.run]
 branch = true
-
-[tool.coverage.report]
-show_missing = true
 
 [tool.pyright]
 include = [ "src/**.py" ]
