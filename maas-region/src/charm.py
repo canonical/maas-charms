@@ -419,6 +419,18 @@ class MaasRegionCharm(ops.CharmBase):
             admin_username=credentials["username"], maas_ip=self.bind_address
         )
 
+    def _set_haproxy_route(self, route, *, enabled: bool, port: int | None):
+        if not self.unit.is_leader():
+            return
+
+        if not route.relation:
+            return
+
+        if not enabled:
+            route.provide_haproxy_route_tcp_requirements(hosts=None, port=port)
+        else:
+            route.provide_haproxy_route_tcp_requirements(hosts=self.maas_ips, port=port)
+
     def _reconcile_ha_proxy(self, event: ops.EventBase) -> None:
         if not self.unit.is_leader():
             return
@@ -427,16 +439,15 @@ class MaasRegionCharm(ops.CharmBase):
             event.defer()
             return
 
-        hosts = self.maas_ips
+        http_ok = self.http_route.relation is not None
+        https_ok = (
+            self.tls_enabled
+            and self.http_route.relation is not None
+            and self.https_route.relation is not None
+        )
 
-        try:
-            if self.http_route.relation:
-                self.http_route.provide_haproxy_route_tcp_requirements(hosts=hosts, port=80)
-            if self.https_route.relation:
-                self.https_route.provide_haproxy_route_tcp_requirements(hosts=hosts, port=443)
-        except Exception as e:
-            logger.exception("Failed to reconcile HAProxy: %s", e)
-            event.defer()
+        self._set_haproxy_route(self.http_route, enabled=http_ok, port=80)
+        self._set_haproxy_route(self.https_route, enabled=https_ok, port=443)
 
     def _update_tls_config(self) -> None:
         """Enable or disable TLS in MAAS."""
@@ -522,7 +533,7 @@ class MaasRegionCharm(ops.CharmBase):
                 )
             )
         else:
-            logger.debug("no status change based on prerequisites")
+            e.add_status(ops.ActiveStatus())
 
     def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
         """Database is ready.
