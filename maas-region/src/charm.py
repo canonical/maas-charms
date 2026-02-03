@@ -518,7 +518,7 @@ class MaasRegionCharm(ops.CharmBase):
         elif not self.maas_api_url:
             e.add_status(ops.WaitingStatus("Waiting for MAAS initialization"))
         elif (
-            self.tls_enabled
+            self.tls_config_enabled
             and self.http_route.relation is not None
             and self.https_route.relation is None
         ):
