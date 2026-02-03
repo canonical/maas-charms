@@ -205,7 +205,7 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
     @property
-    def tls_enabled(self) -> bool:
+    def tls_config_enabled(self) -> bool:
         """If MAAS is meant to run in TLS mode."""
         ssl_cfg_keys = ["ssl_cert_content", "ssl_key_content", "ssl_cacert_content"]
         for key in ssl_cfg_keys:
@@ -263,7 +263,7 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _write_ip(self) -> None:
         relation = self.peers
-        assert relation is not None, "Could not fetch region relaiton"
+        assert relation is not None, "Could not fetch region relation"
         relation.data[self.unit]["bind_address"] = self.bind_address
 
     @property
@@ -439,20 +439,22 @@ class MaasRegionCharm(ops.CharmBase):
             event.defer()
             return
 
-        http_ok = self.http_route.relation is not None
-        https_ok = (
-            self.tls_enabled
-            and self.http_route.relation is not None
-            and self.https_route.relation is not None
-        )
+        http_enabled = self.http_route.relation is not None
+        self._set_haproxy_route(self.http_route, enabled=http_enabled, port=80)
 
-        self._set_haproxy_route(self.http_route, enabled=http_ok, port=80)
-        self._set_haproxy_route(self.https_route, enabled=https_ok, port=443)
+        # a valid deployment includes having neither, both, but not only one of the https relation and tls config arguments.
+        https_enabled = self.https_route.relation is not None
+        https_valid = self.tls_config_enabled is https_enabled
+        self._set_haproxy_route(self.https_route, enabled=http_enabled and https_valid, port=443)
+
+        # if there are no relations, or the http relation is set and the https configuration is valid
+        if (http_enabled or not https_enabled) and https_valid:
+            self.unit.status = ops.ActiveStatus()
 
     def _update_tls_config(self) -> None:
         """Enable or disable TLS in MAAS."""
         if (tls_enabled := MaasHelper.is_tls_enabled()) is not None:
-            if not tls_enabled and self.tls_enabled:
+            if not tls_enabled and self.tls_config_enabled:
                 MaasHelper.create_tls_files(
                     self.config["ssl_cert_content"],  # type: ignore
                     self.config["ssl_key_content"],  # type: ignore
@@ -460,7 +462,7 @@ class MaasRegionCharm(ops.CharmBase):
                 )
                 MaasHelper.enable_tls()
                 MaasHelper.delete_tls_files()
-            elif tls_enabled and not self.tls_enabled:
+            elif tls_enabled and not self.tls_config_enabled:
                 MaasHelper.disable_tls()
 
     def _update_prometheus_config(self, enable: bool) -> None:
@@ -520,20 +522,22 @@ class MaasRegionCharm(ops.CharmBase):
             and self.http_route.relation is not None
             and self.https_route.relation is None
         ):
-            e.add_status(ops.BlockedStatus("Invalid HAProxy configuration: Missing TLS relation."))
+            e.add_status(
+                ops.BlockedStatus(
+                    "Invalid HAProxy configuration: Missing `ingress-tcp-tls` relation."
+                )
+            )
         elif self.http_route.relation is None and self.https_route.relation is not None:
             e.add_status(
-                ops.BlockedStatus("Invalid HAProxy configuration: Missing HTTP relation.")
+                ops.BlockedStatus("Invalid HAProxy configuration: Missing `ingress-tcp` relation.")
             )
-        elif not self.tls_enabled and self.https_route.relation is not None:
+        elif not self.tls_config_enabled and self.https_route.relation is not None:
             e.add_status(
                 ops.BlockedStatus(
                     "Invalid HAProxy configuration: "
-                    "Cannot have TLS relation when MAAS TLS is not enabled."
+                    "Cannot have `ingress-tcp-tls` relation when MAAS TLS is not enabled."
                 )
             )
-        else:
-            e.add_status(ops.ActiveStatus())
 
     def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
         """Database is ready.
@@ -620,7 +624,7 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_config_changed(self, event: ops.ConfigChangedEvent):
         # validate tls certificate and key
-        if self.tls_enabled:
+        if self.tls_config_enabled:
             cert = self.config["ssl_cert_content"]
             key = self.config["ssl_key_content"]
             if not cert or not key:
