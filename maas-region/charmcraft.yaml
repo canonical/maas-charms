@@ -108,7 +108,6 @@ actions:
   list-backups:
     description: |
       List available MAAS backups
-      NOTE - This is a noop action, and serves only as a placeholder
 
 parts:
   charm:
