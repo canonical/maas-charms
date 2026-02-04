@@ -261,11 +261,6 @@ class MaasRegionCharm(ops.CharmBase):
         else:
             raise ops.model.ModelError("Bind address not set in the model")
 
-    def _write_ip(self) -> None:
-        relation = self.peers
-        assert relation is not None, "Could not fetch region relation"
-        relation.data[self.unit]["bind_address"] = self.bind_address
-
     @property
     def maas_api_url(self) -> str:
         """Get MAAS API URL.
@@ -274,8 +269,6 @@ class MaasRegionCharm(ops.CharmBase):
             str: The API URL
         """
         peer_relation = self.peers
-        if peer_relation:
-            self._write_ip()
 
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
@@ -295,8 +288,6 @@ class MaasRegionCharm(ops.CharmBase):
             list[str]: The list of connected MAAS IPs
         """
         if relation := self.peers:
-            self._write_ip()
-
             region_ips = {relation.data[unit]["bind_address"] for unit in relation.units}
             return list(region_ips.union({self.bind_address}))
         return [self.bind_address]
@@ -419,7 +410,7 @@ class MaasRegionCharm(ops.CharmBase):
             admin_username=credentials["username"], maas_ip=self.bind_address
         )
 
-    def _set_haproxy_route(self, route, *, enabled: bool, port: int | None):
+    def _set_haproxy_route(self, route, enabled: bool, port: int | None):
         if not self.unit.is_leader():
             return
 
@@ -576,6 +567,7 @@ class MaasRegionCharm(ops.CharmBase):
     def _on_maas_peer_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
         self.set_peer_data(self.unit, "system-name", socket.gethostname())
+        self.set_peer_data(self.unit, "bind_address", self.bind_address)
         self._reconcile_ha_proxy(event)
 
     def _on_create_admin_action(self, event: ops.ActionEvent):
