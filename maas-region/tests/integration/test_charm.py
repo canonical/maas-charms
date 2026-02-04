@@ -4,7 +4,6 @@
 
 import asyncio
 import logging
-from pathlib import Path
 from subprocess import check_output
 from time import sleep, time
 
