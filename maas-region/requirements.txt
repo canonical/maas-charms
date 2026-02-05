@@ -12,5 +12,5 @@ botocore >=1.42.21, <1.43.0
 cosl
 opentelemetry-exporter-otlp-proto-http>=1.21.0
 
-# for ha proxy - version used by ingress configurator charm
-pydantic==2.12.5
+# smallest pydantic version that satsfies the haproxy tcp library (haproxy charm uses 2.12.5)
+pydantic==2

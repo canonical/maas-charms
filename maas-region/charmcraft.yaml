@@ -62,9 +62,6 @@ peers:
     optional: false
 
 provides:
-  api:
-    interface: http
-    optional: true
   cos-agent:
     interface: cos_agent
     optional: true
@@ -175,15 +172,15 @@ config:
       type: string
     ssl_cert_content:
       default: ""
-      description: SSL certificate for MAAS TLS
+      description: SSL certificate. If provided, MAAS will run in TLS mode, and will require `ssl_key_content`` to be provided.
       type: string
     ssl_key_content:
       default: ""
-      description: SSL private key for MAAS TLS
+      description: SSL private key. If provided, MAAS will run in TLS mode, and will require `ssl_cert_content` to be provided.
       type: string
     ssl_cacert_content:
       default: ""
-      description: CA Certificates chain in PEM format for MAAS TLS
+      description: CA Certificates chain in PEM format. If provided, MAAS will run in TLS mode, and will require `ssl_key_content` and `ssl_cert_content` to be provided.
       type: string
     enable_prometheus_metrics:
       default: true

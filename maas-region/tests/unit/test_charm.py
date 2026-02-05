@@ -14,7 +14,7 @@ from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 
 from charm import (
-    MAAS_API_RELATION,
+    HAPROXY_HTTP,
     MAAS_DB_NAME,
     MAAS_HTTP_PORT,
     MAAS_PEER_NAME,
@@ -195,9 +195,8 @@ class TestClusterUpdates(unittest.TestCase):
     def test_ha_proxy_data(self, mock_helper):
         self.harness.set_leader(True)
         self.harness.begin()
-        ha = self.harness.add_relation(
-            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
-        )
+        ha = self.harness.add_relation(HAPROXY_HTTP, "haproxy")
+        self.harness.update_relation_data(ha, "haproxy", {"public-address": "proxy.maas"})
 
         ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
         self.assertEqual(len(ha_data), 1)
@@ -207,23 +206,7 @@ class TestClusterUpdates(unittest.TestCase):
         self.assertEqual(ha_data[0]["servers"][0][1], "10.0.0.10")
 
     @patch("charm.MaasHelper", autospec=True)
-    def test_ha_proxy_data_tls_termination(self, mock_helper):
-        self.harness.set_leader(True)
-        self.harness.begin()
-        ha = self.harness.add_relation(
-            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
-        )
-
-        ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
-        self.assertEqual(len(ha_data), 2)
-        self.assertIn("service_name", ha_data[1])  # codespell:ignore
-        self.assertIn("service_host", ha_data[1])  # codespell:ignore
-        self.assertEqual(len(ha_data[1]["servers"]), 1)
-        self.assertEqual(ha_data[1]["servers"][0][1], "10.0.0.10")
-        self.assertEqual(ha_data[0]["servers"][0][2], 5240)
-
-    @patch("charm.MaasHelper", autospec=True)
-    def test_ha_proxy_data_tls_passthrough(self, mock_helper):
+    def test_ha_proxy_data_tls(self, mock_helper):
         self.harness.set_leader(True)
         self.harness.update_config(
             {
@@ -233,7 +216,7 @@ class TestClusterUpdates(unittest.TestCase):
         )
         self.harness.begin()
         ha = self.harness.add_relation(
-            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
+            HAPROXY_HTTP, "haproxy", unit_data={"public-address": "proxy.maas"}
         )
 
         ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
@@ -249,7 +232,7 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.set_leader(True)
         self.harness.begin()
         ha = self.harness.add_relation(
-            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
+            HAPROXY_HTTP, "haproxy", unit_data={"public-address": "proxy.maas"}
         )
         with self.assertRaises(ValueError):
             self.harness.update_config({"cacert": "invalid_mode"})
@@ -262,7 +245,7 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.set_leader(True)
         self.harness.begin()
         self.harness.add_relation(
-            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
+            HAPROXY_HTTP, "haproxy", unit_data={"public-address": "proxy.maas"}
         )
         with self.assertRaises(ValueError):
             self.harness.update_config({"ssl_cert_content": "test_cert"})
@@ -289,7 +272,7 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.set_leader(True)
         self.harness.begin()
         self.harness.add_relation(
-            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
+            HAPROXY_HTTP, "haproxy", unit_data={"public-address": "proxy.maas"}
         )
         mock_helper.setup_region.assert_called_once_with(
             f"http://proxy.maas:{MAAS_PROXY_PORT}/MAAS",
