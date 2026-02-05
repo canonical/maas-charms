@@ -2117,7 +2117,10 @@ backup-id            | action      | status   | maas     | size       | controll
 
     @patch("pathlib.Path.write_text")
     @patch("backups.MAASBackups._download_file_from_s3")
-    def test_run_restore__controller_id_update_ok(self, download_file, _write_text):
+    @patch("charm.MaasRegionCharm.bind_address", new_callable=PropertyMock)
+    def test_run_restore__controller_id_update_ok(self, mock_bind, download_file, _write_text):
+        mock_bind.return_value = "10.0.0.1"
+
         backup_id = "2025-08-23T06:26:00Z"
         controller_id = "abc123"
         s3_parameters = {
@@ -2230,7 +2233,9 @@ backup-id            | action      | status   | maas     | size       | controll
         event.fail.assert_called_with("Restore failed: Could not fetch MAAS regions list")
 
     @patch("backups.MAASBackups._download_file_from_s3")
-    def test_run_restore__incorrect_region_count(self, download_file):
+    @patch("charm.MaasRegionCharm.bind_address", new_callable=PropertyMock)
+    def test_run_restore__incorrect_region_count(self, mock_bind, download_file):
+        mock_bind.return_value = "10.0.0.1"
         backup_id = "2025-08-23T06:26:00Z"
         controller_id = "abc123"
         s3_parameters = {
@@ -2275,7 +2280,10 @@ backup-id            | action      | status   | maas     | size       | controll
         )
 
     @patch("backups.MAASBackups._download_file_from_s3")
-    def test_run_restore__invalid_controller_id(self, download_file):
+    @patch("charm.MaasRegionCharm.bind_address", new_callable=PropertyMock)
+    def test_run_restore__invalid_controller_id(self, mock_bind, download_file):
+        mock_bind.return_value = "10.0.0.1"
+
         backup_id = "2025-08-23T06:26:00Z"
         controller_id = "abc123"
         s3_parameters = {
