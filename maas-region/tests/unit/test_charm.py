@@ -10,11 +10,12 @@ from unittest.mock import PropertyMock, call, patch
 import ops
 import ops.testing
 import yaml
+import json
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 
 from charm import (
-    MAAS_API_RELATION,
+    HAPROXY_HTTP,
     MAAS_DB_NAME,
     MAAS_HTTP_PORT,
     MAAS_PEER_NAME,
@@ -192,84 +193,14 @@ class TestClusterUpdates(unittest.TestCase):
         self.assertEqual(self.harness.get_relation_data(rel_id, app_name)["test_key"], "{}")
 
     @patch("charm.MaasHelper", autospec=True)
-    def test_ha_proxy_data(self, mock_helper):
-        self.harness.set_leader(True)
-        self.harness.begin()
-        ha = self.harness.add_relation(
-            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
-        )
-
-        ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
-        self.assertEqual(len(ha_data), 1)
-        self.assertIn("service_name", ha_data[0])  # codespell:ignore
-        self.assertIn("service_host", ha_data[0])  # codespell:ignore
-        self.assertEqual(len(ha_data[0]["servers"]), 1)
-        self.assertEqual(ha_data[0]["servers"][0][1], "10.0.0.10")
-
-    @patch("charm.MaasHelper", autospec=True)
-    def test_ha_proxy_data_tls_termination(self, mock_helper):
-        self.harness.set_leader(True)
-        self.harness.update_config({"tls_mode": "termination"})
-        self.harness.begin()
-        ha = self.harness.add_relation(
-            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
-        )
-
-        ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
-        self.assertEqual(len(ha_data), 2)
-        self.assertIn("service_name", ha_data[1])  # codespell:ignore
-        self.assertIn("service_host", ha_data[1])  # codespell:ignore
-        self.assertEqual(len(ha_data[1]["servers"]), 1)
-        self.assertEqual(ha_data[1]["servers"][0][1], "10.0.0.10")
-        self.assertEqual(ha_data[0]["servers"][0][2], 5240)
-
-    @patch("charm.MaasHelper", autospec=True)
-    def test_ha_proxy_data_tls_passthrough(self, mock_helper):
-        self.harness.set_leader(True)
-        self.harness.update_config(
-            {
-                "tls_mode": "passthrough",
-                "ssl_cert_content": "BEGIN CERTIFICATE",
-                "ssl_key_content": "BEGIN_PRIVATE_KEY",
-            }
-        )
-        self.harness.begin()
-        ha = self.harness.add_relation(
-            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
-        )
-
-        ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
-        self.assertEqual(len(ha_data), 2)
-        self.assertIn("service_name", ha_data[1])  # codespell:ignore
-        self.assertIn("service_host", ha_data[1])  # codespell:ignore
-        self.assertEqual(len(ha_data[1]["servers"]), 1)
-        self.assertEqual(ha_data[1]["servers"][0][1], "10.0.0.10")
-        self.assertEqual(ha_data[0]["servers"][0][2], 5443)
-
-    @patch("charm.MaasHelper", autospec=True)
-    def test_invalid_tls_mode(self, mock_helper):
-        self.harness.set_leader(True)
-        self.harness.begin()
-        ha = self.harness.add_relation(
-            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
-        )
-        with self.assertRaises(ValueError):
-            self.harness.update_config({"tls_mode": "invalid_mode"})
-
-        ha_data = yaml.safe_load(self.harness.get_relation_data(ha, "maas-region/0")["services"])
-        self.assertEqual(len(ha_data), 1)
-
-    @patch("charm.MaasHelper", autospec=True)
     def test_bad_ssl_cert_key_config(self, mock_helper):
         self.harness.set_leader(True)
         self.harness.begin()
         self.harness.add_relation(
-            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
+            HAPROXY_HTTP, "haproxy", unit_data={"public-address": "proxy.maas"}
         )
         with self.assertRaises(ValueError):
-            self.harness.update_config(
-                {"tls_mode": "passthrough", "ssl_cert_content": "test_cert"}
-            )
+            self.harness.update_config({"ssl_cert_content": "test_cert"})
 
     @patch("charm.MaasHelper", autospec=True)
     def test_on_maas_cluster_changed_prometheus_enabled(self, mock_helper):
@@ -281,24 +212,6 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.update_config({"enable_rack_mode": True})
         mock_helper.set_prometheus_metrics.assert_called_with(
             "maas-admin-internal", "10.0.0.10", True
-        )
-
-    @patch(
-        "charm.MaasRegionCharm.connection_string",
-        new_callable=PropertyMock(return_value="postgres://"),
-    )
-    @patch("charm.MaasHelper", autospec=True)
-    def test_ha_proxy_update_api_url(self, mock_helper, _mock_conn_id):
-        mock_helper.get_maas_mode.return_value = "region"
-        self.harness.set_leader(True)
-        self.harness.begin()
-        self.harness.add_relation(
-            MAAS_API_RELATION, "haproxy", unit_data={"public-address": "proxy.maas"}
-        )
-        mock_helper.setup_region.assert_called_once_with(
-            f"http://proxy.maas:{MAAS_PROXY_PORT}/MAAS",
-            "postgres://",
-            "region",
         )
 
     @patch("charm.MaasHelper", autospec=True)
