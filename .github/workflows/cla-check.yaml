@@ -1,0 +1,11 @@
+name: cla-check
+
+on: [pull_request]
+
+jobs:
+    cla-check:
+        runs-on: ubuntu-latest
+        if: github.actor != 'maas-lander'
+        steps:
+            - name: Check if CLA signed
+              uses: canonical/has-signed-canonical-cla@v2

@@ -10,7 +10,8 @@
   "packageRules": [
     {
       "description": "Update botocore and boto3 together",
-      "matchPackageNames": ["botocore", "boto3"]
+      "matchPackageNames": ["botocore", "boto3"],
+      "groupName": "botocore"
     }
   ]
 }
