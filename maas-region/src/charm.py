@@ -85,6 +85,18 @@ MAAS_ADMIN_SECRET_KEY = "maas-admin-secret-uri"
 
 MAAS_BACKUP_TYPES = ["full", "differential", "incremental"]
 
+COMMON_HAPROXY_ARGS = {
+    "enforce_tls": False,
+    "tls_terminate": False,
+    "retry_count": 3,
+    "retry_redispatch": True,
+    "load_balancing_consistent_hashing": True,
+    "load_balancing_algorithm": LoadBalancingAlgorithm.SRCIP,
+    "check_rise": 2,
+    "check_fall": 3,
+    "check_interval": 2,
+}
+
 
 @trace_charm(
     tracing_endpoint="charm_tracing_endpoint",
@@ -132,37 +144,13 @@ class MaasRegionCharm(ops.CharmBase):
 
         # HAProxy
         self.http_route = HaproxyRouteTcpRequirer(
-            self,
-            HAPROXY_HTTP,
-            port=80,
-            backend_port=MAAS_HTTP_PORT,
-            enforce_tls=False,
-            tls_terminate=False,
-            retry_count=3,
-            retry_redispatch=True,
-            load_balancing_consistent_hashing=True,
-            load_balancing_algorithm=LoadBalancingAlgorithm.SRCIP,
-            check_rise=2,
-            check_fall=3,
-            check_interval=2,
+            self, HAPROXY_HTTP, port=80, backend_port=MAAS_HTTP_PORT, **COMMON_HAPROXY_ARGS
         )
         self.framework.observe(self.http_route.on.ready, self._reconcile_ha_proxy)
         self.framework.observe(self.http_route.on.removed, self._reconcile_ha_proxy)
 
         self.https_route = HaproxyRouteTcpRequirer(
-            self,
-            HAPROXY_HTTPS,
-            port=443,
-            backend_port=MAAS_HTTPS_PORT,
-            enforce_tls=False,
-            tls_terminate=False,
-            retry_count=3,
-            retry_redispatch=True,
-            load_balancing_consistent_hashing=True,
-            load_balancing_algorithm=LoadBalancingAlgorithm.SRCIP,
-            check_rise=2,
-            check_fall=3,
-            check_interval=2,
+            self, HAPROXY_HTTPS, port=443, backend_port=MAAS_HTTPS_PORT, **COMMON_HAPROXY_ARGS
         )
         self.framework.observe(self.https_route.on.ready, self._reconcile_ha_proxy)
         self.framework.observe(self.https_route.on.removed, self._reconcile_ha_proxy)
@@ -273,6 +261,9 @@ class MaasRegionCharm(ops.CharmBase):
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
 
+        # attempt to read from the haproxy relations
+
+        # otherwise, find the leader MAAS unit
         if peer_relation:
             unit = next(iter(peer_relation.units), None)
             if unit and (addr := peer_relation.data[unit].get("public-address")):
@@ -287,10 +278,10 @@ class MaasRegionCharm(ops.CharmBase):
         Return:
             list[str]: The list of connected MAAS IPs
         """
+        region_ips = {str(self.bind_address)}
         if relation := self.peers:
-            region_ips = {relation.data[unit]["bind_address"] for unit in relation.units}
-            return list(region_ips.union({self.bind_address}))
-        return [self.bind_address]
+            region_ips.update(str(relation.data[unit]["bind-address"]) for unit in relation.units)
+        return list(region_ips)
 
     def get_operational_mode(self) -> str:
         """Get expected MAAS mode.
@@ -410,23 +401,6 @@ class MaasRegionCharm(ops.CharmBase):
             admin_username=credentials["username"], maas_ip=self.bind_address
         )
 
-    def _set_haproxy_route(self, route: HaproxyRouteTcpRequirer, enabled: bool, port: int) -> None:
-        """Provide the MAAS region ip addresses to HAProxy.
-
-        Returns:
-            None
-        """
-        if not self.unit.is_leader():
-            return
-
-        if not route.relation:
-            return
-
-        if not enabled:
-            route.provide_haproxy_route_tcp_requirements(hosts=None, port=port)
-        else:
-            route.provide_haproxy_route_tcp_requirements(hosts=self.maas_ips, port=port)
-
     def _reconcile_ha_proxy(self, event: ops.EventBase) -> None:
         """Configure the two HAProxy relations.
 
@@ -436,22 +410,35 @@ class MaasRegionCharm(ops.CharmBase):
         Returns:
             None
         """
-        if not self.unit.is_leader():
-            return
-
-        if not self.peers:
-            return
-
         http_enabled = self.http_route.relation is not None
-        self._set_haproxy_route(self.http_route, enabled=http_enabled, port=80)
-
-        # a valid deployment includes having neither, both, but not only one of the https relation and tls config arguments.
+        # a valid deployment includes having neither or both, but not only one of: https relation and tls config arguments.
         https_enabled = self.https_route.relation is not None
         https_valid = self.is_tls_config_enabled is https_enabled
-        self._set_haproxy_route(self.https_route, enabled=http_enabled and https_valid, port=443)
 
         # if there are no relations, or the http relation is set and the https configuration is valid
-        if (http_enabled or not https_enabled) and https_valid:
+        unit_valid = (http_enabled or not https_enabled) and https_valid
+
+        if not self.unit.is_leader():
+            if unit_valid:
+                self.unit.status = ops.ActiveStatus()
+            return
+
+        if http_enabled:
+            self.http_route.provide_haproxy_route_tcp_requirements(
+                port=80, hosts=self.maas_ips, **COMMON_HAPROXY_ARGS
+            )
+
+            if https_enabled:
+                if https_valid:
+                    self.https_route.provide_haproxy_route_tcp_requirements(
+                        port=443, hosts=self.maas_ips, **COMMON_HAPROXY_ARGS
+                    )
+                else:
+                    self.https_route.provide_haproxy_route_tcp_requirements(
+                        port=443, **COMMON_HAPROXY_ARGS
+                    )
+
+        if unit_valid:
             self.unit.status = ops.ActiveStatus()
 
     def _update_tls_config(self) -> None:
@@ -582,7 +569,7 @@ class MaasRegionCharm(ops.CharmBase):
     def _on_maas_peer_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
         self.set_peer_data(self.unit, "system-name", socket.gethostname())
-        self.set_peer_data(self.unit, "bind_address", self.bind_address)
+        self.set_peer_data(self.unit, "bind-address", str(self.bind_address))
         self._reconcile_ha_proxy(event)
 
     def _on_create_admin_action(self, event: ops.ActionEvent):

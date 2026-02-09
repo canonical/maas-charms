@@ -9,8 +9,6 @@ from unittest.mock import PropertyMock, call, patch
 
 import ops
 import ops.testing
-import yaml
-import json
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 
@@ -19,7 +17,6 @@ from charm import (
     MAAS_DB_NAME,
     MAAS_HTTP_PORT,
     MAAS_PEER_NAME,
-    MAAS_PROXY_PORT,
     MAAS_SNAP_CHANNEL,
     MaasRegionCharm,
 )
@@ -268,6 +265,28 @@ class TestClusterUpdates(unittest.TestCase):
                 call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region+rack"),
             ]
         )
+
+    def test_haproxy_relation_leader_sets_data(self):
+        self.harness.set_leader(True)
+        self.harness.begin()
+
+        self.harness.add_network("10.0.0.1")
+
+        app_name = self.harness.charm.app.name
+
+        rel_id = self.harness.add_relation("ingress-tcp", "haproxy")
+        self.harness.add_relation_unit(rel_id, "haproxy/0")
+        self.harness.add_relation_unit(rel_id, f"{app_name}/0")  # THIS WAS MISSING
+
+        with patch.object(
+            self.harness.charm.http_route,
+            "provide_haproxy_route_tcp_requirements",
+        ) as provide:
+            self.harness.charm.on.ingress_tcp_relation_changed.emit(
+                self.harness.model.get_relation("ingress-tcp", rel_id)
+            )
+
+            provide.assert_called_once()
 
 
 class TestCharmActions(unittest.TestCase):

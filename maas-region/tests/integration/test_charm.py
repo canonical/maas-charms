@@ -4,7 +4,8 @@
 
 import asyncio
 import logging
-from subprocess import check_output
+from pathlib import Path
+from subprocess import check_output, run
 from time import sleep, time
 
 import pytest
@@ -71,9 +72,36 @@ async def test_database_integration(ops_test: OpsTest):
     )
 
 
+def generate_cert(tmp_path: Path):
+    cert = tmp_path / "cert.pem"
+    key = tmp_path / "key.pem"
+
+    run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-keyout",
+            str(key),
+            "-out",
+            str(cert),
+            "-days",
+            "1",
+            "-nodes",
+            "-subj",
+            "/CN=maas.test",
+        ],
+        check=True,
+    )
+
+    return cert.read_text(), key.read_text()
+
+
 @pytest.mark.abort_on_fail
-async def test_tls_mode(ops_test: OpsTest):
-    """Verify that the charm tls_mode configuration option works as expected.
+async def test_tls_mode(ops_test: OpsTest, tmp_path):
+    """Verify that the charm tls_mode works as expected.
 
     Assert that the agent_service is properly set up.
     """
@@ -90,6 +118,9 @@ async def test_tls_mode(ops_test: OpsTest):
             apps=["haproxy"], status="active", raise_on_blocked=True, timeout=1000
         ),
     )
+
+    cert, key = generate_cert(tmp_path)
+    # create certificate here, provide key and content to APP_NAME config
 
     await asyncio.gather(
         ops_test.model.integrate(f"{APP_NAME}:ingress-tcp", "haproxy"),
