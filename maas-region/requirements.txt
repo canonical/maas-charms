@@ -13,4 +13,4 @@ cosl
 opentelemetry-exporter-otlp-proto-http>=1.21.0
 
 # smallest pydantic version that satsfies the haproxy tcp library (haproxy charm uses 2.12.5)
-pydantic==2
+pydantic==2.12.5

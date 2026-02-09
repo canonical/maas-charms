@@ -167,8 +167,7 @@ config:
       default: ""
       description: |
         The maas_url to set. If not provided, the maas_url is formulated by the IP of maas-region
-        leader and MAAS API port. If application is related to HAProxy, the proxy port is used
-        instead.
+        leader and MAAS API port.
       type: string
     ssl_cert_content:
       default: ""
