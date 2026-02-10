@@ -428,15 +428,15 @@ class MaasRegionCharm(ops.CharmBase):
                 port=80, hosts=self.maas_ips, **COMMON_HAPROXY_ARGS
             )
 
-            if https_enabled:
-                if https_valid:
-                    self.https_route.provide_haproxy_route_tcp_requirements(
-                        port=443, hosts=self.maas_ips, **COMMON_HAPROXY_ARGS
-                    )
-                else:
-                    self.https_route.provide_haproxy_route_tcp_requirements(
-                        port=443, **COMMON_HAPROXY_ARGS
-                    )
+        if https_enabled:
+            if http_enabled and https_valid:
+                self.https_route.provide_haproxy_route_tcp_requirements(
+                    port=443, hosts=self.maas_ips, **COMMON_HAPROXY_ARGS
+                )
+            else:
+                self.https_route.provide_haproxy_route_tcp_requirements(
+                    port=443, hosts=[], **COMMON_HAPROXY_ARGS
+                )
 
         if unit_valid:
             self.unit.status = ops.ActiveStatus()
