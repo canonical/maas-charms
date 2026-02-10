@@ -5,6 +5,7 @@
 
 import subprocess
 import unittest
+from json import dumps
 from unittest.mock import PropertyMock, call, patch
 
 import ops
@@ -169,10 +170,14 @@ class TestMsmEnroll(unittest.TestCase):
 
 
 class TestClusterUpdates(unittest.TestCase):
+    def _make_harness(self):
+        harness = ops.testing.Harness(MaasRegionCharm)
+        harness.add_network("10.0.0.10")
+        self.addCleanup(harness.cleanup)
+        return harness
+
     def setUp(self):
-        self.harness = ops.testing.Harness(MaasRegionCharm)
-        self.harness.add_network("10.0.0.10")
-        self.addCleanup(self.harness.cleanup)
+        self.harness = self._make_harness()
 
     def test_peer_relation_data(self):
         self.harness.set_leader(True)
@@ -266,27 +271,114 @@ class TestClusterUpdates(unittest.TestCase):
             ]
         )
 
-    def test_haproxy_relation_leader_sets_data(self):
+    def test_haproxy_relation__leader_sets_http_data(self):
         self.harness.set_leader(True)
-        self.harness.begin()
-
-        self.harness.add_network("10.0.0.1")
-
-        app_name = self.harness.charm.app.name
 
         rel_id = self.harness.add_relation("ingress-tcp", "haproxy")
         self.harness.add_relation_unit(rel_id, "haproxy/0")
-        self.harness.add_relation_unit(rel_id, f"{app_name}/0")  # THIS WAS MISSING
+        self.harness.begin()
 
         with patch.object(
             self.harness.charm.http_route,
             "provide_haproxy_route_tcp_requirements",
         ) as provide:
-            self.harness.charm.on.ingress_tcp_relation_changed.emit(
-                self.harness.model.get_relation("ingress-tcp", rel_id)
-            )
-
+            self.harness.charm._reconcile_ha_proxy(None)
             provide.assert_called_once()
+
+            kwargs = provide.call_args.kwargs
+
+            self.assertEqual(kwargs["port"], 80)
+            self.assertEqual(kwargs["hosts"], ["10.0.0.10"])
+
+            self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
+
+    def test_haproxy_relation__leader_sets_https_data(self):
+        self.harness.set_leader(True)
+
+        self.harness.update_config(
+            {
+                "ssl_cert_content": "dummy-cert",
+                "ssl_key_content": "dummy-key",
+            }
+        )
+
+        http_rel_id = self.harness.add_relation("ingress-tcp", "haproxy")
+        self.harness.add_relation_unit(http_rel_id, "haproxy/0")
+
+        https_rel_id = self.harness.add_relation("ingress-tcp-tls", "haproxy")
+        self.harness.add_relation_unit(https_rel_id, "haproxy/0")
+
+        self.harness.begin()
+
+        with patch.object(
+            self.harness.charm.https_route,
+            "provide_haproxy_route_tcp_requirements",
+        ) as provide:
+            self.harness.charm._reconcile_ha_proxy(None)
+            provide.assert_called_once()
+
+            kwargs = provide.call_args.kwargs
+
+            self.assertEqual(kwargs["port"], 443)
+            self.assertEqual(kwargs["hosts"], ["10.0.0.10"])
+
+            self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
+
+    def test_haproxy_relation__leader_has_correct_data(self):
+        cases = [
+            (False, False, False, True),
+            (True, False, False, True),
+            (False, True, False, False),
+            (True, True, False, False),
+            (False, False, True, False),
+            (True, False, True, False),
+            (False, True, True, False),
+            (True, True, True, True),
+        ]
+        for http_enabled, https_enabled, tls_enabled, valid in cases:
+            with self.subTest(http=http_enabled, https=https_enabled, tls=tls_enabled):
+                harness = self._make_harness()
+                harness.set_leader(True)
+
+                if http_enabled:
+                    http_rel_id = harness.add_relation("ingress-tcp", "haproxy")
+                    harness.add_relation_unit(http_rel_id, "haproxy/0")
+
+                if https_enabled:
+                    https_rel_id = harness.add_relation("ingress-tcp-tls", "haproxy")
+                    harness.add_relation_unit(https_rel_id, "haproxy/0")
+
+                if tls_enabled:
+                    harness.update_config(
+                        {
+                            "ssl_cert_content": "dummy-cert",
+                            "ssl_key_content": "dummy-key",
+                        }
+                    )
+
+                harness.begin()
+
+                harness.charm._reconcile_ha_proxy(None)
+
+                if http_enabled:
+                    http_data = harness.get_relation_data(http_rel_id, harness.charm.app.name)
+                    self.assertEqual(http_data["port"], "80")
+                    self.assertEqual(http_data["hosts"], dumps(["10.0.0.10"]))
+
+                if https_enabled:
+                    https_data = harness.get_relation_data(https_rel_id, harness.charm.app.name)
+                    self.assertEqual(https_data["port"], "443")
+
+                    # hosts are empty if the topology is invalid
+                    if http_enabled and tls_enabled:
+                        self.assertEqual(https_data["hosts"], dumps(["10.0.0.10"]))
+                    else:
+                        self.assertNotIn("hosts", https_data)
+
+                if valid:
+                    self.assertEqual(harness.model.unit.status, ops.ActiveStatus())
+                else:
+                    self.assertNotEqual(harness.model.unit.status, ops.ActiveStatus())
 
 
 class TestCharmActions(unittest.TestCase):
