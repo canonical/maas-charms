@@ -30,6 +30,7 @@ from backups import (
     SNAP_PATH_TO_IMAGES,
     SNAP_PATH_TO_PRESEEDS,
     DownloadProgressPercentage,
+    ProgressStreamPercentage,
     RegionsNotAvailableError,
     UploadProgressPercentage,
     as_size,
@@ -1124,7 +1125,14 @@ backup-id            | action      | status   | maas     | size       | controll
 
         event = MagicMock(spec=ops.ActionEvent)
         s3_path = "test-file.txt"
-        s3_parameters = {"bucket": "test-bucket"}
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         size = 100
         free = 1000000
 
@@ -1164,7 +1172,14 @@ backup-id            | action      | status   | maas     | size       | controll
 
         event = MagicMock(spec=ops.ActionEvent)
         s3_path = "test-file.txt"
-        s3_parameters = {"bucket": "test-bucket"}
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         size = 100
         free = 10
 
@@ -1186,7 +1201,7 @@ backup-id            | action      | status   | maas     | size       | controll
         with self.harness.charm.backup._download_file_from_s3(
             event=event, s3_path=s3_path, s3_parameters=s3_parameters
         ) as f:
-            self.assertTrue(f.name.endswith(s3_path))
+            self.assertIsNone(f)
 
         disk_usage.assert_called_once()
         path_exists.assert_called_once()
@@ -1208,7 +1223,14 @@ backup-id            | action      | status   | maas     | size       | controll
         event = MagicMock(spec=ops.ActionEvent)
         s3_path = "test-file.txt"
         bucket = "test-bucket"
-        s3_parameters = {"bucket": bucket}
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
 
         mock_file = MagicMock()
         mock_file.__enter__.return_value.name = f"/tmp/{s3_path}"
@@ -1232,7 +1254,7 @@ backup-id            | action      | status   | maas     | size       | controll
         path_exists.assert_called_once()
         unlink.assert_called_once()
         event.fail.assert_called_once_with(
-            f"Download failed: Could not find object in {bucket}:{s3_path}"
+            f"Download failed: Could not find file in {bucket}:{s3_path}"
         )
 
     @patch("backups.os.unlink")
@@ -1248,7 +1270,14 @@ backup-id            | action      | status   | maas     | size       | controll
         event = MagicMock(spec=ops.ActionEvent)
         s3_path = "test-file.txt"
         bucket = "test-bucket"
-        s3_parameters = {"bucket": bucket}
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
 
         mock_file = MagicMock()
         mock_file.__enter__.return_value.name = f"/tmp/{s3_path}"
@@ -1272,7 +1301,7 @@ backup-id            | action      | status   | maas     | size       | controll
         path_exists.assert_called_once()
         unlink.assert_called_once()
         event.fail.assert_called_once_with(
-            f"Download failed: Could not read object from {bucket}:{s3_path}"
+            f"Download failed: Could not read file from {bucket}:{s3_path}"
         )
 
     @patch("backups.os.unlink")
@@ -1288,7 +1317,14 @@ backup-id            | action      | status   | maas     | size       | controll
         event = MagicMock(spec=ops.ActionEvent)
         bucket = "test-bucket"
         s3_path = "test-file.txt"
-        s3_parameters = {"bucket": bucket}
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
 
         mock_file = MagicMock()
         mock_file.__enter__.return_value.name = f"/tmp/{s3_path}"
@@ -1309,18 +1345,25 @@ backup-id            | action      | status   | maas     | size       | controll
         path_exists.assert_called_once()
         unlink.assert_not_called()
         event.fail.assert_called_once_with(
-            f"Download failed: Could not read content from {bucket}:{s3_path}"
+            f"Download failed: Error reading file from {bucket}:{s3_path}"
         )
 
     @patch("backups.shutil.rmtree")
-    @patch("backups.MAASBackups._download_file_from_s3")
-    def test_download_unarchive_from_s3(self, download_file, _rmtree):
+    @patch("backups.MAASBackups._s3_client")
+    def test_download_unarchive_from_s3(self, client, _rmtree):
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
         bucket = "test-bucket"
         s3_path = "test-file.txt"
-        s3_parameters = {"bucket": bucket}
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         filename = "sample.txt"
         file_content = "test-data"
 
@@ -1333,17 +1376,14 @@ backup-id            | action      | status   | maas     | size       | controll
             tar.addfile(info, io.BytesIO(data))
         tar_bytes.seek(0)
 
-        @contextmanager
-        def file_return(*args, **kwargs):
-            with tempfile.NamedTemporaryFile(delete=False) as f:
-                f.write(tar_bytes.read())
-                tmp_path = f.name
-            try:
-                yield tmp_path
-            finally:
-                os.remove(tmp_path)
+        class FakeS3Client:
+            def head_object(self, *args, **kwargs):
+                return {"ContentLength": len(data)}
 
-        download_file.side_effect = file_return
+            def get_object(self, *args, **kwargs):
+                return {"Body": tar_bytes}
+
+        client.return_value.__enter__.return_value = FakeS3Client()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = Path(tmpdir) / "local_path"
@@ -1363,13 +1403,20 @@ backup-id            | action      | status   | maas     | size       | controll
         event.fail.assert_not_called()
 
     @patch("backups.shutil.rmtree")
-    @patch("backups.MAASBackups._download_file_from_s3")
-    def test_download_unarchive_from_s3__local_not_removed(self, download_file, _rmtree):
+    def test_download_unarchive_from_s3__local_not_removed(self, _rmtree):
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
         s3_path = ""
-        s3_parameters = {}
+        bucket = "test-bucket"
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         file_type = "test"
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1386,24 +1433,80 @@ backup-id            | action      | status   | maas     | size       | controll
                 )
             )
 
-        event.fail.assert_called_with(f"Untar failed: Could not remove existing {file_type}")
+        event.fail.assert_called_with(
+            f"Filepath operation failed: Could not remove existing {file_type}"
+        )
 
+    @patch("backups.shutil.disk_usage")
     @patch("backups.shutil.rmtree")
-    @patch("backups.MAASBackups._download_file_from_s3")
-    def test_download_unarchive_from_s3___no_file_on_s3(self, download_file, _rmtree):
+    @patch("backups.MAASBackups._s3_client")
+    def test_download_unarchive_from_s3___no_free_space(self, client, _rmtree, disk_usage):
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
         bucket = "test-bucket"
         s3_path = "test-file.txt"
-        s3_parameters = {"bucket": bucket}
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
+        file_type = "test"
+        size = 1000
+        free = 10
+        disk_usage.return_value.free = free
+
+        class FakeS3Client:
+            def head_object(self, *args, **kwargs):
+                return {"ContentLength": size}
+
+        client.return_value.__enter__.return_value = FakeS3Client()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_path = Path(tmpdir) / "local_path"
+            self.assertFalse(
+                self.harness.charm.backup._download_and_unarchive_from_s3(
+                    event=event,
+                    s3_path=s3_path,
+                    s3_parameters=s3_parameters,
+                    local_path=local_path,
+                    file_type=file_type,
+                )
+            )
+
+        event.fail.assert_called_with(
+            f"Download failed: Not enough free storage to download {s3_path}, required {size} but has {free}"
+        )
+
+    @patch("backups.shutil.rmtree")
+    @patch("backups.MAASBackups._s3_client")
+    def test_download_unarchive_from_s3___no_file_on_s3(self, client, _rmtree):
+        self.harness.begin()
+
+        event = MagicMock(spec=ops.ActionEvent)
+        bucket = "test-bucket"
+        s3_path = "test-file.txt"
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         file_type = "test"
 
-        @contextmanager
-        def file_return(*args, **kwargs):
-            yield None
+        class FakeS3Client:
+            def head_object(self, *args, **kwargs):
+                return {"ContentLength": 0}
 
-        download_file.side_effect = file_return
+            def get_object(self, *args, **kwargs):
+                return {"Body": None}
+
+        client.return_value.__enter__.return_value = FakeS3Client()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = Path(tmpdir) / "local_path"
@@ -1420,14 +1523,21 @@ backup-id            | action      | status   | maas     | size       | controll
         event.fail.assert_called_with(f"Untar failed: Could not read {file_type} from s3")
 
     @patch("backups.shutil.rmtree")
-    @patch("backups.MAASBackups._download_file_from_s3")
-    def test_download_unarchive_from_s3__empty_tarfile(self, download_file, _rmtree):
+    @patch("backups.MAASBackups._s3_client")
+    def test_download_unarchive_from_s3__empty_tarfile(self, client, _rmtree):
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
         bucket = "test-bucket"
         s3_path = "test-file.txt"
-        s3_parameters = {"bucket": bucket}
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         file_type = "test"
 
         # In-memory sample file
@@ -1436,17 +1546,14 @@ backup-id            | action      | status   | maas     | size       | controll
             pass
         tar_bytes.seek(0)
 
-        @contextmanager
-        def file_return(*args, **kwargs):
-            with tempfile.NamedTemporaryFile(delete=False) as f:
-                f.write(tar_bytes.read())
-                tmp_path = f.name
-            try:
-                yield tmp_path
-            finally:
-                os.remove(tmp_path)
+        class FakeS3Client:
+            def head_object(self, *args, **kwargs):
+                return {"ContentLength": 0}
 
-        download_file.side_effect = file_return
+            def get_object(self, *args, **kwargs):
+                return {"Body": tar_bytes}
+
+        client.return_value.__enter__.return_value = FakeS3Client()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = Path(tmpdir) / "local_path"
@@ -1466,24 +1573,31 @@ backup-id            | action      | status   | maas     | size       | controll
 
     @patch("backups.tarfile.open")
     @patch("backups.shutil.rmtree")
-    @patch("backups.MAASBackups._download_file_from_s3")
-    def test_download_unarchive_from_s3__corrupted_tarfile(self, download_file, _rmtree, open_tar):
+    @patch("backups.MAASBackups._s3_client")
+    def test_download_unarchive_from_s3__corrupted_tarfile(self, client, _rmtree, open_tar):
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
         bucket = "test-bucket"
-        s3_path = "test-file.txt"
-        s3_parameters = {"bucket": bucket}
+        filename = "test-file"
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
         file_content = "not a tar file"
-        file_type = "test"
 
-        @contextmanager
-        def file_return(*args, **kwargs):
-            fake_file = MagicMock()
-            fake_file.read_text.return_value = file_content
-            yield fake_file
+        class FakeS3Client:
+            def head_object(self, *args, **kwargs):
+                return {"ContentLength": len(file_content)}
 
-        download_file.side_effect = file_return
+            def get_object(self, *args, **kwargs):
+                return {"Body": file_content}
+
+        client.return_value.__enter__.return_value = FakeS3Client()
 
         fake_tar = MagicMock()
         fake_tar.__enter__.side_effect = tarfile.TarError("corrupt")
@@ -1494,28 +1608,33 @@ backup-id            | action      | status   | maas     | size       | controll
             self.assertFalse(
                 self.harness.charm.backup._download_and_unarchive_from_s3(
                     event=event,
-                    s3_path=s3_path,
+                    s3_path=f"{filename}.txt",
                     s3_parameters=s3_parameters,
                     local_path=local_path,
-                    file_type=file_type,
                 )
             )
 
         event.fail.assert_called_with(
-            f"Untar failed: {file_type.capitalize()} is not a valid .tar.gz file or is corrupted."
+            f"Untar failed: {filename.capitalize()} is not a valid .tar.gz file or is corrupted."
         )
 
     @patch("backups.tarfile.TarFile.extractall")
     @patch("backups.shutil.rmtree")
-    @patch("backups.MAASBackups._download_file_from_s3")
-    def test_download_unarchive_from_s3__file_error(self, download_file, _rmtree, _extractall):
+    @patch("backups.MAASBackups._s3_client")
+    def test_download_unarchive_from_s3__os_error(self, client, _rmtree, _extractall):
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
         bucket = "test-bucket"
-        s3_path = "test-file.txt"
-        s3_parameters = {"bucket": bucket}
-        file_type = "test"
+        filename = "test-file"
+        s3_parameters = {
+            "bucket": bucket,
+            "region": "test-region",
+            "endpoint": "https://s3.amazonaws.com",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "path": "/test-path",
+        }
 
         # In-memory sample file
         tar_bytes = io.BytesIO()
@@ -1523,17 +1642,14 @@ backup-id            | action      | status   | maas     | size       | controll
             pass
         tar_bytes.seek(0)
 
-        @contextmanager
-        def file_return(*args, **kwargs):
-            with tempfile.NamedTemporaryFile(delete=False) as f:
-                f.write(tar_bytes.read())
-                tmp_path = f.name
-            try:
-                yield tmp_path
-            finally:
-                os.remove(tmp_path)
+        class FakeS3Client:
+            def head_object(self, *args, **kwargs):
+                return {"ContentLength": 0}
 
-        download_file.side_effect = file_return
+            def get_object(self, *args, **kwargs):
+                return {"Body": tar_bytes}
+
+        client.return_value.__enter__.return_value = FakeS3Client()
         _extractall.side_effect = OSError("disk error")
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1541,16 +1657,13 @@ backup-id            | action      | status   | maas     | size       | controll
             self.assertFalse(
                 self.harness.charm.backup._download_and_unarchive_from_s3(
                     event=event,
-                    s3_path=s3_path,
+                    s3_path=f"{filename}.txt",
                     s3_parameters=s3_parameters,
                     local_path=local_path,
-                    file_type=file_type,
                 )
             )
 
-        event.fail.assert_called_with(
-            f"Untar failed: Filesystem error while extracting {file_type}"
-        )
+        event.fail.assert_called_with(f"Untar failed: Filesystem error with {filename}")
 
     @patch("backups.MAASBackups._retrieve_s3_parameters")
     def test_pre_restore_checks_ok(self, s3_parameters):
@@ -2456,3 +2569,44 @@ class TestProgressPercentage(unittest.TestCase):
         progress_percentage._size = 0
         progress_percentage(25)
         logger.info.assert_called_once_with("downloading test-label from s3: 100.00% (empty file)")
+
+    @patch("backups.logger", spec=logging.Logger)
+    def test_stream_progress_percentage(self, logger):
+        data = b"abcdef"
+
+        progress_callback = DownloadProgressPercentage(
+            "test-file", "test-label", size=len(data), update_interval=10
+        )
+        wrapped = ProgressStreamPercentage(io.BytesIO(data), progress_callback)
+
+        # Test half data
+        chunk = wrapped.read(3)
+        self.assertEqual(chunk, b"abc")
+        self.assertEqual(progress_callback._seen_so_far, 3)
+        self.assertEqual(progress_callback._last_percentage, 50)
+        logger.info.assert_called_once_with("downloading test-label from s3: 50.00%")
+
+        # Test remaining half
+        logger.reset_mock()
+        chunk = wrapped.read(3)
+        self.assertEqual(chunk, b"def")
+        self.assertEqual(progress_callback._seen_so_far, 6)
+        self.assertEqual(progress_callback._last_percentage, 100)
+        logger.info.assert_called_once_with("downloading test-label from s3: 100.00%")
+
+        # Test end of file
+        logger.reset_mock()
+        chunk = wrapped.read(3)
+        self.assertEqual(chunk, b"")
+        logger.info.assert_not_called()
+
+        # Test delegation of attributes
+        logger.reset_mock()
+        wrapped = ProgressStreamPercentage(io.BytesIO(data), progress_callback)
+
+        position = wrapped.tell()
+        self.assertEqual(position, 0)
+
+        wrapped.seek(2)
+        position = wrapped.tell()
+        self.assertEqual(position, 2)
