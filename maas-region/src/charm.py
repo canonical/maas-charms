@@ -411,12 +411,12 @@ class MaasRegionCharm(ops.CharmBase):
             None
         """
         http_enabled = self.http_route.relation is not None
-        # a valid deployment includes having neither or both, but not only one of: https relation and tls config arguments.
         https_enabled = self.https_route.relation is not None
-        https_valid = self.is_tls_config_enabled is https_enabled
 
         # if there are no relations, or the http relation is set and the https configuration is valid
-        unit_valid = (http_enabled or not https_enabled) and https_valid
+        unit_valid = (http_enabled or not https_enabled) and (
+            self.is_tls_config_enabled == https_enabled
+        )
 
         if not self.unit.is_leader():
             if unit_valid:
@@ -429,7 +429,7 @@ class MaasRegionCharm(ops.CharmBase):
             )
 
         if https_enabled:
-            if http_enabled and https_valid:
+            if http_enabled and self.is_tls_config_enabled:
                 self.https_route.provide_haproxy_route_tcp_requirements(
                     port=443, hosts=self.maas_ips, **COMMON_HAPROXY_ARGS
                 )
