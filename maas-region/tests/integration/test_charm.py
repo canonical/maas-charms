@@ -115,30 +115,31 @@ def read_haproxy_blocks(haproxy_config: str) -> dict[str, str]:
 @pytest.mark.abort_on_fail
 async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
     """Verify that the charm haproxy integration works as expected."""
-    # Deploy the charm and haproxy and wait for active/waiting status
-    await asyncio.gather(
-        ops_test.model.deploy(
-            "haproxy",
-            application_name="haproxy",
-            channel="2.8/edge",
-            series="noble",
-            trust=True,
-        ),
-        ops_test.model.wait_for_idle(
-            apps=["haproxy"], status="active", raise_on_blocked=True, timeout=1000
-        ),
+    cert, key = generate_cert(tmp_path=tmp_path)
+
+    await ops_test.model.applications[APP_NAME].set_config(
+        {"ssl_cert_content": cert, "ssl_key_content": key}
+    )
+    await ops_test.model.wait_for_idle(
+        apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=1000
     )
 
-    cert, key = generate_cert(tmp_path=tmp_path)
-    logger.info(cert)
-    logger.info(key)
-
-    await ops_test.model.set_config({"ssl_cert_content": cert, "ssl_key_content": key})
+    # Deploy the charm and haproxy and wait for active/waiting status
+    await ops_test.model.deploy(
+        "haproxy",
+        application_name="haproxy",
+        channel="2.8/edge",
+        series="noble",
+        trust=True,
+    )
+    await ops_test.model.wait_for_idle(
+        apps=["haproxy"], status="active", raise_on_blocked=True, timeout=1000
+    )
 
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp", "haproxy")
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-tls", "haproxy")
     await ops_test.model.wait_for_idle(
-        apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=1000
+        apps=["haproxy", APP_NAME], status="active", raise_on_blocked=True, timeout=1000
     )
 
     start = time()
