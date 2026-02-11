@@ -4,12 +4,12 @@
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 from subprocess import check_output, run
 from time import sleep, time
 
 import pytest
-import yaml
 from conftest import APP_NAME, POSTGRESQL_CHANNEL
 from pytest_operator.plugin import OpsTest
 
@@ -99,12 +99,22 @@ def generate_cert(tmp_path: Path):
     return cert.read_text(), key.read_text()
 
 
-@pytest.mark.abort_on_fail
-async def test_tls_mode(ops_test: OpsTest, tmp_path):
-    """Verify that the charm tls_mode works as expected.
+def read_haproxy_blocks(haproxy_config: str) -> dict[str, str]:
+    block_pattern = re.compile(
+        r"^(global|defaults|frontend|backend|listen|peers)[^\n]*\n"
+        r"(?:[ \t].*\n)*",
+        re.MULTILINE,
+    )
+    blocks = {}
+    for match in block_pattern.finditer(haproxy_config):
+        header = match.group(0).splitlines()[0].strip()
+        blocks[header] = match.group(0)
+    return blocks
 
-    Assert that the agent_service is properly set up.
-    """
+
+@pytest.mark.abort_on_fail
+async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
+    """Verify that the charm haproxy integration works as expected."""
     # Deploy the charm and haproxy and wait for active/waiting status
     await asyncio.gather(
         ops_test.model.deploy(
@@ -119,11 +129,13 @@ async def test_tls_mode(ops_test: OpsTest, tmp_path):
         ),
     )
 
-    cert, key = generate_cert(tmp_path)
-    # create certificate here, provide key and content to APP_NAME config
+    cert, key = generate_cert(tmp_path=tmp_path)
+
+    await ops_test.model.set_config({"ssl_cert_content": cert, "ssl_key_content": key})
 
     await asyncio.gather(
         ops_test.model.integrate(f"{APP_NAME}:ingress-tcp", "haproxy"),
+        ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-tls", "haproxy"),
         ops_test.model.wait_for_idle(
             apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=1000
         ),
@@ -133,26 +145,26 @@ async def test_tls_mode(ops_test: OpsTest, tmp_path):
     timeout = 1000
     while True:
         try:
-            show_unit = check_output(
-                f"JUJU_MODEL={ops_test.model.name} juju show-unit haproxy/0",
+            data = check_output(
+                "juju exec --unit haproxy/0 cat /etc/haproxy/haproxy.cfg",
                 shell=True,
                 universal_newlines=True,
             )
-            result = yaml.safe_load(show_unit)
-            services_str = result["haproxy/0"]["relation-info"][1]["related-units"][
-                "maas-region/0"
-            ]["data"]["services"]
+            haproxy_data = read_haproxy_blocks(data)
+            http_frontend = haproxy_data["frontend haproxy_route_tcp_80"]
+            https_frontend = haproxy_data["frontend haproxy_route_tcp_443"]
+            http_backend = haproxy_data["backend haproxy_route_tcp_80_default_backend"]
+            https_backend = haproxy_data["backend haproxy_route_tcp_443_default_backend"]
             break
         except KeyError:
             sleep(1)
             if time() > start + timeout:
                 pytest.fail("Timed out waiting for relation data to apply")
 
-    services_yaml = yaml.safe_load(services_str)
+    assert "mode tcp" in http_frontend
+    assert "bind [::]:80" in http_frontend
+    assert re.search(r"server maas-region-0 (\d+\.){3}\d+:5240", http_backend)
 
-    assert len(services_yaml) == 2
-    # assert services_yaml[1]["service_name"] == "agent_service"
-    # assert services_yaml[1]["service_port"] == 80
-    # agent_server = services_yaml[1]["servers"][0]
-    # assert agent_server[0] == "api-maas-region-maas-region-0"
-    # assert agent_server[2] == 5240
+    assert "mode tcp" in https_frontend
+    assert "bind [::]:443" in https_frontend
+    assert re.search(r"server maas-region-0 (\d+\.){3}\d+:5443", https_backend)
