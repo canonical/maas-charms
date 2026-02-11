@@ -130,6 +130,8 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
     )
 
     cert, key = generate_cert(tmp_path=tmp_path)
+    logger.info(cert)
+    logger.info(key)
 
     await ops_test.model.set_config({"ssl_cert_content": cert, "ssl_key_content": key})
 
