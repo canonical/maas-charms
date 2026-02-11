@@ -120,7 +120,7 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
         ops_test.model.deploy(
             "haproxy",
             application_name="haproxy",
-            channel="latest/edge",
+            channel="2.8/edge",
             series="noble",
             trust=True,
         ),
