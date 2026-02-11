@@ -297,8 +297,8 @@ class TestClusterUpdates(unittest.TestCase):
 
         self.harness.update_config(
             {
-                "ssl_cert_content": "dummy-cert",
-                "ssl_key_content": "dummy-key",
+                "ssl_cert_content": "placeholder-cert",
+                "ssl_key_content": "placeholder-key",
             }
         )
 
@@ -351,8 +351,8 @@ class TestClusterUpdates(unittest.TestCase):
                 if tls_enabled:
                     harness.update_config(
                         {
-                            "ssl_cert_content": "dummy-cert",
-                            "ssl_key_content": "dummy-key",
+                            "ssl_cert_content": "placeholder-cert",
+                            "ssl_key_content": "placeholder-key",
                         }
                     )
 

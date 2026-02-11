@@ -417,6 +417,12 @@ class MaasRegionCharm(ops.CharmBase):
         unit_valid = (http_enabled or not https_enabled) and (
             self.is_tls_config_enabled == https_enabled
         )
+        logger.info(
+            f"Reconciling HAProxy with http_enabled: {http_enabled}"
+            f", https_enabled: {https_enabled}"
+            f", tls_enabled: {self.is_tls_config_enabled}"
+            f", and computed validity as: {unit_valid}"
+        )
 
         if not self.unit.is_leader():
             if unit_valid:
