@@ -31,8 +31,8 @@ logger = logging.getLogger(__name__)
 MAAS_PEER_NAME = "maas-cluster"
 MAAS_DB_NAME = "maas-db"
 MAAS_INIT_RELATION = "initialize"
-HAPROXY_HTTP = "ingress-tcp"
-HAPROXY_HTTPS = "ingress-tcp-tls"
+HAPROXY_NON_TLS = "ingress-tcp"
+HAPROXY_TLS = "ingress-tcp-tls"
 
 MAAS_SNAP_CHANNEL = "3.7/stable"
 
@@ -143,17 +143,17 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.msm.on.removed, self._on_msm_removed)
 
         # HAProxy
-        self.http_route = HaproxyRouteTcpRequirer(
-            self, HAPROXY_HTTP, port=80, backend_port=MAAS_HTTP_PORT, **COMMON_HAPROXY_ARGS
+        self.haproxy_non_tls_route = HaproxyRouteTcpRequirer(
+            self, HAPROXY_NON_TLS, port=80, backend_port=MAAS_HTTP_PORT, **COMMON_HAPROXY_ARGS
         )
-        self.framework.observe(self.http_route.on.ready, self._reconcile_ha_proxy)
-        self.framework.observe(self.http_route.on.removed, self._reconcile_ha_proxy)
+        self.framework.observe(self.haproxy_non_tls_route.on.ready, self._reconcile_ha_proxy)
+        self.framework.observe(self.haproxy_non_tls_route.on.removed, self._reconcile_ha_proxy)
 
-        self.https_route = HaproxyRouteTcpRequirer(
-            self, HAPROXY_HTTPS, port=443, backend_port=MAAS_HTTPS_PORT, **COMMON_HAPROXY_ARGS
+        self.haproxy_tls_route = HaproxyRouteTcpRequirer(
+            self, HAPROXY_TLS, port=443, backend_port=MAAS_HTTPS_PORT, **COMMON_HAPROXY_ARGS
         )
-        self.framework.observe(self.https_route.on.ready, self._reconcile_ha_proxy)
-        self.framework.observe(self.https_route.on.removed, self._reconcile_ha_proxy)
+        self.framework.observe(self.haproxy_tls_route.on.ready, self._reconcile_ha_proxy)
+        self.framework.observe(self.haproxy_tls_route.on.removed, self._reconcile_ha_proxy)
 
         # COS
         endpoints: list[cos_agent._MetricsEndpointDict] = [
@@ -261,13 +261,16 @@ class MaasRegionCharm(ops.CharmBase):
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
 
-        # attempt to read from the haproxy relations
+        # TODO: Read the vip from haproxy, if the relation exists,
+        # once `https://github.com/canonical/haproxy-operator/issues/365` or similar is implemented
 
         # otherwise, find the leader MAAS unit
         if peer_relation:
-            unit = next(iter(peer_relation.units), None)
-            if unit and (addr := peer_relation.data[unit].get("public-address")):
-                return f"http://{addr}:{MAAS_PROXY_PORT}/MAAS"
+            for unit in peer_relation.units:
+                if unit.is_leader():
+                    return (
+                        f"http://{self.get_peer_data(unit, 'bind-address')}:{MAAS_PROXY_PORT}/MAAS"
+                    )
 
         return f"http://{self.bind_address}:{MAAS_HTTP_PORT}/MAAS"
 
@@ -278,10 +281,10 @@ class MaasRegionCharm(ops.CharmBase):
         Return:
             list[str]: The list of connected MAAS IPs
         """
-        region_ips = {str(self.bind_address)}
+        region_ips = {self.bind_address}
         if relation := self.peers:
-            region_ips.update(str(relation.data[unit]["bind-address"]) for unit in relation.units)
-        return list(region_ips)
+            region_ips.update(self.get_peer_data(unit, "bind-address") for unit in relation.units)
+        return [str(r).strip("'\"") for r in region_ips]
 
     def get_operational_mode(self) -> str:
         """Get expected MAAS mode.
@@ -410,17 +413,17 @@ class MaasRegionCharm(ops.CharmBase):
         Returns:
             None
         """
-        http_enabled = self.http_route.relation is not None
-        https_enabled = self.https_route.relation is not None
+        haproxy_non_tls_enabled = self.haproxy_non_tls_route.relation is not None
+        haproxy_tls_enabled = self.haproxy_tls_route.relation is not None
 
         # if there are no relations, or the http relation is set and the https configuration is valid
-        unit_valid = (http_enabled or not https_enabled) and (
-            self.is_tls_config_enabled == https_enabled
+        unit_valid = (haproxy_non_tls_enabled or not haproxy_tls_enabled) and (
+            self.is_tls_config_enabled == haproxy_tls_enabled
         )
         logger.info(
-            f"Reconciling HAProxy with http_enabled: {http_enabled}"
-            f", https_enabled: {https_enabled}"
-            f", tls_enabled: {self.is_tls_config_enabled}"
+            f"Reconciling HAProxy with haproxy_non_tls_enabled: {haproxy_non_tls_enabled}"
+            f", haproxy_tls_enabled: {haproxy_tls_enabled}"
+            f", maas_tls_enabled: {self.is_tls_config_enabled}"
             f", and computed validity as: {unit_valid}"
         )
 
@@ -429,18 +432,18 @@ class MaasRegionCharm(ops.CharmBase):
                 self.unit.status = ops.ActiveStatus()
             return
 
-        if http_enabled:
-            self.http_route.provide_haproxy_route_tcp_requirements(
+        if haproxy_non_tls_enabled:
+            self.haproxy_non_tls_route.provide_haproxy_route_tcp_requirements(
                 port=80, hosts=self.maas_ips, **COMMON_HAPROXY_ARGS
             )
 
-        if https_enabled:
-            if http_enabled and self.is_tls_config_enabled:
-                self.https_route.provide_haproxy_route_tcp_requirements(
+        if haproxy_tls_enabled:
+            if haproxy_non_tls_enabled and self.is_tls_config_enabled:
+                self.haproxy_tls_route.provide_haproxy_route_tcp_requirements(
                     port=443, hosts=self.maas_ips, **COMMON_HAPROXY_ARGS
                 )
             else:
-                self.https_route.provide_haproxy_route_tcp_requirements(
+                self.haproxy_tls_route.provide_haproxy_route_tcp_requirements(
                     port=443, hosts=[], **COMMON_HAPROXY_ARGS
                 )
 
@@ -515,19 +518,22 @@ class MaasRegionCharm(ops.CharmBase):
             e.add_status(ops.WaitingStatus("Waiting for MAAS initialization"))
         elif (
             self.is_tls_config_enabled
-            and self.http_route.relation is not None
-            and self.https_route.relation is None
+            and self.haproxy_non_tls_route.relation is not None
+            and self.haproxy_tls_route.relation is None
         ):
             e.add_status(
                 ops.BlockedStatus(
                     "Invalid HAProxy configuration: Missing `ingress-tcp-tls` relation."
                 )
             )
-        elif self.http_route.relation is None and self.https_route.relation is not None:
+        elif (
+            self.haproxy_non_tls_route.relation is None
+            and self.haproxy_tls_route.relation is not None
+        ):
             e.add_status(
                 ops.BlockedStatus("Invalid HAProxy configuration: Missing `ingress-tcp` relation.")
             )
-        elif not self.is_tls_config_enabled and self.https_route.relation is not None:
+        elif not self.is_tls_config_enabled and self.haproxy_tls_route.relation is not None:
             e.add_status(
                 ops.BlockedStatus(
                     "Invalid HAProxy configuration: "
