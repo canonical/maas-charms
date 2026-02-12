@@ -14,7 +14,7 @@ from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 
 from charm import (
-    HAPROXY_HTTP,
+    HAPROXY_NON_TLS,
     MAAS_DB_NAME,
     MAAS_HTTP_PORT,
     MAAS_PEER_NAME,
@@ -199,7 +199,7 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.set_leader(True)
         self.harness.begin()
         self.harness.add_relation(
-            HAPROXY_HTTP, "haproxy", unit_data={"public-address": "proxy.maas"}
+            HAPROXY_NON_TLS, "haproxy", unit_data={"public-address": "proxy.maas"}
         )
         with self.assertRaises(ValueError):
             self.harness.update_config({"ssl_cert_content": "test_cert"})
@@ -279,7 +279,7 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.begin()
 
         with patch.object(
-            self.harness.charm.http_route,
+            self.harness.charm.haproxy_non_tls_route,
             "provide_haproxy_route_tcp_requirements",
         ) as provide:
             self.harness.charm._reconcile_ha_proxy(None)
@@ -311,7 +311,7 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.begin()
 
         with patch.object(
-            self.harness.charm.https_route,
+            self.harness.charm.haproxy_tls_route,
             "provide_haproxy_route_tcp_requirements",
         ) as provide:
             self.harness.charm._reconcile_ha_proxy(None)
