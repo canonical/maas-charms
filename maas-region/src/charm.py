@@ -257,7 +257,7 @@ class MaasRegionCharm(ops.CharmBase):
             str: The API URL
         """
         peer_relation = self.peers
-        haproxy_relation = self.haproxy_non_tls_route
+        haproxy_relation = self.model.get_relation(HAPROXY_NON_TLS)
 
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
@@ -266,7 +266,7 @@ class MaasRegionCharm(ops.CharmBase):
         # once `https://github.com/canonical/haproxy-operator/issues/365` or similar is implemented
 
         # find the leader public-address
-        if haproxy_relation.relation is not None:
+        if haproxy_relation:
             for unit in haproxy_relation.units:
                 if unit.is_leader():
                     addr = haproxy_relation.data[unit].get("public-address")
