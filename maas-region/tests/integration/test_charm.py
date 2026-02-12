@@ -133,7 +133,7 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
         ops_test.model.integrate(f"{APP_NAME}:ingress-tcp", "haproxy"),
         ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-tls", "haproxy"),
         ops_test.model.applications[APP_NAME].set_config(
-            {"ssl_cert_content": cert, "ssl_key_content": key}
+            {"ssl_cert_content": cert, "ssl_key_content": key, "ssl_cacert_content": cert}
         ),
     )
     await ops_test.model.wait_for_idle(

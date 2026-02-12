@@ -420,8 +420,8 @@ class MaasRegionCharm(ops.CharmBase):
         Returns:
             None
         """
-        haproxy_non_tls_enabled = self.haproxy_non_tls_route.relation is not None
-        haproxy_tls_enabled = self.haproxy_tls_route.relation is not None
+        haproxy_non_tls_enabled = self.model.get_relation(HAPROXY_NON_TLS) is not None
+        haproxy_tls_enabled = self.model.get_relation(HAPROXY_TLS) is not None
 
         # if there are no relations, or the http relation is set and the https configuration is valid
         unit_valid = (haproxy_non_tls_enabled or not haproxy_tls_enabled) and (
@@ -525,8 +525,8 @@ class MaasRegionCharm(ops.CharmBase):
             e.add_status(ops.WaitingStatus("Waiting for MAAS initialization"))
         elif (
             self.is_tls_config_enabled
-            and self.haproxy_non_tls_route.relation is not None
-            and self.haproxy_tls_route.relation is None
+            and self.model.get_relation(HAPROXY_NON_TLS) is not None
+            and self.model.get_relation(HAPROXY_TLS) is None
         ):
             e.add_status(
                 ops.BlockedStatus(
@@ -534,13 +534,13 @@ class MaasRegionCharm(ops.CharmBase):
                 )
             )
         elif (
-            self.haproxy_non_tls_route.relation is None
-            and self.haproxy_tls_route.relation is not None
+            self.model.get_relation(HAPROXY_NON_TLS) is None
+            and self.model.get_relation(HAPROXY_TLS) is not None
         ):
             e.add_status(
                 ops.BlockedStatus("Invalid HAProxy configuration: Missing `ingress-tcp` relation.")
             )
-        elif not self.is_tls_config_enabled and self.haproxy_tls_route.relation is not None:
+        elif not self.is_tls_config_enabled and self.model.get_relation(HAPROXY_TLS) is not None:
             e.add_status(
                 ops.BlockedStatus(
                     "Invalid HAProxy configuration: "
