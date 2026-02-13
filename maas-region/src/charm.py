@@ -256,16 +256,13 @@ class MaasRegionCharm(ops.CharmBase):
         Returns:
             str: The API URL
         """
-
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
-
         # find the leader public-address
         if relation := self.model.get_relation(HAPROXY_NON_TLS):
             unit = next(iter(relation.units), None)
-            if addr := relation.data[unit].get("public-address"):
+            if unit and (addr := relation.data[unit].get("public-address")):
                 return f"http://{addr}:{MAAS_PROXY_PORT}/MAAS"
-
         return f"http://{self.bind_address}:{MAAS_HTTP_PORT}/MAAS"
 
     @property
