@@ -137,7 +137,7 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
         ),
     )
     await ops_test.model.wait_for_idle(
-        apps=["haproxy", APP_NAME], status="active", raise_on_blocked=False, timeout=1000
+        apps=["haproxy", APP_NAME], status="active", raise_on_error=False, timeout=1000
     )
 
     start = time()

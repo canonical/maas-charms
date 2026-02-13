@@ -259,6 +259,8 @@ class MaasRegionCharm(ops.CharmBase):
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
         # find the leader public-address
+        # TODO: Read the vip from haproxy, if the relation exists,
+        # once `https://github.com/canonical/haproxy-operator/issues/365` or similar is implemented
         if relation := self.model.get_relation(HAPROXY_NON_TLS):
             unit = next(iter(relation.units), None)
             if unit and (addr := relation.data[unit].get("public-address")):
