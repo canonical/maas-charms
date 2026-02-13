@@ -256,7 +256,6 @@ class MaasRegionCharm(ops.CharmBase):
         Returns:
             str: The API URL
         """
-        peer_relation = self.peers
         haproxy_relation = self.model.get_relation(HAPROXY_NON_TLS)
 
         if maas_url := self.config["maas_url"]:
@@ -268,15 +267,7 @@ class MaasRegionCharm(ops.CharmBase):
         # find the leader public-address
         if haproxy_relation:
             for unit in haproxy_relation.units:
-                if unit.is_leader():
-                    addr = haproxy_relation.data[unit].get("public-address")
-                    return f"http://{addr}:{MAAS_PROXY_PORT}/MAAS"
-
-        # otherwise, find the leader MAAS unit
-        if peer_relation:
-            for unit in peer_relation.units:
-                if unit.is_leader():
-                    addr = self.get_peer_data(unit, "bind-address")
+                if unit and (addr := haproxy_relation.data[unit].get("public-address")):
                     return f"http://{addr}:{MAAS_PROXY_PORT}/MAAS"
 
         return f"http://{self.bind_address}:{MAAS_HTTP_PORT}/MAAS"
