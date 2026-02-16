@@ -122,7 +122,7 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
         channel="2.8/edge",
         series="noble",
         trust=True,
-        config={"vip": "10.10.0.200"}
+        config={"vip": "10.10.0.200"},
     )
     await ops_test.model.wait_for_idle(
         apps=["haproxy"], status="active", raise_on_blocked=True, timeout=1000
