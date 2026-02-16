@@ -128,13 +128,13 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
     )
 
     cert, key = generate_cert(tmp_path=tmp_path)
+    logger.info(f"cert: {cert}")
+    logger.info(f"key: {key}")
 
-    await asyncio.gather(
-        ops_test.model.integrate(f"{APP_NAME}:ingress-tcp", "haproxy"),
-        ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-tls", "haproxy"),
-        ops_test.model.applications[APP_NAME].set_config(
-            {"ssl_cert_content": cert, "ssl_key_content": key, "ssl_cacert_content": cert}
-        ),
+    await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp", "haproxy")
+    await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-tls", "haproxy")
+    await ops_test.model.applications[APP_NAME].set_config(
+        {"ssl_cert_content": cert, "ssl_key_content": key, "ssl_cacert_content": cert}
     )
     await ops_test.model.wait_for_idle(
         apps=["haproxy", APP_NAME], status="active", raise_on_error=False, timeout=1000
