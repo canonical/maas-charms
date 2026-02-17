@@ -10,7 +10,7 @@ from subprocess import check_output, run
 from time import sleep, time
 
 import pytest
-from conftest import APP_NAME, POSTGRESQL_CHANNEL
+from conftest import APP_NAME, HAPROXY_CHANNEL, POSTGRESQL_CHANNEL
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
@@ -119,7 +119,7 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
     await ops_test.model.deploy(
         "haproxy",
         application_name="haproxy",
-        channel="2.8/edge",
+        channel=HAPROXY_CHANNEL,
         series="noble",
         trust=True,
         config={"vip": "10.10.0.200"},
@@ -129,20 +129,11 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
     )
 
     cert, key = generate_cert(tmp_path=tmp_path)
-    logger.info(f"cert: {cert}")
-    logger.info(f"key: {key}")
-    logger.info(ops_test.model.relations)
-
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp", "haproxy")
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-tls", "haproxy")
-
-    logger.info(ops_test.model.relations)
-
-    await ops_test.model.applications[APP_NAME].set_config(
-        {"ssl_cert_content": cert, "ssl_key_content": key, "ssl_cacert_content": cert}
-    )
-
-    logger.info(await ops_test.model.applications[APP_NAME].get_config())
+    await ops_test.model.applications[APP_NAME].set_config({"ssl_cert_content": cert})
+    await ops_test.model.applications[APP_NAME].set_config({"ssl_key_content": key})
+    await ops_test.model.applications[APP_NAME].set_config({"ssl_cacert_content": cert})
 
     await ops_test.model.wait_for_idle(
         apps=["haproxy", APP_NAME], status="active", raise_on_error=False, timeout=1000

@@ -6,6 +6,7 @@
 import json
 import logging
 import subprocess
+import tempfile
 from os import remove
 from pathlib import Path
 
@@ -23,7 +24,9 @@ MAAS_SERVICE = "pebble"
 MAAS_SSL_CERT_FILEPATH = Path("/var/snap/maas/common/cert.pem")
 MAAS_SSL_KEY_FILEPATH = Path("/var/snap/maas/common/key.pem")
 MAAS_CACERT_FILEPATH = Path("/var/snap/maas/common/cacert.pem")
+MAAS_TMP = Path("/tmp/snap-private-tmp/snap.maas/tmp")
 NGINX_CFG_FILEPATH = Path("/var/snap/maas/current/http/regiond.nginx.conf")
+MAAS_HTTP_PORT = 5240
 MAAS_HTTPS_PORT = 5443
 
 logger = logging.getLogger(__name__)
@@ -234,12 +237,13 @@ class MaasHelper:
 
     @staticmethod
     @retry(reraise=True, stop=stop_after_delay(5 * 60), wait=wait_fixed(10))
-    def _login_as_admin(admin_username: str, maas_ip: str) -> None:
+    def _login_as_admin(admin_username: str, maas_ip: str, cacert: str = "") -> None:
         """Login to MAAS as an admin user.
 
         Args:
             admin_username (str): The admin username for MAAS
             maas_ip (str): IP address of the MAAS API
+            cacert (str): optionally, contents of cacert for a self-signed ssl_certificate
         Raises:
             CalledProcessError: failed to login
         """
@@ -248,28 +252,59 @@ class MaasHelper:
             .decode()
             .replace("\n", "")
         )
-        login_cmd = [
-            "/snap/bin/maas",
-            "login",
-            admin_username,
-            f"http://{maas_ip}:5240/MAAS/api/2.0/",
-            apikey,
-        ]
-        subprocess.check_call(login_cmd, stdout=subprocess.DEVNULL)
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".pem", dir=str(MAAS_TMP)) as f:
+            port = MAAS_HTTPS_PORT if cacert else MAAS_HTTP_PORT
+            login_cmd = [
+                "/snap/bin/maas",
+                "login",
+                admin_username,
+                f"https://{maas_ip}:{port}/MAAS/api/2.0/",
+                apikey,
+            ]
+
+            if cacert:
+                f.write(cacert)
+                f.flush()
+                login_cmd.extend(
+                    [
+                        "--cacerts",
+                        # Use /tmp path convention for snap
+                        f"/tmp/{Path(f.name).name}",
+                    ]
+                )
+
+            subprocess.check_call(login_cmd, stdout=subprocess.DEVNULL)
 
     @staticmethod
-    def set_prometheus_metrics(admin_username: str, maas_ip: str, enable: bool) -> None:
+    def _logout(admin_username: str) -> None:
+        """Logout of MAAS.
+
+        Args:
+            admin_username (str): The admin username for MAAS
+
+        Raises:
+            CalledProcessError: failed to logout
+        """
+        logout_cmd = ["/snap/bin/maas", "logout", admin_username]
+        subprocess.check_call(logout_cmd, stdout=subprocess.DEVNULL)
+
+    @staticmethod
+    def set_prometheus_metrics(
+        admin_username: str, maas_ip: str, enable: bool, cacert: str = ""
+    ) -> None:
         """Enable or disable prometheus metrics for MAAS.
 
         Args:
             admin_username (str): The admin username for MAAS
             maas_ip (str): IP address of the MAAS API
             enable (bool): True to enable, False to disable
+            cacert (str): optionally, contents of cacert for a self-signed ssl_certificate
 
         Raises:
             CalledProcessError: failed to set prometheus_metrics setting
         """
-        MaasHelper._login_as_admin(admin_username, maas_ip)
+        MaasHelper._login_as_admin(admin_username, maas_ip, cacert)
         set_cmd = [
             "/snap/bin/maas",
             admin_username,
@@ -278,26 +313,29 @@ class MaasHelper:
             "name=prometheus_enabled",
             f"value={enable}",
         ]
+        MaasHelper._logout(admin_username)
         subprocess.check_call(set_cmd)
 
     @staticmethod
-    def _call_read_regions(admin_username: str, maas_ip: str) -> str:
-        MaasHelper._login_as_admin(admin_username, maas_ip)
+    def _call_read_regions(admin_username: str, maas_ip: str, cacert: str = "") -> str:
+        MaasHelper._login_as_admin(admin_username, maas_ip, cacert)
         cmd = [
             "/snap/bin/maas",
             admin_username,
             "region-controllers",
             "read",
         ]
+        MaasHelper._logout(admin_username)
         return subprocess.check_output(cmd).decode()
 
     @staticmethod
-    def get_regions(admin_username: str, maas_ip: str) -> set[str]:
+    def get_regions(admin_username: str, maas_ip: str, cacert: str = "") -> set[str]:
         """Get the list of region controllers.
 
         Args:
             admin_username (str): The admin username for MAAS
             maas_ip (str): IP address of the MAAS API
+            cacert (str): optionally, contents of cacert for a self-signed ssl_certificate
 
         Returns:
             List[str]: List of region controller system IDs
@@ -305,7 +343,7 @@ class MaasHelper:
         Raises:
             CalledProcessError: failed to read regions from MAAS
         """
-        regions_output = MaasHelper._call_read_regions(admin_username, maas_ip)
+        regions_output = MaasHelper._call_read_regions(admin_username, maas_ip, cacert)
         region_data = json.loads(regions_output)
         return {region["system_id"] for region in region_data}
 

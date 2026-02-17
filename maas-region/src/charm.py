@@ -366,6 +366,7 @@ class MaasRegionCharm(ops.CharmBase):
                     credentials["username"],
                     self.bind_address,
                     self.config["enable_prometheus_metrics"],  # type: ignore
+                    str(self.config["ssl_cacert_content"]),
                 )
             self.unit.status = ops.ActiveStatus()
             return True
@@ -394,7 +395,9 @@ class MaasRegionCharm(ops.CharmBase):
         """
         credentials = self._create_or_get_internal_admin()
         return MaasHelper.get_regions(
-            admin_username=credentials["username"], maas_ip=self.bind_address
+            admin_username=credentials["username"],
+            maas_ip=self.bind_address,
+            cacert=str(self.config["ssl_cacert_content"]),
         )
 
     def _reconcile_ha_proxy(self, event: ops.EventBase) -> None:
@@ -461,7 +464,9 @@ class MaasRegionCharm(ops.CharmBase):
         if secret_uri := self.get_peer_data(self.app, MAAS_ADMIN_SECRET_KEY):
             secret = self.model.get_secret(id=secret_uri)
             username = secret.get_content()["username"]
-            MaasHelper.set_prometheus_metrics(username, self.bind_address, enable)
+            MaasHelper.set_prometheus_metrics(
+                username, self.bind_address, enable, str(self.config["ssl_cacert_content"])
+            )
 
     def _on_start(self, _event: ops.StartEvent) -> None:
         """Handle the MAAS controller startup.
