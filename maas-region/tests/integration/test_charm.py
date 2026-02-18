@@ -209,7 +209,7 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
     timeout = 1000
     while True:
         try:
-            return_code, stdout, stderr = await ops_test.juju(
+            return_code, stdout, _ = await ops_test.juju(
                 "exec",
                 "--unit",
                 "haproxy/0",
