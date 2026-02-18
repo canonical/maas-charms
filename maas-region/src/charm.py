@@ -37,6 +37,7 @@ HAPROXY_TLS = "ingress-tcp-tls"
 MAAS_SNAP_CHANNEL = "3.7/stable"
 
 MAAS_PROXY_PORT = 80
+MAAS_TLS_PROXY_PORT = 443
 
 MAAS_HTTP_PORT = 5240
 MAAS_HTTPS_PORT = 5443
@@ -150,8 +151,12 @@ class MaasRegionCharm(ops.CharmBase):
             backend_port=MAAS_HTTP_PORT,
             **COMMON_DEFAULT_HAPROXY_ARGS,
         )
-        self.framework.observe(self.haproxy_non_tls_route.on.ready, self._on_haproxy_changed)
-        self.framework.observe(self.haproxy_non_tls_route.on.removed, self._on_haproxy_changed)
+        self.framework.observe(
+            self.haproxy_non_tls_route.on.ready, self._reconcile_ha_proxy_and_initialise
+        )
+        self.framework.observe(
+            self.haproxy_non_tls_route.on.removed, self._reconcile_ha_proxy_and_initialise
+        )
 
         self.haproxy_tls_route = HaproxyRouteTcpRequirer(
             self,
@@ -160,8 +165,12 @@ class MaasRegionCharm(ops.CharmBase):
             backend_port=MAAS_HTTPS_PORT,
             **COMMON_DEFAULT_HAPROXY_ARGS,
         )
-        self.framework.observe(self.haproxy_tls_route.on.ready, self._on_haproxy_changed)
-        self.framework.observe(self.haproxy_tls_route.on.removed, self._on_haproxy_changed)
+        self.framework.observe(
+            self.haproxy_tls_route.on.ready, self._reconcile_ha_proxy_and_initialise
+        )
+        self.framework.observe(
+            self.haproxy_tls_route.on.removed, self._reconcile_ha_proxy_and_initialise
+        )
 
         # COS
         endpoints: list[cos_agent._MetricsEndpointDict] = [
@@ -266,14 +275,20 @@ class MaasRegionCharm(ops.CharmBase):
         """
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
-        # find the leader public-address
-        # TODO: Read the vip from haproxy, if the relation exists,
-        # once `https://github.com/canonical/haproxy-operator/issues/365` or similar is implemented
+
+        scheme, port, proxy_port = (
+            ("https", MAAS_HTTPS_PORT, MAAS_TLS_PROXY_PORT)
+            if self.is_tls_config_enabled
+            else ("http", MAAS_HTTP_PORT, MAAS_PROXY_PORT)
+        )
+
+        # TODO: Read the vip from haproxy, if the relation exists, once
+        # https://github.com/canonical/haproxy-operator/issues/365 or similar is implemented
         if relation := self.model.get_relation(HAPROXY_NON_TLS):
             unit = next(iter(relation.units), None)
             if unit and (addr := relation.data[unit].get("public-address")):
-                return f"http://{addr}:{MAAS_PROXY_PORT}/MAAS"
-        return f"http://{self.bind_address}:{MAAS_HTTP_PORT}/MAAS"
+                return f"{scheme}://{addr}:{proxy_port}/MAAS"
+        return f"{scheme}://{self.bind_address}:{port}/MAAS"
 
     @property
     def maas_ips(self) -> list[str]:
@@ -372,7 +387,7 @@ class MaasRegionCharm(ops.CharmBase):
                 credentials = self._create_or_get_internal_admin()
                 MaasHelper.set_prometheus_metrics(
                     credentials["username"],
-                    self.bind_address,
+                    self.maas_api_url,
                     self.config["enable_prometheus_metrics"],  # type: ignore
                     str(self.config["ssl_cacert_content"]),
                 )
@@ -404,7 +419,7 @@ class MaasRegionCharm(ops.CharmBase):
         credentials = self._create_or_get_internal_admin()
         return MaasHelper.get_regions(
             admin_username=credentials["username"],
-            maas_ip=self.bind_address,
+            maas_url=self.maas_api_url,
             cacert=str(self.config["ssl_cacert_content"]),
         )
 
@@ -454,7 +469,7 @@ class MaasRegionCharm(ops.CharmBase):
         if unit_valid:
             self.unit.status = ops.ActiveStatus()
 
-    def _on_haproxy_changed(self, event: ops.EventBase) -> None:
+    def _reconcile_ha_proxy_and_initialise(self, event: ops.EventBase) -> None:
         self._reconcile_ha_proxy(event)
         if self.connection_string and (
             MaasHelper.get_maas_details().get("maas_url") != self.maas_api_url
@@ -475,22 +490,16 @@ class MaasRegionCharm(ops.CharmBase):
             elif tls_enabled and not self.is_tls_config_enabled:
                 MaasHelper.disable_tls()
 
-    def _is_maas_initialised(self) -> bool:
-        try:
-            return MaasHelper.is_tls_enabled() is not None
-        except Exception:
-            return False
-
     def _update_prometheus_config(self, enable: bool) -> None:
-        if not self._is_maas_initialised():
-            logger.warning("MAAS Not ready for promtheus config yet")
+        if not MaasHelper.is_maas_initialised():
+            logger.warning("MAAS Not ready for Prometheus config yet")
             return
 
         if secret_uri := self.get_peer_data(self.app, MAAS_ADMIN_SECRET_KEY):
             secret = self.model.get_secret(id=secret_uri)
             username = secret.get_content()["username"]
             MaasHelper.set_prometheus_metrics(
-                username, self.bind_address, enable, str(self.config["ssl_cacert_content"])
+                username, self.maas_api_url, enable, str(self.config["ssl_cacert_content"])
             )
 
     def _on_start(self, _event: ops.StartEvent) -> None:
@@ -605,7 +614,7 @@ class MaasRegionCharm(ops.CharmBase):
         logger.info(event)
         self.set_peer_data(self.unit, "system-name", socket.gethostname())
         self.set_peer_data(self.unit, "bind-address", str(self.bind_address))
-        self._on_haproxy_changed(event)
+        self._reconcile_ha_proxy_and_initialise(event)
 
     def _on_create_admin_action(self, event: ops.ActionEvent):
         """Handle the create-admin action.
@@ -652,13 +661,13 @@ class MaasRegionCharm(ops.CharmBase):
             event.fail("MAAS is not initialized yet")
 
     def _on_config_changed(self, event: ops.ConfigChangedEvent):
-        # validate tls certificate and key
+        # validate TLS certificate and key
         if self.is_tls_config_enabled:
             cert = self.config["ssl_cert_content"]
             key = self.config["ssl_key_content"]
             if not cert or not key:
                 raise ValueError(
-                    "Both ssl_cert_content and ssl_key_content must be defined when using tls_mode"
+                    "Both ssl_cert_content and ssl_key_content must be defined when using configuring TLS"
                 )
         self._reconcile_ha_proxy(event)
         maas_details = MaasHelper.get_maas_details()

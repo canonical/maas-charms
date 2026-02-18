@@ -237,12 +237,12 @@ class MaasHelper:
 
     @staticmethod
     @retry(reraise=True, stop=stop_after_delay(5 * 60), wait=wait_fixed(10))
-    def _login_as_admin(admin_username: str, maas_ip: str, cacert: str = "") -> None:
+    def _login_as_admin(admin_username: str, maas_url: str, cacert: str = "") -> None:
         """Login to MAAS as an admin user.
 
         Args:
             admin_username (str): The admin username for MAAS
-            maas_ip (str): IP address of the MAAS API
+            maas_url (str): URL of the MAAS API
             cacert (str): optionally, contents of cacert for a self-signed ssl_certificate
         Raises:
             CalledProcessError: failed to login
@@ -254,12 +254,11 @@ class MaasHelper:
         )
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".pem", dir=str(MAAS_TMP)) as f:
-            port = MAAS_HTTPS_PORT if cacert else MAAS_HTTP_PORT
             login_cmd = [
                 "/snap/bin/maas",
                 "login",
                 admin_username,
-                f"https://{maas_ip}:{port}/MAAS/api/2.0/",
+                f"{maas_url}/api/2.0/",
                 apikey,
             ]
 
@@ -291,13 +290,13 @@ class MaasHelper:
 
     @staticmethod
     def set_prometheus_metrics(
-        admin_username: str, maas_ip: str, enable: bool, cacert: str = ""
+        admin_username: str, maas_url: str, enable: bool, cacert: str = ""
     ) -> None:
         """Enable or disable prometheus metrics for MAAS.
 
         Args:
             admin_username (str): The admin username for MAAS
-            maas_ip (str): IP address of the MAAS API
+            maas_url (str): URL of the MAAS API
             enable (bool): True to enable, False to disable
             cacert (str): optionally, contents of cacert for a self-signed ssl_certificate
 
@@ -305,7 +304,7 @@ class MaasHelper:
             CalledProcessError: failed to set prometheus_metrics setting
         """
         try:
-            MaasHelper._login_as_admin(admin_username, maas_ip, cacert)
+            MaasHelper._login_as_admin(admin_username, maas_url, cacert)
             subprocess.check_call(
                 [
                     "/snap/bin/maas",
@@ -320,9 +319,9 @@ class MaasHelper:
             MaasHelper._logout(admin_username)
 
     @staticmethod
-    def _call_read_regions(admin_username: str, maas_ip: str, cacert: str = "") -> str:
+    def _call_read_regions(admin_username: str, maas_url: str, cacert: str = "") -> str:
         try:
-            MaasHelper._login_as_admin(admin_username, maas_ip, cacert)
+            MaasHelper._login_as_admin(admin_username, maas_url, cacert)
             return subprocess.check_output(
                 [
                     "/snap/bin/maas",
@@ -335,12 +334,12 @@ class MaasHelper:
             MaasHelper._logout(admin_username)
 
     @staticmethod
-    def get_regions(admin_username: str, maas_ip: str, cacert: str = "") -> set[str]:
+    def get_regions(admin_username: str, maas_url: str, cacert: str = "") -> set[str]:
         """Get the list of region controllers.
 
         Args:
             admin_username (str): The admin username for MAAS
-            maas_ip (str): IP address of the MAAS API
+            maas_url (str): URL of the MAAS API
             cacert (str): optionally, contents of cacert for a self-signed ssl_certificate
 
         Returns:
@@ -349,9 +348,21 @@ class MaasHelper:
         Raises:
             CalledProcessError: failed to read regions from MAAS
         """
-        regions_output = MaasHelper._call_read_regions(admin_username, maas_ip, cacert)
+        regions_output = MaasHelper._call_read_regions(admin_username, maas_url, cacert)
         region_data = json.loads(regions_output)
         return {region["system_id"] for region in region_data}
+
+    @staticmethod
+    def is_maas_initialised() -> bool:
+        """Check whether MAAS is initialised.
+
+        Returns:
+            bool: True if MAAS is initialised, False if not.
+        """
+        # this file is always created when MAAS is initialised.
+        # Technically this is a side effect of, rather than a MAAS expected
+        # way of testing status, so may need to be replaced in future.
+        return NGINX_CFG_FILEPATH.exists()
 
     @staticmethod
     def is_tls_enabled() -> bool | None:
