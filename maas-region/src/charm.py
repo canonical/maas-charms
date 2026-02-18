@@ -85,7 +85,7 @@ MAAS_ADMIN_SECRET_KEY = "maas-admin-secret-uri"
 
 MAAS_BACKUP_TYPES = ["full", "differential", "incremental"]
 
-COMMON_HAPROXY_ARGS = {
+COMMON_DEFAULT_HAPROXY_ARGS = {
     "enforce_tls": False,
     "tls_terminate": False,
     "retry_count": 3,
@@ -144,16 +144,24 @@ class MaasRegionCharm(ops.CharmBase):
 
         # HAProxy
         self.haproxy_non_tls_route = HaproxyRouteTcpRequirer(
-            self, HAPROXY_NON_TLS, port=80, backend_port=MAAS_HTTP_PORT, **COMMON_HAPROXY_ARGS
+            self,
+            HAPROXY_NON_TLS,
+            port=80,
+            backend_port=MAAS_HTTP_PORT,
+            **COMMON_DEFAULT_HAPROXY_ARGS,
         )
-        self.framework.observe(self.haproxy_non_tls_route.on.ready, self._reconcile_ha_proxy)
-        self.framework.observe(self.haproxy_non_tls_route.on.removed, self._reconcile_ha_proxy)
+        self.framework.observe(self.haproxy_non_tls_route.on.ready, self._on_haproxy_changed)
+        self.framework.observe(self.haproxy_non_tls_route.on.removed, self._on_haproxy_changed)
 
         self.haproxy_tls_route = HaproxyRouteTcpRequirer(
-            self, HAPROXY_TLS, port=443, backend_port=MAAS_HTTPS_PORT, **COMMON_HAPROXY_ARGS
+            self,
+            HAPROXY_TLS,
+            port=443,
+            backend_port=MAAS_HTTPS_PORT,
+            **COMMON_DEFAULT_HAPROXY_ARGS,
         )
-        self.framework.observe(self.haproxy_tls_route.on.ready, self._reconcile_ha_proxy)
-        self.framework.observe(self.haproxy_tls_route.on.removed, self._reconcile_ha_proxy)
+        self.framework.observe(self.haproxy_tls_route.on.ready, self._on_haproxy_changed)
+        self.framework.observe(self.haproxy_tls_route.on.removed, self._on_haproxy_changed)
 
         # COS
         endpoints: list[cos_agent._MetricsEndpointDict] = [
@@ -430,21 +438,28 @@ class MaasRegionCharm(ops.CharmBase):
 
         if haproxy_non_tls_enabled:
             self.haproxy_non_tls_route.provide_haproxy_route_tcp_requirements(
-                port=80, hosts=self.maas_ips, **COMMON_HAPROXY_ARGS
+                port=80, hosts=self.maas_ips, **COMMON_DEFAULT_HAPROXY_ARGS
             )
 
         if haproxy_tls_enabled:
             if haproxy_non_tls_enabled and self.is_tls_config_enabled:
                 self.haproxy_tls_route.provide_haproxy_route_tcp_requirements(
-                    port=443, hosts=self.maas_ips, **COMMON_HAPROXY_ARGS
+                    port=443, hosts=self.maas_ips, **COMMON_DEFAULT_HAPROXY_ARGS
                 )
             else:
                 self.haproxy_tls_route.provide_haproxy_route_tcp_requirements(
-                    port=443, hosts=[], **COMMON_HAPROXY_ARGS
+                    port=443, hosts=[], **COMMON_DEFAULT_HAPROXY_ARGS
                 )
 
         if unit_valid:
             self.unit.status = ops.ActiveStatus()
+
+    def _on_haproxy_changed(self, event: ops.EventBase) -> None:
+        self._reconcile_ha_proxy(event)
+        if self.connection_string and (
+            MaasHelper.get_maas_details().get("maas_url") != self.maas_api_url
+        ):
+            self._initialize_maas()
 
     def _update_tls_config(self) -> None:
         """Enable or disable TLS in MAAS."""
@@ -590,7 +605,7 @@ class MaasRegionCharm(ops.CharmBase):
         logger.info(event)
         self.set_peer_data(self.unit, "system-name", socket.gethostname())
         self.set_peer_data(self.unit, "bind-address", str(self.bind_address))
-        self._reconcile_ha_proxy(event)
+        self._on_haproxy_changed(event)
 
     def _on_create_admin_action(self, event: ops.ActionEvent):
         """Handle the create-admin action.
