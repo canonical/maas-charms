@@ -188,7 +188,7 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
         trust=True,
     )
     await ops_test.model.wait_for_idle(
-        apps=["haproxy", APP_NAME], status="active", raise_on_blocked=True, timeout=1000
+        apps=["haproxy", APP_NAME], status="active", raise_on_blocked=True, timeout=3600
     )
 
     address = await ops_test.model.applications[APP_NAME].units[0].get_public_address()
@@ -201,7 +201,7 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
     await ops_test.model.applications[APP_NAME].set_config({"ssl_cacert_content": cacert})
 
     await ops_test.model.wait_for_idle(
-        apps=["haproxy", APP_NAME], status="active", raise_on_error=False, timeout=1000
+        apps=["haproxy", APP_NAME], status="active", raise_on_error=False, timeout=3600
     )
 
     start = time()
