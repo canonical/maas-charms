@@ -6,7 +6,7 @@ import asyncio
 import logging
 import re
 from pathlib import Path
-from subprocess import check_output, run
+from subprocess import run
 from time import sleep, time
 
 import pytest
@@ -72,31 +72,95 @@ async def test_database_integration(ops_test: OpsTest):
     )
 
 
-def generate_cert(tmp_path: Path):
-    cert = tmp_path / "cert.pem"
-    key = tmp_path / "key.pem"
+def generate_cert(ip_address: str, tmp_path: Path):
+    ca_key = tmp_path / "ca.key"
+    ca_crt = tmp_path / "ca.crt"
+    maas_key = tmp_path / "maas.key"
+    maas_csr = tmp_path / "maas.csr"
+    maas_crt = tmp_path / "maas.crt"
+    conf = tmp_path / "maas.conf"
+
+    conf.write_text(f"""\
+[ req ]
+default_bits       = 4096
+prompt             = no
+default_md         = sha256
+distinguished_name = dn
+req_extensions     = req_ext
+
+[ dn ]
+CN = {ip_address}
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+IP.1 = {ip_address}
+""")
+
+    for key in [ca_key, maas_key]:
+        run(["openssl", "genrsa", "-out", str(key), "4096"], check=True)
 
     run(
         [
             "openssl",
             "req",
             "-x509",
-            "-newkey",
-            "rsa:2048",
-            "-keyout",
-            str(key),
-            "-out",
-            str(cert),
-            "-days",
-            "1",
+            "-new",
             "-nodes",
+            "-key",
+            str(ca_key),
+            "-sha256",
+            "-days",
+            "1000",
+            "-out",
+            str(ca_crt),
             "-subj",
-            "/CN=maas.test",
+            "/CN=MAAS-Integration-CA",
+        ],
+        check=True,
+    )
+    run(
+        [
+            "openssl",
+            "req",
+            "-new",
+            "-key",
+            str(maas_key),
+            "-out",
+            str(maas_csr),
+            "-config",
+            str(conf),
         ],
         check=True,
     )
 
-    return cert.read_text(), key.read_text()
+    run(
+        [
+            "openssl",
+            "x509",
+            "-req",
+            "-in",
+            str(maas_csr),
+            "-CA",
+            str(ca_crt),
+            "-CAkey",
+            str(ca_key),
+            "-CAcreateserial",
+            "-out",
+            str(maas_crt),
+            "-days",
+            "100",
+            "-sha256",
+            "-extensions",
+            "req_ext",
+            "-extfile",
+            str(conf),
+        ],
+        check=True,
+    )
+
+    return maas_key.read_text(), ca_crt.read_text(), maas_crt.read_text()
 
 
 def read_haproxy_blocks(haproxy_config: str) -> dict[str, str]:
@@ -125,15 +189,17 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
         config={"vip": "10.10.0.200"},
     )
     await ops_test.model.wait_for_idle(
-        apps=["haproxy"], status="active", raise_on_blocked=True, timeout=1000
+        apps=["haproxy", APP_NAME], status="active", raise_on_blocked=True, timeout=1000
     )
 
-    cert, key = generate_cert(tmp_path=tmp_path)
+    address = await ops_test.model.applications[APP_NAME].units[0].get_public_address()
+
+    key, cacert, cert = generate_cert(ip_address=address, tmp_path=tmp_path)
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp", "haproxy")
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-tls", "haproxy")
     await ops_test.model.applications[APP_NAME].set_config({"ssl_cert_content": cert})
     await ops_test.model.applications[APP_NAME].set_config({"ssl_key_content": key})
-    await ops_test.model.applications[APP_NAME].set_config({"ssl_cacert_content": cert})
+    await ops_test.model.applications[APP_NAME].set_config({"ssl_cacert_content": cacert})
 
     await ops_test.model.wait_for_idle(
         apps=["haproxy", APP_NAME], status="active", raise_on_error=False, timeout=1000
@@ -143,21 +209,29 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
     timeout = 1000
     while True:
         try:
-            data = check_output(
-                "juju exec --unit haproxy/0 cat /etc/haproxy/haproxy.cfg",
-                shell=True,
-                universal_newlines=True,
+            return_code, stdout, stderr = await ops_test.juju(
+                "exec",
+                "--unit",
+                "haproxy/0",
+                "--",
+                "cat",
+                "/etc/haproxy/haproxy.cfg",
             )
-            haproxy_data = read_haproxy_blocks(data)
-            http_frontend = haproxy_data["frontend haproxy_route_tcp_80"]
-            https_frontend = haproxy_data["frontend haproxy_route_tcp_443"]
-            http_backend = haproxy_data["backend haproxy_route_tcp_80_default_backend"]
-            https_backend = haproxy_data["backend haproxy_route_tcp_443_default_backend"]
-            break
+
+            if return_code == 0:
+                haproxy_data = read_haproxy_blocks(stdout)
+                http_frontend = haproxy_data["frontend haproxy_route_tcp_80"]
+                https_frontend = haproxy_data["frontend haproxy_route_tcp_443"]
+                http_backend = haproxy_data["backend haproxy_route_tcp_80_default_backend"]
+                https_backend = haproxy_data["backend haproxy_route_tcp_443_default_backend"]
+                break
         except KeyError:
-            sleep(1)
-            if time() > start + timeout:
-                pytest.fail("Timed out waiting for relation data to apply")
+            pass
+
+        if time() > start + timeout:
+            pytest.fail("Timed out waiting for relation data to apply")
+
+        sleep(1)
 
     assert "mode tcp" in http_frontend
     assert "bind [::]:80" in http_frontend

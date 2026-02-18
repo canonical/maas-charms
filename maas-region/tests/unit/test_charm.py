@@ -213,7 +213,7 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.begin()
         self.harness.update_config({"enable_rack_mode": True})
         mock_helper.set_prometheus_metrics.assert_called_with(
-            "maas-admin-internal", "10.0.0.10", True
+            "maas-admin-internal", "10.0.0.10", True, ""
         )
 
     @patch("charm.MaasHelper", autospec=True)
@@ -238,7 +238,7 @@ class TestClusterUpdates(unittest.TestCase):
         )
         self.harness.update_config({"enable_prometheus_metrics": False})
         mock_helper.set_prometheus_metrics.assert_called_with(
-            "maas-admin-internal", "10.0.0.10", False
+            "maas-admin-internal", "10.0.0.10", False, ""
         )
 
     @patch("charm.MaasHelper", autospec=True)

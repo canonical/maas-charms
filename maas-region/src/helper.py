@@ -304,29 +304,35 @@ class MaasHelper:
         Raises:
             CalledProcessError: failed to set prometheus_metrics setting
         """
-        MaasHelper._login_as_admin(admin_username, maas_ip, cacert)
-        set_cmd = [
-            "/snap/bin/maas",
-            admin_username,
-            "maas",
-            "set-config",
-            "name=prometheus_enabled",
-            f"value={enable}",
-        ]
-        MaasHelper._logout(admin_username)
-        subprocess.check_call(set_cmd)
+        try:
+            MaasHelper._login_as_admin(admin_username, maas_ip, cacert)
+            subprocess.check_call(
+                [
+                    "/snap/bin/maas",
+                    admin_username,
+                    "maas",
+                    "set-config",
+                    "name=prometheus_enabled",
+                    f"value={enable}",
+                ]
+            )
+        finally:
+            MaasHelper._logout(admin_username)
 
     @staticmethod
     def _call_read_regions(admin_username: str, maas_ip: str, cacert: str = "") -> str:
-        MaasHelper._login_as_admin(admin_username, maas_ip, cacert)
-        cmd = [
-            "/snap/bin/maas",
-            admin_username,
-            "region-controllers",
-            "read",
-        ]
-        MaasHelper._logout(admin_username)
-        return subprocess.check_output(cmd).decode()
+        try:
+            MaasHelper._login_as_admin(admin_username, maas_ip, cacert)
+            return subprocess.check_output(
+                [
+                    "/snap/bin/maas",
+                    admin_username,
+                    "region-controllers",
+                    "read",
+                ]
+            ).decode()
+        finally:
+            MaasHelper._logout(admin_username)
 
     @staticmethod
     def get_regions(admin_username: str, maas_ip: str, cacert: str = "") -> set[str]:

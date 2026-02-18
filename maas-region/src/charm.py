@@ -460,7 +460,17 @@ class MaasRegionCharm(ops.CharmBase):
             elif tls_enabled and not self.is_tls_config_enabled:
                 MaasHelper.disable_tls()
 
+    def _is_maas_initialised(self) -> bool:
+        try:
+            return MaasHelper.is_tls_enabled() is not None
+        except Exception:
+            return False
+
     def _update_prometheus_config(self, enable: bool) -> None:
+        if not self._is_maas_initialised():
+            logger.warning("MAAS Not ready for promtheus config yet")
+            return
+
         if secret_uri := self.get_peer_data(self.app, MAAS_ADMIN_SECRET_KEY):
             secret = self.model.get_secret(id=secret_uri)
             username = secret.get_content()["username"]
