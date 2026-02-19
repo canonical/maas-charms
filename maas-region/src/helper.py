@@ -9,7 +9,6 @@ import subprocess
 import tempfile
 from os import remove
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
 
 import yaml
 from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
@@ -254,10 +253,6 @@ class MaasHelper:
             .decode()
             .replace("\n", "")
         )
-
-        parsed = urlparse(maas_url)
-        if parsed.port and parsed.port in [MAAS_HTTPS_PORT, PROXY_HTTPS_PORT]:
-            maas_url = urlunparse(parsed._replace(scheme="https"))
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".pem", dir=str(MAAS_TMP)) as f:
             login_cmd = [

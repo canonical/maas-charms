@@ -267,6 +267,30 @@ class MaasRegionCharm(ops.CharmBase):
             raise ops.model.ModelError("Bind address not set in the model")
 
     @property
+    def maas_cli_url(self) -> str:
+        """Get MAAS CLI URL.
+
+        Returns:
+            str: The CLI URL
+        """
+        if maas_url := self.config["maas_url"]:
+            return str(maas_url)
+
+        scheme, port, proxy_port = (
+            ("https", MAAS_HTTPS_PORT, MAAS_TLS_PROXY_PORT)
+            if self.is_tls_config_enabled
+            else ("http", MAAS_HTTP_PORT, MAAS_PROXY_PORT)
+        )
+
+        # TODO: Read the vip from haproxy, if the relation exists, once
+        # https://github.com/canonical/haproxy-operator/issues/365 or similar is implemented
+        if relation := self.model.get_relation(HAPROXY_NON_TLS):
+            unit = next(iter(relation.units), None)
+            if unit and (addr := relation.data[unit].get("public-address")):
+                return f"{scheme}://{addr}:{proxy_port}/MAAS"
+        return f"{scheme}://{self.bind_address}:{port}/MAAS"
+
+    @property
     def maas_api_url(self) -> str:
         """Get MAAS API URL.
 
@@ -276,19 +300,13 @@ class MaasRegionCharm(ops.CharmBase):
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
 
-        port, proxy_port = (
-            (MAAS_HTTPS_PORT, MAAS_TLS_PROXY_PORT)
-            if self.is_tls_config_enabled
-            else (MAAS_HTTP_PORT, MAAS_PROXY_PORT)
-        )
-
         # TODO: Read the vip from haproxy, if the relation exists, once
         # https://github.com/canonical/haproxy-operator/issues/365 or similar is implemented
         if relation := self.model.get_relation(HAPROXY_NON_TLS):
             unit = next(iter(relation.units), None)
             if unit and (addr := relation.data[unit].get("public-address")):
-                return f"http://{addr}:{proxy_port}/MAAS"
-        return f"http://{self.bind_address}:{port}/MAAS"
+                return f"http://{addr}:{MAAS_PROXY_PORT}/MAAS"
+        return f"http://{self.bind_address}:{MAAS_HTTP_PORT}/MAAS"
 
     @property
     def maas_ips(self) -> list[str]:
@@ -381,13 +399,13 @@ class MaasRegionCharm(ops.CharmBase):
                 self.connection_string,
                 self.get_operational_mode(),
             )
-            # check maas_api_url existence in case MAAS isn't ready yet
-            if self.maas_api_url and self.unit.is_leader():
+            # check maas_cli_url existence in case MAAS isn't ready yet
+            if self.maas_cli_url and self.unit.is_leader():
                 self._update_tls_config()
                 credentials = self._create_or_get_internal_admin()
                 MaasHelper.set_prometheus_metrics(
                     credentials["username"],
-                    self.maas_api_url,
+                    self.maas_cli_url,
                     self.config["enable_prometheus_metrics"],  # type: ignore
                     str(self.config["ssl_cacert_content"]),
                 )
@@ -419,7 +437,7 @@ class MaasRegionCharm(ops.CharmBase):
         credentials = self._create_or_get_internal_admin()
         return MaasHelper.get_regions(
             admin_username=credentials["username"],
-            maas_url=self.maas_api_url,
+            maas_url=self.maas_cli_url,
             cacert=str(self.config["ssl_cacert_content"]),
         )
 
@@ -472,7 +490,7 @@ class MaasRegionCharm(ops.CharmBase):
     def _reconcile_ha_proxy_and_initialise(self, event: ops.EventBase) -> None:
         self._reconcile_ha_proxy(event)
         if self.connection_string and (
-            MaasHelper.get_maas_details().get("maas_url") != self.maas_api_url
+            MaasHelper.get_maas_details().get("maas_url") != self.maas_cli_url
         ):
             self._initialize_maas()
 
@@ -499,7 +517,7 @@ class MaasRegionCharm(ops.CharmBase):
             secret = self.model.get_secret(id=secret_uri)
             username = secret.get_content()["username"]
             MaasHelper.set_prometheus_metrics(
-                username, self.maas_api_url, enable, str(self.config["ssl_cacert_content"])
+                username, self.maas_cli_url, enable, str(self.config["ssl_cacert_content"])
             )
 
     def _on_start(self, _event: ops.StartEvent) -> None:
@@ -674,7 +692,7 @@ class MaasRegionCharm(ops.CharmBase):
         # the MAAS initialisation details have changed
         init_details = {
             "API URL": self.connection_string
-            and maas_details.get("maas_url") != self.maas_api_url,
+            and maas_details.get("maas_url") != self.maas_cli_url,
             f"Mode ({self.get_operational_mode()})": MaasHelper.get_maas_mode()
             != self.get_operational_mode(),
         }
