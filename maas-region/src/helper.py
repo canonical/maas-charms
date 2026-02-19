@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from os import remove
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 import yaml
 from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
@@ -26,6 +27,7 @@ MAAS_SSL_KEY_FILEPATH = Path("/var/snap/maas/common/key.pem")
 MAAS_CACERT_FILEPATH = Path("/var/snap/maas/common/cacert.pem")
 MAAS_TMP = Path("/tmp/snap-private-tmp/snap.maas/tmp")
 NGINX_CFG_FILEPATH = Path("/var/snap/maas/current/http/regiond.nginx.conf")
+PROXY_HTTPS_PORT = 443
 MAAS_HTTP_PORT = 5240
 MAAS_HTTPS_PORT = 5443
 
@@ -252,6 +254,10 @@ class MaasHelper:
             .decode()
             .replace("\n", "")
         )
+
+        parsed = urlparse(maas_url)
+        if parsed.port and parsed.port in [MAAS_HTTPS_PORT, PROXY_HTTPS_PORT]:
+            maas_url = urlunparse(parsed._replace(scheme="https"))
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".pem", dir=str(MAAS_TMP)) as f:
             login_cmd = [

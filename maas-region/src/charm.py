@@ -276,10 +276,10 @@ class MaasRegionCharm(ops.CharmBase):
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
 
-        scheme, port, proxy_port = (
-            ("https", MAAS_HTTPS_PORT, MAAS_TLS_PROXY_PORT)
+        port, proxy_port = (
+            (MAAS_HTTPS_PORT, MAAS_TLS_PROXY_PORT)
             if self.is_tls_config_enabled
-            else ("http", MAAS_HTTP_PORT, MAAS_PROXY_PORT)
+            else (MAAS_HTTP_PORT, MAAS_PROXY_PORT)
         )
 
         # TODO: Read the vip from haproxy, if the relation exists, once
@@ -287,8 +287,8 @@ class MaasRegionCharm(ops.CharmBase):
         if relation := self.model.get_relation(HAPROXY_NON_TLS):
             unit = next(iter(relation.units), None)
             if unit and (addr := relation.data[unit].get("public-address")):
-                return f"{scheme}://{addr}:{proxy_port}/MAAS"
-        return f"{scheme}://{self.bind_address}:{port}/MAAS"
+                return f"http://{addr}:{proxy_port}/MAAS"
+        return f"http://{self.bind_address}:{port}/MAAS"
 
     @property
     def maas_ips(self) -> list[str]:
