@@ -26,8 +26,6 @@ MAAS_SSL_KEY_FILEPATH = Path("/var/snap/maas/common/key.pem")
 MAAS_CACERT_FILEPATH = Path("/var/snap/maas/common/cacert.pem")
 MAAS_TMP = Path("/tmp/snap-private-tmp/snap.maas/tmp")
 NGINX_CFG_FILEPATH = Path("/var/snap/maas/current/http/regiond.nginx.conf")
-PROXY_HTTPS_PORT = 443
-MAAS_HTTP_PORT = 5240
 MAAS_HTTPS_PORT = 5443
 
 logger = logging.getLogger(__name__)

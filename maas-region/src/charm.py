@@ -282,7 +282,7 @@ class MaasRegionCharm(ops.CharmBase):
             else ("http", MAAS_HTTP_PORT, MAAS_PROXY_PORT)
         )
 
-        # TODO: Read the vip from haproxy, if the relation exists, once
+        # TODO: Read the vip from HAProxy, if the relation exists, once
         # https://github.com/canonical/haproxy-operator/issues/365 or similar is implemented
         if relation := self.model.get_relation(HAPROXY_NON_TLS):
             unit = next(iter(relation.units), None)
@@ -300,7 +300,7 @@ class MaasRegionCharm(ops.CharmBase):
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
 
-        # TODO: Read the vip from haproxy, if the relation exists, once
+        # TODO: Read the vip from HAProxy, if the relation exists, once
         # https://github.com/canonical/haproxy-operator/issues/365 or similar is implemented
         if relation := self.model.get_relation(HAPROXY_NON_TLS):
             unit = next(iter(relation.units), None)

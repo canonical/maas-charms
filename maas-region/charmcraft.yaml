@@ -166,12 +166,12 @@ config:
     maas_url:
       default: ""
       description: |
-        The maas_url to set. If not provided, and related to HAProxy, the `maas_url` is formed of any haproxy uit ip address and the proxy port,
-        otherwise, the maas_url is formulated by the IP of any maas-region unit and MAAS API port.
+        The `maas_url`` to set. If not provided, and related to HAProxy, the `maas_url` is formed of any HAProxy uit IP address and the proxy port,
+        otherwise, the `maas_url`` is formulated by the IP of any maas-region unit and MAAS API port.
       type: string
     ssl_cert_content:
       default: ""
-      description: SSL certificate. If provided, MAAS will run in TLS mode, and will require `ssl_key_content`` to be provided.
+      description: SSL certificate. If provided, MAAS will run in TLS mode, and will require `ssl_key_content` to be provided.
       type: string
     ssl_key_content:
       default: ""
@@ -179,7 +179,7 @@ config:
       type: string
     ssl_cacert_content:
       default: ""
-      description: CA Certificates chain in PEM format. If provided, MAAS will run in TLS mode, and will require `ssl_key_content` and `ssl_cert_content` to be provided.
+      description: CA Certificates chain in PEM format. If MAAS is running in TLS mode, and the `ssl_key_content` and `ssl_cert_content` are provided, the `ssl_cacert_content` can be provided for self signed certificate.
       type: string
     enable_prometheus_metrics:
       default: true
