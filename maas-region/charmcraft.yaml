@@ -166,8 +166,8 @@ config:
     maas_url:
       default: ""
       description: |
-        The `maas_url`` to set. If not provided, and related to HAProxy, the `maas_url` is formed of any HAProxy uit IP address and the proxy port,
-        otherwise, the `maas_url`` is formulated by the IP of any maas-region unit and MAAS API port.
+        The `maas_url` to set. If not provided, and related to HAProxy, the `maas_url` is formed of any HAProxy unit IP address and the proxy port,
+        otherwise, the `maas_url` is formulated by the IP of any maas-region unit and MAAS API port.
       type: string
     ssl_cert_content:
       default: ""
