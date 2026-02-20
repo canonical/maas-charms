@@ -178,7 +178,7 @@ def read_haproxy_blocks(haproxy_config: str) -> dict[str, str]:
 
 @pytest.mark.abort_on_fail
 async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
-    """Verify that the charm haproxy integration works as expected."""
+    """Verify that the charm HAProxy integration works as expected."""
     # Deploy the charm and haproxy and wait for active/waiting status
     await ops_test.model.deploy(
         "haproxy",
