@@ -4,12 +4,13 @@
 
 import asyncio
 import logging
-import time
-from subprocess import check_output
+import re
+from pathlib import Path
+from subprocess import run
+from time import sleep, time
 
 import pytest
-import yaml
-from conftest import APP_NAME, POSTGRESQL_CHANNEL
+from conftest import APP_NAME, HAPROXY_CHANNEL, POSTGRESQL_CHANNEL
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
@@ -26,9 +27,7 @@ async def test_build_and_deploy(ops_test: OpsTest):
 
     # Deploy the charm and wait for waiting/idle status
     await asyncio.gather(
-        ops_test.model.deploy(
-            charm, application_name=APP_NAME, config={"tls_mode": "termination"}
-        ),
+        ops_test.model.deploy(charm, application_name=APP_NAME),
         ops_test.model.wait_for_idle(
             apps=[APP_NAME], status="waiting", raise_on_blocked=True, timeout=1000
         ),
@@ -73,52 +72,170 @@ async def test_database_integration(ops_test: OpsTest):
     )
 
 
-@pytest.mark.abort_on_fail
-async def test_tls_mode(ops_test: OpsTest):
-    """Verify that the charm tls_mode configuration option works as expected.
+def generate_cert(ip_address: str, tmp_path: Path):
+    ca_key = tmp_path / "ca.key"
+    ca_crt = tmp_path / "ca.crt"
+    maas_key = tmp_path / "maas.key"
+    maas_csr = tmp_path / "maas.csr"
+    maas_crt = tmp_path / "maas.crt"
+    conf = tmp_path / "maas.conf"
 
-    Assert that the agent_service is properly set up.
-    """
-    # Deploy the charm and haproxy and wait for active/waiting status
-    await asyncio.gather(
-        ops_test.model.deploy(
-            "haproxy",
-            application_name="haproxy",
-            channel="latest/stable",
-            series="noble",
-            trust=True,
-        ),
-        ops_test.model.wait_for_idle(
-            apps=["haproxy"], status="active", raise_on_blocked=True, timeout=1000
-        ),
+    conf.write_text(f"""\
+[ req ]
+default_bits       = 4096
+prompt             = no
+default_md         = sha256
+distinguished_name = dn
+req_extensions     = req_ext
+
+[ dn ]
+CN = {ip_address}
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+IP.1 = {ip_address}
+""")
+
+    for key in [ca_key, maas_key]:
+        run(["openssl", "genrsa", "-out", str(key), "4096"], check=True)
+
+    run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-new",
+            "-nodes",
+            "-key",
+            str(ca_key),
+            "-sha256",
+            "-days",
+            "1000",
+            "-out",
+            str(ca_crt),
+            "-subj",
+            "/CN=MAAS-Integration-CA",
+        ],
+        check=True,
     )
-    await ops_test.model.integrate(f"{APP_NAME}", "haproxy")
+    run(
+        [
+            "openssl",
+            "req",
+            "-new",
+            "-key",
+            str(maas_key),
+            "-out",
+            str(maas_csr),
+            "-config",
+            str(conf),
+        ],
+        check=True,
+    )
 
-    # the relation may take some time beyond the above await to fully apply
-    start = time.time()
+    run(
+        [
+            "openssl",
+            "x509",
+            "-req",
+            "-in",
+            str(maas_csr),
+            "-CA",
+            str(ca_crt),
+            "-CAkey",
+            str(ca_key),
+            "-CAcreateserial",
+            "-out",
+            str(maas_crt),
+            "-days",
+            "100",
+            "-sha256",
+            "-extensions",
+            "req_ext",
+            "-extfile",
+            str(conf),
+        ],
+        check=True,
+    )
+
+    return maas_key.read_text(), ca_crt.read_text(), maas_crt.read_text()
+
+
+def read_haproxy_blocks(haproxy_config: str) -> dict[str, str]:
+    block_pattern = re.compile(
+        r"^(global|defaults|frontend|backend|listen|peers)[^\n]*\n"
+        r"(?:[ \t].*\n)*",
+        re.MULTILINE,
+    )
+    blocks = {}
+    for match in block_pattern.finditer(haproxy_config):
+        header = match.group(0).splitlines()[0].strip()
+        blocks[header] = match.group(0)
+    return blocks
+
+
+@pytest.mark.abort_on_fail
+async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
+    """Verify that the charm HAProxy integration works as expected."""
+    # Deploy the charm and haproxy and wait for active/waiting status
+    await ops_test.model.deploy(
+        "haproxy",
+        application_name="haproxy",
+        channel=HAPROXY_CHANNEL,
+        series="noble",
+        trust=True,
+    )
+    await ops_test.model.wait_for_idle(
+        apps=["haproxy", APP_NAME], status="active", raise_on_blocked=True, timeout=3600
+    )
+
+    address = await ops_test.model.applications[APP_NAME].units[0].get_public_address()
+
+    key, cacert, cert = generate_cert(ip_address=address, tmp_path=tmp_path)
+    await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp", "haproxy")
+    await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-tls", "haproxy")
+    await ops_test.model.applications[APP_NAME].set_config({"ssl_cert_content": cert})
+    await ops_test.model.applications[APP_NAME].set_config({"ssl_key_content": key})
+    await ops_test.model.applications[APP_NAME].set_config({"ssl_cacert_content": cacert})
+
+    await ops_test.model.wait_for_idle(
+        apps=["haproxy", APP_NAME], status="active", raise_on_error=False, timeout=3600
+    )
+
+    start = time()
     timeout = 1000
     while True:
         try:
-            show_unit = check_output(
-                f"JUJU_MODEL={ops_test.model.name} juju show-unit haproxy/0",
-                shell=True,
-                universal_newlines=True,
+            return_code, stdout, _ = await ops_test.juju(
+                "exec",
+                "--unit",
+                "haproxy/0",
+                "--",
+                "cat",
+                "/etc/haproxy/haproxy.cfg",
             )
-            result = yaml.safe_load(show_unit)
-            services_str = result["haproxy/0"]["relation-info"][1]["related-units"][
-                "maas-region/0"
-            ]["data"]["services"]
-            break
+
+            if return_code == 0:
+                haproxy_data = read_haproxy_blocks(stdout)
+                http_frontend = haproxy_data["frontend haproxy_route_tcp_80"]
+                https_frontend = haproxy_data["frontend haproxy_route_tcp_443"]
+                http_backend = haproxy_data["backend haproxy_route_tcp_80_default_backend"]
+                https_backend = haproxy_data["backend haproxy_route_tcp_443_default_backend"]
+                break
         except KeyError:
-            time.sleep(1)
-            if time.time() > start + timeout:
-                pytest.fail("Timed out waiting for relation data to apply")
+            pass
 
-    services_yaml = yaml.safe_load(services_str)
+        if time() > start + timeout:
+            pytest.fail("Timed out waiting for relation data to apply")
 
-    assert len(services_yaml) == 2
-    assert services_yaml[1]["service_name"] == "agent_service"
-    assert services_yaml[1]["service_port"] == 80
-    agent_server = services_yaml[1]["servers"][0]
-    assert agent_server[0] == "api-maas-region-maas-region-0"
-    assert agent_server[2] == 5240
+        sleep(1)
+
+    assert "mode tcp" in http_frontend
+    assert "bind [::]:80" in http_frontend
+    assert re.search(r"server maas-region-0 (\d+\.){3}\d+:5240", http_backend)
+
+    assert "mode tcp" in https_frontend
+    assert "bind [::]:443" in https_frontend
+    assert re.search(r"server maas-region-0 (\d+\.){3}\d+:5443", https_backend)

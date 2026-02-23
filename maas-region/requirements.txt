@@ -8,6 +8,8 @@ boto3 >=1.42.21, <1.43.0
 botocore >=1.42.21, <1.43.0
 
 # For Grafana agent
-pydantic < 2
 cosl
 opentelemetry-exporter-otlp-proto-http>=1.21.0
+
+# The smallest Pydantic version that satisfies the `haproxy.v0.haproxy_route_tcp` library (HAProxy charm uses `2.12.5`)
+pydantic==2.12.5

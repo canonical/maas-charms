@@ -44,6 +44,14 @@ requires:
     interface: s3
     limit: 1
     optional: true
+  ingress-tcp:
+    interface: haproxy-route-tcp
+    limit: 1
+    optional: true
+  ingress-tcp-tls:
+    interface: haproxy-route-tcp
+    limit: 1
+    optional: true
 
 peers:
   initialize:
@@ -54,9 +62,6 @@ peers:
     optional: false
 
 provides:
-  api:
-    interface: http
-    optional: true
   cos-agent:
     interface: cos_agent
     optional: true
@@ -161,25 +166,20 @@ config:
     maas_url:
       default: ""
       description: |
-        The maas_url to set. If not provided, the maas_url is formulated by the IP of maas-region
-        leader and MAAS API port. If application is related to HAProxy, the proxy port is used
-        instead.
-      type: string
-    tls_mode:
-      default: "disabled"
-      description: Whether to enable TLS termination at HA Proxy ('termination'), at MAAS ('passthrough'), or no TLS ('disabled')
+        The `maas_url` to set. If not provided, and related to HAProxy, the `maas_url` is formed of any HAProxy unit IP address and the proxy port,
+        otherwise, the `maas_url` is formulated by the IP of any maas-region unit and MAAS API port.
       type: string
     ssl_cert_content:
       default: ""
-      description: SSL certificate for tls_mode='passthrough'
+      description: SSL certificate. If provided, MAAS will run in TLS mode, and will require `ssl_key_content` to be provided.
       type: string
     ssl_key_content:
       default: ""
-      description: SSL private key for tls_mode='passthrough'
+      description: SSL private key. If provided, MAAS will run in TLS mode, and will require `ssl_cert_content` to be provided.
       type: string
     ssl_cacert_content:
       default: ""
-      description: CA Certificates chain in PEM format
+      description: CA Certificates chain in PEM format. If MAAS is running in TLS mode, and the `ssl_key_content` and `ssl_cert_content` are provided, the `ssl_cacert_content` can be provided for self signed certificate.
       type: string
     enable_prometheus_metrics:
       default: true
