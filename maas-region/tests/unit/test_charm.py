@@ -283,15 +283,13 @@ class TestClusterUpdates(unittest.TestCase):
 
         with patch.object(
             self.harness.charm.haproxy_non_tls_route,
-            "provide_haproxy_route_tcp_requirements",
-        ) as provide:
+            "configure_hosts",
+        ) as configure_hosts:
             self.harness.charm._reconcile_ha_proxy(None)
-            provide.assert_called_once()
+            configure_hosts.assert_called_once()
 
-            kwargs = provide.call_args.kwargs
-
-            self.assertEqual(kwargs["port"], 80)
-            self.assertEqual(kwargs["hosts"], ["10.0.0.10"])
+            args = configure_hosts.call_args.args
+            self.assertEqual(args, (["10.0.0.10"],))
 
             self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
 
@@ -315,15 +313,14 @@ class TestClusterUpdates(unittest.TestCase):
 
         with patch.object(
             self.harness.charm.haproxy_tls_route,
-            "provide_haproxy_route_tcp_requirements",
-        ) as provide:
+            "configure_hosts",
+        ) as configure_hosts:
             self.harness.charm._reconcile_ha_proxy(None)
-            provide.assert_called_once()
+            configure_hosts.assert_called_once()
 
-            kwargs = provide.call_args.kwargs
+            args = configure_hosts.call_args.args
 
-            self.assertEqual(kwargs["port"], 443)
-            self.assertEqual(kwargs["hosts"], ["10.0.0.10"])
+            self.assertEqual(args, (["10.0.0.10"],))
 
             self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
 
