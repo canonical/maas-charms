@@ -394,6 +394,7 @@ class MaasRegionCharm(ops.CharmBase):
     def _initialize_maas(self) -> bool:
         try:
             self._setup_network()
+            MaasHelper.stop()
             MaasHelper.setup_region(
                 self.maas_api_url,
                 self.connection_string,
