@@ -471,17 +471,26 @@ class MaasRegionCharm(ops.CharmBase):
 
         if haproxy_non_tls_enabled:
             self.haproxy_non_tls_route.provide_haproxy_route_tcp_requirements(
-                port=80, hosts=self.maas_ips, **COMMON_DEFAULT_HAPROXY_ARGS
+                port=MAAS_PROXY_PORT,
+                backend_port=MAAS_HTTP_PORT,
+                hosts=self.maas_ips,
+                **COMMON_DEFAULT_HAPROXY_ARGS,
             )
 
         if haproxy_tls_enabled:
             if haproxy_non_tls_enabled and self.is_tls_config_enabled:
                 self.haproxy_tls_route.provide_haproxy_route_tcp_requirements(
-                    port=443, hosts=self.maas_ips, **COMMON_DEFAULT_HAPROXY_ARGS
+                    port=MAAS_TLS_PROXY_PORT,
+                    backend_port=MAAS_HTTPS_PORT,
+                    hosts=self.maas_ips,
+                    **COMMON_DEFAULT_HAPROXY_ARGS,
                 )
             else:
                 self.haproxy_tls_route.provide_haproxy_route_tcp_requirements(
-                    port=443, hosts=[], **COMMON_DEFAULT_HAPROXY_ARGS
+                    port=MAAS_TLS_PROXY_PORT,
+                    backend_port=MAAS_HTTPS_PORT,
+                    hosts=[],
+                    **COMMON_DEFAULT_HAPROXY_ARGS,
                 )
 
         if unit_valid:
