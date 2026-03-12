@@ -402,7 +402,7 @@ class MAASBackups(Object):
                 for common_prefix in page.get("CommonPrefixes", []):
                     backups.append(
                         common_prefix["Prefix"]
-                        .lstrip(f"{s3_parameters['path'].lstrip('/')}/backup/")
+                        .removeprefix(f"{s3_parameters['path'].lstrip('/')}/backup/")
                         .rstrip("/")
                     )
 
