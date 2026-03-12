@@ -394,6 +394,7 @@ class MaasRegionCharm(ops.CharmBase):
     def _initialize_maas(self) -> bool:
         try:
             self._setup_network()
+            MaasHelper.stop()
             MaasHelper.setup_region(
                 self.maas_api_url,
                 self.connection_string,
@@ -470,20 +471,17 @@ class MaasRegionCharm(ops.CharmBase):
             return
 
         if haproxy_non_tls_enabled:
-            self.haproxy_non_tls_route.provide_haproxy_route_tcp_requirements(
-                port=80, hosts=self.maas_ips, **COMMON_DEFAULT_HAPROXY_ARGS
-            )
+            # TODO: Remove type: ignore when hosts annotation is fixed: https://github.com/canonical/haproxy-operator/pull/383
+            self.haproxy_non_tls_route.configure_hosts(self.maas_ips)  # type: ignore[arg-type]
+            self.haproxy_non_tls_route.update_relation_data()
 
         if haproxy_tls_enabled:
             if haproxy_non_tls_enabled and self.is_tls_config_enabled:
-                self.haproxy_tls_route.provide_haproxy_route_tcp_requirements(
-                    port=443, hosts=self.maas_ips, **COMMON_DEFAULT_HAPROXY_ARGS
-                )
+                # TODO: Remove type: ignore when hosts annotation is fixed: https://github.com/canonical/haproxy-operator/pull/383
+                self.haproxy_tls_route.configure_hosts(self.maas_ips)  # type: ignore[arg-type]
             else:
-                self.haproxy_tls_route.provide_haproxy_route_tcp_requirements(
-                    port=443, hosts=[], **COMMON_DEFAULT_HAPROXY_ARGS
-                )
-
+                self.haproxy_tls_route.configure_hosts()
+            self.haproxy_tls_route.update_relation_data()
         if unit_valid:
             self.unit.status = ops.ActiveStatus()
 
