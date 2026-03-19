@@ -33,6 +33,8 @@ MAAS_DB_NAME = "maas-db"
 MAAS_INIT_RELATION = "initialize"
 HAPROXY_NON_TLS = "ingress-tcp"
 HAPROXY_TLS = "ingress-tcp-tls"
+HAPROXY_TEMPORAL = "ingress-tcp-temporal"
+HAPROXY_INTERNAL_HTTP_API = "ingress-tcp-internal-http-api"
 
 MAAS_SNAP_CHANNEL = "3.7/stable"
 
@@ -45,6 +47,8 @@ MAAS_REGION_METRICS_PORT = 5239
 MAAS_AGENT_METRICS_PORT = 5248
 MAAS_RACK_METRICS_PORT = 5249
 MAAS_CLUSTER_METRICS_PORT = MAAS_HTTP_PORT
+MAAS_TEMPORAL_PORT = 5271
+MAAS_INTERNAL_HTTP_API_PORT = 5242
 
 MAAS_AGENT_METRICS_ENDPOINT = "/metrics/agent"
 
@@ -167,6 +171,36 @@ class MaasRegionCharm(ops.CharmBase):
         )
         self.framework.observe(self.haproxy_tls_route.on.ready, self._reconcile_ha_proxy)
         self.framework.observe(self.haproxy_tls_route.on.removed, self._reconcile_ha_proxy)
+
+        # Temporal
+        self.haproxy_temporal_route = HaproxyRouteTcpRequirer(
+            self,
+            HAPROXY_TEMPORAL,
+            port=MAAS_TEMPORAL_PORT,
+            backend_port=MAAS_TEMPORAL_PORT,
+            **COMMON_DEFAULT_HAPROXY_ARGS,
+        )
+        self.framework.observe(
+            self.haproxy_temporal_route.on.ready, self._reconcile_ha_proxy_and_initialise
+        )
+        self.framework.observe(
+            self.haproxy_temporal_route.on.removed, self._reconcile_ha_proxy_and_initialise
+        )
+
+        # Internal HTTP API
+        self.haproxy_internal_http_api_route = HaproxyRouteTcpRequirer(
+            self,
+            HAPROXY_INTERNAL_HTTP_API,
+            port=MAAS_INTERNAL_HTTP_API_PORT,
+            backend_port=MAAS_INTERNAL_HTTP_API_PORT,
+            **COMMON_DEFAULT_HAPROXY_ARGS,
+        )
+        self.framework.observe(
+            self.haproxy_internal_http_api_route.on.ready, self._reconcile_ha_proxy_and_initialise
+        )
+        self.framework.observe(
+            self.haproxy_internal_http_api_route.on.removed, self._reconcile_ha_proxy_and_initialise
+        )
 
         # COS
         endpoints: list[cos_agent._MetricsEndpointDict] = [
@@ -451,6 +485,9 @@ class MaasRegionCharm(ops.CharmBase):
         haproxy_non_tls_enabled = self.model.get_relation(HAPROXY_NON_TLS) is not None
         haproxy_tls_enabled = self.model.get_relation(HAPROXY_TLS) is not None
 
+        haproxy_temporal_route_enabled = self.model.get_relation(HAPROXY_TEMPORAL) is not None
+        haproxy_internal_api_route_enabled = self.model.get_relation(HAPROXY_INTERNAL_HTTP_API) is not None
+
         # if there are no relations, or the http relation is set and the https configuration is valid
         unit_valid = (haproxy_non_tls_enabled or not haproxy_tls_enabled) and (
             self.is_tls_config_enabled == haproxy_tls_enabled
@@ -479,6 +516,17 @@ class MaasRegionCharm(ops.CharmBase):
             else:
                 self.haproxy_tls_route.configure_hosts()
             self.haproxy_tls_route.update_relation_data()
+        
+        if haproxy_temporal_route_enabled:
+            self.haproxy_temporal_route.provide_haproxy_route_tcp_requirements(
+                port=MAAS_TEMPORAL_PORT, hosts=self.maas_ips, **COMMON_DEFAULT_HAPROXY_ARGS
+            )
+        
+        if haproxy_internal_api_route_enabled:
+            self.haproxy_internal_http_api_route.provide_haproxy_route_tcp_requirements(
+                port=MAAS_INTERNAL_HTTP_API_PORT, hosts=self.maas_ips, **COMMON_DEFAULT_HAPROXY_ARGS
+            )
+
         if unit_valid:
             self.unit.status = ops.ActiveStatus()
 
