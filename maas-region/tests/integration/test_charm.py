@@ -23,11 +23,11 @@ async def test_build_and_deploy(ops_test: OpsTest):
     Assert on the unit status before any relations/configurations take place.
     """
     # Build and deploy charm from local source folder
-    # charm = await ops_test.build_charm(".")
+    charm = await ops_test.build_charm(".")
 
     # Deploy the charm and wait for waiting/idle status
     await asyncio.gather(
-        ops_test.model.deploy("./maas-region_ubuntu@24.04-amd64.charm"),
+        ops_test.model.deploy(charm, application_name=APP_NAME),
         ops_test.model.wait_for_idle(
             apps=[APP_NAME], status="waiting", raise_on_blocked=True, timeout=1000
         ),
