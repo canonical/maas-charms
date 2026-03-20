@@ -165,12 +165,8 @@ class MaasRegionCharm(ops.CharmBase):
             backend_port=MAAS_HTTPS_PORT,
             **COMMON_DEFAULT_HAPROXY_ARGS,
         )
-        self.framework.observe(
-            self.haproxy_tls_route.on.ready, self._reconcile_ha_proxy_and_initialise
-        )
-        self.framework.observe(
-            self.haproxy_tls_route.on.removed, self._reconcile_ha_proxy_and_initialise
-        )
+        self.framework.observe(self.haproxy_tls_route.on.ready, self._reconcile_ha_proxy)
+        self.framework.observe(self.haproxy_tls_route.on.removed, self._reconcile_ha_proxy)
 
         # COS
         endpoints: list[cos_agent._MetricsEndpointDict] = [
@@ -488,7 +484,7 @@ class MaasRegionCharm(ops.CharmBase):
     def _reconcile_ha_proxy_and_initialise(self, event: ops.EventBase) -> None:
         self._reconcile_ha_proxy(event)
         if self.connection_string and (
-            MaasHelper.get_maas_details().get("maas_url") != self.maas_cli_url
+            MaasHelper.get_maas_details().get("maas_url") != self.maas_api_url
         ):
             self._initialize_maas()
 
@@ -507,7 +503,7 @@ class MaasRegionCharm(ops.CharmBase):
                 MaasHelper.disable_tls()
 
     def _update_prometheus_config(self, enable: bool) -> None:
-        if not MaasHelper.is_maas_initialised():
+        if not MaasHelper.is_maas_initialized():
             logger.warning("MAAS Not ready for Prometheus config yet")
             return
 
@@ -664,7 +660,7 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_get_api_endpoint_action(self, event: ops.ActionEvent):
         """Handle the get-api-endpoint action."""
-        if url := self.maas_api_url:
+        if url := self.maas_cli_url:
             event.set_results({"api-url": url})
         else:
             event.fail("MAAS is not initialized yet")
@@ -687,17 +683,16 @@ class MaasRegionCharm(ops.CharmBase):
                 )
         self._reconcile_ha_proxy(event)
         maas_details = MaasHelper.get_maas_details()
-        # the MAAS initialisation details have changed
+        # the MAAS initialization details have changed
         init_details = {
-            "API URL": self.connection_string
-            and maas_details.get("maas_url") != self.maas_cli_url,
+            "API URL": maas_details.get("maas_url") != self.maas_api_url,
             f"Mode ({self.get_operational_mode()})": MaasHelper.get_maas_mode()
             != self.get_operational_mode(),
         }
-        if any(init_details.values()):
+        if self.connection_string and any(init_details.values()):
             changes = [k for k, v in init_details.items() if v]
             self.unit.status = ops.MaintenanceStatus(
-                f"re-initialising maas with new: {', '.join(changes)}..."
+                f"re-initializing MAAS with new: {', '.join(changes)}..."
             )
             self._initialize_maas()
 

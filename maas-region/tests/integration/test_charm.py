@@ -23,11 +23,11 @@ async def test_build_and_deploy(ops_test: OpsTest):
     Assert on the unit status before any relations/configurations take place.
     """
     # Build and deploy charm from local source folder
-    charm = await ops_test.build_charm(".")
+    # charm = await ops_test.build_charm(".")
 
     # Deploy the charm and wait for waiting/idle status
     await asyncio.gather(
-        ops_test.model.deploy(charm, application_name=APP_NAME),
+        ops_test.model.deploy("./maas-region_ubuntu@24.04-amd64.charm"),
         ops_test.model.wait_for_idle(
             apps=[APP_NAME], status="waiting", raise_on_blocked=True, timeout=1000
         ),
@@ -53,11 +53,7 @@ async def test_database_integration(ops_test: OpsTest):
             application_name="postgresql",
             channel=POSTGRESQL_CHANNEL,
             series="noble",
-            trust=True,
-            # workaround for https://bugs.launchpad.net/maas/+bug/2097079
-            config={"plugin_audit_enable": False},
-            # workaround for https://bugs.launchpad.net/maas/+bug/2097079, https://github.com/canonical/postgresql-operator/issues/1001
-            revision=758,
+            config={"plugin_btree_gin_enable": True},
         ),
         ops_test.model.wait_for_idle(
             apps=["postgresql"], status="active", raise_on_blocked=True, timeout=1000
@@ -185,7 +181,6 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
         application_name="haproxy",
         channel=HAPROXY_CHANNEL,
         series="noble",
-        trust=True,
     )
     await ops_test.model.wait_for_idle(
         apps=["haproxy", APP_NAME], status="active", raise_on_blocked=True, timeout=3600

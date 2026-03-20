@@ -212,6 +212,17 @@ class TestClusterUpdates(unittest.TestCase):
         mock_helper.get_maas_mode.return_value = "region"
         mock_helper.create_admin_user.return_value = None
         self.harness.set_leader(True)
+        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
+        self.harness.update_relation_data(
+            db_rel,
+            "postgresql",
+            {
+                "endpoints": "30.0.0.1:5432",
+                "read-only-endpoints": "30.0.0.2:5432",
+                "username": "test_maas_db",
+                "password": "my_secret",
+            },
+        )
         self.harness.update_config({"enable_rack_mode": False})
         self.harness.begin()
         self.harness.update_config({"enable_rack_mode": True})
@@ -251,10 +262,27 @@ class TestClusterUpdates(unittest.TestCase):
         mock_helper.setup_region.return_value = None
         mock_helper.create_admin_user.return_value = None
         self.harness.set_leader(True)
+        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
+        self.harness.update_relation_data(
+            db_rel,
+            "postgresql",
+            {
+                "endpoints": "30.0.0.1:5432",
+                "read-only-endpoints": "30.0.0.2:5432",
+                "username": "test_maas_db",
+                "password": "my_secret",
+            },
+        )
         self.harness.update_config({"enable_rack_mode": True})
         self.harness.begin_with_initial_hooks()
         mock_helper.setup_region.assert_has_calls(
-            [call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region+rack")]
+            [
+                call(
+                    f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
+                    "postgres://test_maas_db:my_secret@30.0.0.1:5432/maas_region_db",
+                    "region+rack",
+                )
+            ]
         )
 
     @patch("charm.MaasHelper", autospec=True)
@@ -264,13 +292,32 @@ class TestClusterUpdates(unittest.TestCase):
         mock_helper.setup_region.return_value = None
         mock_helper.create_admin_user.return_value = None
         self.harness.set_leader(True)
+        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
+        self.harness.update_relation_data(
+            db_rel,
+            "postgresql",
+            {
+                "endpoints": "30.0.0.1:5432",
+                "read-only-endpoints": "30.0.0.2:5432",
+                "username": "test_maas_db",
+                "password": "my_secret",
+            },
+        )
         self.harness.update_config({"enable_rack_mode": False})
         self.harness.begin_with_initial_hooks()
         self.harness.update_config({"enable_rack_mode": True})
         mock_helper.setup_region.assert_has_calls(
             [
-                call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region"),
-                call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region+rack"),
+                call(
+                    f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
+                    "postgres://test_maas_db:my_secret@30.0.0.1:5432/maas_region_db",
+                    "region",
+                ),
+                call(
+                    f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
+                    "postgres://test_maas_db:my_secret@30.0.0.1:5432/maas_region_db",
+                    "region+rack",
+                ),
             ]
         )
 
