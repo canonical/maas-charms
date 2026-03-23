@@ -68,9 +68,7 @@ async def test_multi_node_database_integration(ops_test: OpsTest):
             application_name="postgresql",
             channel=POSTGRESQL_CHANNEL,
             series="noble",
-            trust=True,
-            # workaround for https://bugs.launchpad.net/maas/+bug/2097079
-            config={"plugin_audit_enable": False},
+            config={"plugin_btree_gin_enable": True},
         ),
         ops_test.model.wait_for_idle(
             apps=["postgresql"], status="active", raise_on_blocked=True, timeout=1000
