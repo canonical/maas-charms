@@ -15,7 +15,7 @@ from typing import Any
 import ops
 from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
-from charms.haproxy.v0.haproxy_route_tcp import HaproxyRouteTcpRequirer, LoadBalancingAlgorithm
+from charms.haproxy.v1.haproxy_route_tcp import HaproxyRouteTcpRequirer, LoadBalancingAlgorithm
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 from charms.rolling_ops.v0.rollingops import RollingOpsManager, RunWithLock
