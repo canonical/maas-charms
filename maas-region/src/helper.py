@@ -274,14 +274,17 @@ class MaasHelper:
 
             try:
                 subprocess.run(
-                    login_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True
+                    login_cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                    text=True,
                 )
             except subprocess.CalledProcessError as e:
                 # Log the last line of stderr from the failed command
                 if e.stderr:
-                    stderr_text = e.stderr.decode().strip()
-                    stderr_lines = stderr_text.split("\n")
-                    logger.warning(f"MAAS login failed: {stderr_lines[-1]}")
+                    last_line = e.stderr.strip().splitlines()[-1]
+                    logger.warning(f"MAAS login failed: {last_line}")
                 raise
 
     @staticmethod
