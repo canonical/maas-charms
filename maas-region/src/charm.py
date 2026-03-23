@@ -15,7 +15,7 @@ from typing import Any
 import ops
 from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
-from charms.haproxy.v0.haproxy_route_tcp import HaproxyRouteTcpRequirer, LoadBalancingAlgorithm
+from charms.haproxy.v1.haproxy_route_tcp import HaproxyRouteTcpRequirer, LoadBalancingAlgorithm
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 from charms.rolling_ops.v0.rollingops import RollingOpsManager, RunWithLock
@@ -165,12 +165,8 @@ class MaasRegionCharm(ops.CharmBase):
             backend_port=MAAS_HTTPS_PORT,
             **COMMON_DEFAULT_HAPROXY_ARGS,
         )
-        self.framework.observe(
-            self.haproxy_tls_route.on.ready, self._reconcile_ha_proxy_and_initialise
-        )
-        self.framework.observe(
-            self.haproxy_tls_route.on.removed, self._reconcile_ha_proxy_and_initialise
-        )
+        self.framework.observe(self.haproxy_tls_route.on.ready, self._reconcile_ha_proxy)
+        self.framework.observe(self.haproxy_tls_route.on.removed, self._reconcile_ha_proxy)
 
         # COS
         endpoints: list[cos_agent._MetricsEndpointDict] = [
@@ -394,6 +390,7 @@ class MaasRegionCharm(ops.CharmBase):
     def _initialize_maas(self) -> bool:
         try:
             self._setup_network()
+            MaasHelper.stop()
             MaasHelper.setup_region(
                 self.maas_api_url,
                 self.connection_string,
@@ -470,27 +467,24 @@ class MaasRegionCharm(ops.CharmBase):
             return
 
         if haproxy_non_tls_enabled:
-            self.haproxy_non_tls_route.provide_haproxy_route_tcp_requirements(
-                port=80, hosts=self.maas_ips, **COMMON_DEFAULT_HAPROXY_ARGS
-            )
+            # TODO: Remove type: ignore when hosts annotation is fixed: https://github.com/canonical/haproxy-operator/pull/383
+            self.haproxy_non_tls_route.configure_hosts(self.maas_ips)  # type: ignore[arg-type]
+            self.haproxy_non_tls_route.update_relation_data()
 
         if haproxy_tls_enabled:
             if haproxy_non_tls_enabled and self.is_tls_config_enabled:
-                self.haproxy_tls_route.provide_haproxy_route_tcp_requirements(
-                    port=443, hosts=self.maas_ips, **COMMON_DEFAULT_HAPROXY_ARGS
-                )
+                # TODO: Remove type: ignore when hosts annotation is fixed: https://github.com/canonical/haproxy-operator/pull/383
+                self.haproxy_tls_route.configure_hosts(self.maas_ips)  # type: ignore[arg-type]
             else:
-                self.haproxy_tls_route.provide_haproxy_route_tcp_requirements(
-                    port=443, hosts=[], **COMMON_DEFAULT_HAPROXY_ARGS
-                )
-
+                self.haproxy_tls_route.configure_hosts()
+            self.haproxy_tls_route.update_relation_data()
         if unit_valid:
             self.unit.status = ops.ActiveStatus()
 
     def _reconcile_ha_proxy_and_initialise(self, event: ops.EventBase) -> None:
         self._reconcile_ha_proxy(event)
         if self.connection_string and (
-            MaasHelper.get_maas_details().get("maas_url") != self.maas_cli_url
+            MaasHelper.get_maas_details().get("maas_url") != self.maas_api_url
         ):
             self._initialize_maas()
 
@@ -509,7 +503,7 @@ class MaasRegionCharm(ops.CharmBase):
                 MaasHelper.disable_tls()
 
     def _update_prometheus_config(self, enable: bool) -> None:
-        if not MaasHelper.is_maas_initialised():
+        if not MaasHelper.is_maas_initialized():
             logger.warning("MAAS Not ready for Prometheus config yet")
             return
 
@@ -666,7 +660,7 @@ class MaasRegionCharm(ops.CharmBase):
 
     def _on_get_api_endpoint_action(self, event: ops.ActionEvent):
         """Handle the get-api-endpoint action."""
-        if url := self.maas_api_url:
+        if url := self.maas_cli_url:
             event.set_results({"api-url": url})
         else:
             event.fail("MAAS is not initialized yet")
@@ -689,17 +683,16 @@ class MaasRegionCharm(ops.CharmBase):
                 )
         self._reconcile_ha_proxy(event)
         maas_details = MaasHelper.get_maas_details()
-        # the MAAS initialisation details have changed
+        # the MAAS initialization details have changed
         init_details = {
-            "API URL": self.connection_string
-            and maas_details.get("maas_url") != self.maas_cli_url,
+            "API URL": maas_details.get("maas_url") != self.maas_api_url,
             f"Mode ({self.get_operational_mode()})": MaasHelper.get_maas_mode()
             != self.get_operational_mode(),
         }
-        if any(init_details.values()):
+        if self.connection_string and any(init_details.values()):
             changes = [k for k, v in init_details.items() if v]
             self.unit.status = ops.MaintenanceStatus(
-                f"re-initialising maas with new: {', '.join(changes)}..."
+                f"re-initializing MAAS with new: {', '.join(changes)}..."
             )
             self._initialize_maas()
 

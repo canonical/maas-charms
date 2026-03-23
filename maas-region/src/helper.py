@@ -272,7 +272,20 @@ class MaasHelper:
                     ]
                 )
 
-            subprocess.check_call(login_cmd, stdout=subprocess.DEVNULL)
+            try:
+                subprocess.run(
+                    login_cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                # Log the last line of stderr from the failed command
+                if e.stderr:
+                    last_line = e.stderr.strip().splitlines()[-1]
+                    logger.warning(f"MAAS login failed: {last_line}")
+                raise
 
     @staticmethod
     def _logout(admin_username: str) -> None:
@@ -352,13 +365,13 @@ class MaasHelper:
         return {region["system_id"] for region in region_data}
 
     @staticmethod
-    def is_maas_initialised() -> bool:
-        """Check whether MAAS is initialised.
+    def is_maas_initialized() -> bool:
+        """Check whether MAAS is initialized.
 
         Returns:
-            bool: True if MAAS is initialised, False if not.
+            bool: True if MAAS is initialized, False if not.
         """
-        # this file is always created when MAAS is initialised.
+        # this file is always created when MAAS is initialized.
         # Technically this is a side effect of, rather than a MAAS expected
         # way of testing status, so may need to be replaced in future.
         return NGINX_CFG_FILEPATH.exists()

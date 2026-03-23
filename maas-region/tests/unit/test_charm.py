@@ -17,8 +17,11 @@ from charm import (
     HAPROXY_NON_TLS,
     MAAS_DB_NAME,
     MAAS_HTTP_PORT,
+    MAAS_HTTPS_PORT,
     MAAS_PEER_NAME,
+    MAAS_PROXY_PORT,
     MAAS_SNAP_CHANNEL,
+    MAAS_TLS_PROXY_PORT,
     MaasRegionCharm,
 )
 
@@ -209,6 +212,17 @@ class TestClusterUpdates(unittest.TestCase):
         mock_helper.get_maas_mode.return_value = "region"
         mock_helper.create_admin_user.return_value = None
         self.harness.set_leader(True)
+        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
+        self.harness.update_relation_data(
+            db_rel,
+            "postgresql",
+            {
+                "endpoints": "30.0.0.1:5432",
+                "read-only-endpoints": "30.0.0.2:5432",
+                "username": "test_maas_db",
+                "password": "my_secret",
+            },
+        )
         self.harness.update_config({"enable_rack_mode": False})
         self.harness.begin()
         self.harness.update_config({"enable_rack_mode": True})
@@ -248,10 +262,27 @@ class TestClusterUpdates(unittest.TestCase):
         mock_helper.setup_region.return_value = None
         mock_helper.create_admin_user.return_value = None
         self.harness.set_leader(True)
+        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
+        self.harness.update_relation_data(
+            db_rel,
+            "postgresql",
+            {
+                "endpoints": "30.0.0.1:5432",
+                "read-only-endpoints": "30.0.0.2:5432",
+                "username": "test_maas_db",
+                "password": "my_secret",
+            },
+        )
         self.harness.update_config({"enable_rack_mode": True})
         self.harness.begin_with_initial_hooks()
         mock_helper.setup_region.assert_has_calls(
-            [call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region+rack")]
+            [
+                call(
+                    f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
+                    "postgres://test_maas_db:my_secret@30.0.0.1:5432/maas_region_db",
+                    "region+rack",
+                )
+            ]
         )
 
     @patch("charm.MaasHelper", autospec=True)
@@ -261,13 +292,32 @@ class TestClusterUpdates(unittest.TestCase):
         mock_helper.setup_region.return_value = None
         mock_helper.create_admin_user.return_value = None
         self.harness.set_leader(True)
+        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
+        self.harness.update_relation_data(
+            db_rel,
+            "postgresql",
+            {
+                "endpoints": "30.0.0.1:5432",
+                "read-only-endpoints": "30.0.0.2:5432",
+                "username": "test_maas_db",
+                "password": "my_secret",
+            },
+        )
         self.harness.update_config({"enable_rack_mode": False})
         self.harness.begin_with_initial_hooks()
         self.harness.update_config({"enable_rack_mode": True})
         mock_helper.setup_region.assert_has_calls(
             [
-                call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region"),
-                call(f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS", "", "region+rack"),
+                call(
+                    f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
+                    "postgres://test_maas_db:my_secret@30.0.0.1:5432/maas_region_db",
+                    "region",
+                ),
+                call(
+                    f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
+                    "postgres://test_maas_db:my_secret@30.0.0.1:5432/maas_region_db",
+                    "region+rack",
+                ),
             ]
         )
 
@@ -280,15 +330,13 @@ class TestClusterUpdates(unittest.TestCase):
 
         with patch.object(
             self.harness.charm.haproxy_non_tls_route,
-            "provide_haproxy_route_tcp_requirements",
-        ) as provide:
+            "configure_hosts",
+        ) as configure_hosts:
             self.harness.charm._reconcile_ha_proxy(None)
-            provide.assert_called_once()
+            configure_hosts.assert_called_once()
 
-            kwargs = provide.call_args.kwargs
-
-            self.assertEqual(kwargs["port"], 80)
-            self.assertEqual(kwargs["hosts"], ["10.0.0.10"])
+            args = configure_hosts.call_args.args
+            self.assertEqual(args, (["10.0.0.10"],))
 
             self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
 
@@ -312,15 +360,14 @@ class TestClusterUpdates(unittest.TestCase):
 
         with patch.object(
             self.harness.charm.haproxy_tls_route,
-            "provide_haproxy_route_tcp_requirements",
-        ) as provide:
+            "configure_hosts",
+        ) as configure_hosts:
             self.harness.charm._reconcile_ha_proxy(None)
-            provide.assert_called_once()
+            configure_hosts.assert_called_once()
 
-            kwargs = provide.call_args.kwargs
+            args = configure_hosts.call_args.args
 
-            self.assertEqual(kwargs["port"], 443)
-            self.assertEqual(kwargs["hosts"], ["10.0.0.10"])
+            self.assertEqual(args, (["10.0.0.10"],))
 
             self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
 
@@ -362,12 +409,14 @@ class TestClusterUpdates(unittest.TestCase):
 
                 if http_enabled:
                     http_data = harness.get_relation_data(http_rel_id, harness.charm.app.name)
-                    self.assertEqual(http_data["port"], "80")
+                    self.assertEqual(http_data["port"], str(MAAS_PROXY_PORT))
+                    self.assertEqual(http_data["backend_port"], str(MAAS_HTTP_PORT))
                     self.assertEqual(http_data["hosts"], dumps(["10.0.0.10"]))
 
                 if https_enabled:
                     https_data = harness.get_relation_data(https_rel_id, harness.charm.app.name)
-                    self.assertEqual(https_data["port"], "443")
+                    self.assertEqual(https_data["port"], str(MAAS_TLS_PROXY_PORT))
+                    self.assertEqual(https_data["backend_port"], str(MAAS_HTTPS_PORT))
 
                     # hosts are empty if the topology is invalid
                     if http_enabled and tls_enabled:
