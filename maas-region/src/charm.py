@@ -520,12 +520,12 @@ class MaasRegionCharm(ops.CharmBase):
                 self.haproxy_tls_route.provide_haproxy_route_tcp_requirements(
                     port=443, hosts=[], **COMMON_DEFAULT_HAPROXY_ARGS
                 )
-        
+
         if haproxy_temporal_route_enabled:
             self.haproxy_temporal_route.provide_haproxy_route_tcp_requirements(
                 port=MAAS_TEMPORAL_PORT, hosts=self.maas_ips, **COMMON_DEFAULT_HAPROXY_ARGS
             )
-        
+
         if haproxy_internal_api_route_enabled:
             self.haproxy_internal_http_api_route.provide_haproxy_route_tcp_requirements(
                 port=MAAS_INTERNAL_HTTP_API_PORT, hosts=self.maas_ips, **COMMON_DEFAULT_HAPROXY_ARGS
