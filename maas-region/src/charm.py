@@ -181,10 +181,10 @@ class MaasRegionCharm(ops.CharmBase):
             **COMMON_DEFAULT_HAPROXY_ARGS,
         )
         self.framework.observe(
-            self.haproxy_temporal_route.on.ready, self._reconcile_ha_proxy_and_initialise
+            self.haproxy_temporal_route.on.ready, self._reconcile_ha_proxy
         )
         self.framework.observe(
-            self.haproxy_temporal_route.on.removed, self._reconcile_ha_proxy_and_initialise
+            self.haproxy_temporal_route.on.removed, self._reconcile_ha_proxy
         )
 
         # Internal HTTP API
@@ -196,10 +196,10 @@ class MaasRegionCharm(ops.CharmBase):
             **COMMON_DEFAULT_HAPROXY_ARGS,
         )
         self.framework.observe(
-            self.haproxy_internal_http_api_route.on.ready, self._reconcile_ha_proxy_and_initialise
+            self.haproxy_internal_http_api_route.on.ready, self._reconcile_ha_proxy
         )
         self.framework.observe(
-            self.haproxy_internal_http_api_route.on.removed, self._reconcile_ha_proxy_and_initialise
+            self.haproxy_internal_http_api_route.on.removed, self._reconcile_ha_proxy
         )
 
         # COS
