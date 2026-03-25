@@ -489,7 +489,8 @@ class MaasRegionCharm(ops.CharmBase):
         haproxy_internal_api_route_enabled = self.model.get_relation(HAPROXY_INTERNAL_HTTP_API) is not None
 
         # if there are no relations, or the http relation is set and the https configuration is valid
-        unit_valid = (haproxy_non_tls_enabled or not haproxy_tls_enabled) and (
+        haproxy_not_tls_valid = all(haproxy_non_tls_enabled, haproxy_temporal_route_enabled, haproxy_internal_api_route_enabled)
+        unit_valid = (haproxy_not_tls_valid or not haproxy_tls_enabled) and (
             self.is_tls_config_enabled == haproxy_tls_enabled
         )
         logger.info(
@@ -632,6 +633,23 @@ class MaasRegionCharm(ops.CharmBase):
                     "Invalid HAProxy configuration: "
                     "Cannot have `ingress-tcp-tls` relation when MAAS TLS is not enabled; "
                     "Set the `ssl_cert_content` and `ssl_key_content` configuration options."
+                )
+            )
+        elif (
+            (self.model.get_relation(HAPROXY_NON_TLS) is not None or
+            self.model.get_relation(HAPROXY_TEMPORAL) is not None or
+            self.model.get_relation(HAPROXY_INTERNAL_HTTP_API) is not None) and
+            not all(
+                self.model.get_relation(HAPROXY_NON_TLS),
+                self.model.get_relation(HAPROXY_TEMPORAL),
+                self.model.get_relation(HAPROXY_INTERNAL_HTTP_API)
+            )
+        ):
+            e.add_status(
+                ops.BlockedStatus(
+                    "Invalid HAProxy configuration: "
+                    "All of `ingress-tcp`, `ingress-tcp-temporal`, and `ingress-tcp-internal-http-api` "
+                    "relations must all be present together if any are provided."
                 )
             )
         else:
