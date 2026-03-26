@@ -526,6 +526,36 @@ class TestCharmActions(unittest.TestCase):
         err = e.exception
         self.assertEqual(err.message, "MAAS is not initialized yet")
 
+    @patch("charm.MaasHelper", autospec=True)
+    def test_get_maas_status_action(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        mock_status = {
+            "agent": {
+                "startup": "disabled",
+                "current": "active",
+                "since": "today at 07:48 UTC",
+            },
+            "regiond": {
+                "startup": "enabled",
+                "current": "active",
+                "since": "today at 07:48 UTC",
+            },
+        }
+        mock_helper.get_maas_status.return_value = mock_status
+        output = self.harness.run_action("get-maas-status")
+        self.assertEqual(output.results["services"], mock_status)
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_get_maas_status_action_fail(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        mock_helper.get_maas_status.return_value = {}
+        with self.assertRaises(ops.testing.ActionFailed) as e:
+            self.harness.run_action("get-maas-status")
+        err = e.exception
+        self.assertEqual(err.message, "MAAS is not initialized yet or failed to retrieve status")
+
     @patch(
         "charm.MaasRegionCharm.bind_address",
         new_callable=PropertyMock(return_value="10.0.0.10"),
