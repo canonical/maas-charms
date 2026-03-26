@@ -488,8 +488,8 @@ class MaasRegionCharm(ops.CharmBase):
         haproxy_internal_api_route_enabled = self.model.get_relation(HAPROXY_INTERNAL_HTTP_API) is not None
 
         # if there are no relations, or the http relation is set and the https configuration is valid
-        haproxy_not_tls_valid = all([haproxy_non_tls_enabled, haproxy_temporal_route_enabled, haproxy_internal_api_route_enabled])
-        unit_valid = (haproxy_not_tls_valid or not haproxy_tls_enabled) and (
+        haproxy_not_tls_fully_configured = all([haproxy_non_tls_enabled, haproxy_temporal_route_enabled, haproxy_internal_api_route_enabled])
+        unit_valid = (haproxy_not_tls_fully_configured or not haproxy_tls_enabled) and (
             self.is_tls_config_enabled == haproxy_tls_enabled
         )
         logger.info(
@@ -648,7 +648,7 @@ class MaasRegionCharm(ops.CharmBase):
                 ops.BlockedStatus(
                     "Invalid HAProxy configuration: "
                     "All of `ingress-tcp`, `ingress-tcp-temporal`, and `ingress-tcp-internal-http-api` "
-                    "relations must all be present together if any are provided."
+                    "relations must be present together if any are provided."
                 )
             )
         else:
