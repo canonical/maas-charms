@@ -475,3 +475,80 @@ class MaasHelper:
                 return file.readline().strip()
         except OSError:
             return None
+
+    @staticmethod
+    def get_maas_status() -> dict[str, dict[str, str]]:
+        """Get MAAS status information.
+
+        Example output of `maas status` command:
+
+        ```
+        Service          Startup   Current   Since
+        agent            disabled  active    today at 07:48 UTC
+        apiserver        enabled   active    today at 07:48 UTC
+        bind9            disabled  active    today at 07:48 UTC
+        dhcpd            disabled  active    today at 07:48 UTC
+        dhcpd6           disabled  inactive  -
+        http             disabled  active    today at 07:48 UTC
+        ntp              disabled  active    today at 07:48 UTC
+        proxy            disabled  active    today at 07:48 UTC
+        rackd            enabled   active    today at 07:48 UTC
+        regiond          enabled   active    today at 07:48 UTC
+        syslog           disabled  active    today at 07:48 UTC
+        temporal         disabled  active    today at 07:48 UTC
+        temporal-worker  disabled  active    today at 07:48 UTC
+        ```
+
+        Returns:
+            dict[str, dict[str, str]]: Dictionary mapping service names to their status information (startup, current, since), or empty dict if MAAS is not initialized or output format is unexpected
+        """
+        # Valid values for validation
+        valid_headers = {"service", "startup", "current", "since"}
+        valid_startup = {"enabled", "disabled"}
+        valid_status = {"active", "backoff", "error", "inactive"}
+
+        cmd = [
+            "/snap/bin/maas",
+            "status",
+        ]
+        try:
+            output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode()
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Failed to get MAAS status: {e}")
+            return {}
+
+        try:
+            header, *lines = output.strip().splitlines()
+        except ValueError as e:
+            logger.warning(f"Failed to parse MAAS status output: {e}")
+            return {}
+
+        headers = header.lower().split()
+        if set(headers) != valid_headers:
+            logger.warning(f"Unexpected MAAS status headers: {headers}, expected: {valid_headers}")
+            return {}
+
+        services = {}
+        for line in lines:
+            parts = line.split(maxsplit=len(headers) - 1)
+            if len(parts) != len(headers):
+                logger.debug(f"Skipping service with unexpected line format: {line}")
+                continue
+
+            entry = dict(zip(headers, parts))
+
+            # Validate startup and current fields have expected values
+            if entry.get("startup") not in valid_startup:
+                logger.debug(f"Skipping service with invalid startup value: {entry}")
+                continue
+            if entry.get("current") not in valid_status:
+                logger.debug(f"Skipping service with invalid status value: {entry}")
+                continue
+
+            service_name = entry.pop("service")
+            services[service_name] = entry
+
+        if not services and lines:
+            logger.warning("All services were filtered out due to validation failures")
+
+        return services

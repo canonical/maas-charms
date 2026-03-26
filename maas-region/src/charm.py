@@ -196,6 +196,7 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.get_api_key_action, self._on_get_api_key_action)
         self.framework.observe(self.on.get_api_endpoint_action, self._on_get_api_endpoint_action)
         self.framework.observe(self.on.get_maas_secret_action, self._on_get_maas_secret_action)
+        self.framework.observe(self.on.get_maas_status_action, self._on_get_maas_status_action)
 
         # Charm configuration
         self.framework.observe(self.on.config_changed, self._on_config_changed)
@@ -671,6 +672,13 @@ class MaasRegionCharm(ops.CharmBase):
             event.set_results({"maas-secret": secret})
         else:
             event.fail("MAAS is not initialized yet")
+
+    def _on_get_maas_status_action(self, event: ops.ActionEvent):
+        """Handle the get-maas-status action."""
+        if status := MaasHelper.get_maas_status():
+            event.set_results({"services": status})
+        else:
+            event.fail("MAAS is not initialized yet or failed to retrieve status")
 
     def _on_config_changed(self, event: ops.ConfigChangedEvent):
         # validate TLS certificate and key
