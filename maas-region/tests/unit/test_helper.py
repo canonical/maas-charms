@@ -3,6 +3,7 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import subprocess
 import unittest
 from unittest.mock import MagicMock, PropertyMock, mock_open, patch
 
@@ -137,6 +138,101 @@ class TestHelperFiles(unittest.TestCase):
     @patch("pathlib.Path.open", side_effect=OSError)
     def test_get_maas_secret_not_initialised(self, _):
         self.assertIsNone(MaasHelper.get_maas_secret())
+
+    @patch("helper.subprocess.check_output")
+    def test_get_maas_status(self, mock_check_output):
+        mock_output = """Service          Startup   Current   Since
+agent            disabled  active    today at 07:48 UTC
+apiserver        enabled   active    today at 07:48 UTC
+bind9            disabled  inactive  -
+rackd            enabled   error     today at 07:50 UTC
+regiond          enabled   backoff   today at 07:49 UTC
+"""
+        mock_check_output.return_value = mock_output.encode()
+        result = MaasHelper.get_maas_status()
+        self.assertEqual(len(result), 5)
+        self.assertIn("agent", result)
+        self.assertEqual(result["agent"]["startup"], "disabled")
+        self.assertEqual(result["agent"]["current"], "active")
+        self.assertEqual(result["agent"]["since"], "today at 07:48 UTC")
+        self.assertIn("apiserver", result)
+        self.assertIn("bind9", result)
+        self.assertEqual(result["bind9"]["current"], "inactive")
+        self.assertEqual(result["rackd"]["current"], "error")
+        self.assertEqual(result["regiond"]["current"], "backoff")
+        mock_check_output.assert_called_once_with(
+            ["/snap/bin/maas", "status"], stderr=subprocess.DEVNULL
+        )
+
+    @patch("helper.subprocess.check_output", side_effect=subprocess.CalledProcessError(1, "cmd"))
+    def test_get_maas_status_command_failed(self, mock_check_output):
+        result = MaasHelper.get_maas_status()
+        self.assertEqual(result, {})
+
+    @patch("helper.subprocess.check_output")
+    def test_get_maas_status_empty_output(self, mock_check_output):
+        mock_check_output.return_value = b""
+        result = MaasHelper.get_maas_status()
+        self.assertEqual(result, {})
+
+    @patch("helper.subprocess.check_output")
+    def test_get_maas_status_invalid_headers(self, mock_check_output):
+        mock_output = """Service  Status  Other
+agent    enabled  active
+"""
+        mock_check_output.return_value = mock_output.encode()
+        result = MaasHelper.get_maas_status()
+        self.assertEqual(result, {})
+
+    @patch("helper.subprocess.check_output")
+    def test_get_maas_status_invalid_startup(self, mock_check_output):
+        mock_output = """Service  Startup  Current  Since
+agent    unknown  active   today at 07:48 UTC
+"""
+        mock_check_output.return_value = mock_output.encode()
+        result = MaasHelper.get_maas_status()
+        self.assertEqual(result, {})
+
+    @patch("helper.subprocess.check_output")
+    def test_get_maas_status_invalid_status(self, mock_check_output):
+        mock_output = """Service  Startup   Current  Since
+agent    enabled   unknown  today at 07:48 UTC
+"""
+        mock_check_output.return_value = mock_output.encode()
+        result = MaasHelper.get_maas_status()
+        self.assertEqual(result, {})
+
+    @patch("helper.subprocess.check_output")
+    def test_get_maas_status_malformed_line(self, mock_check_output):
+        mock_output = """Service  Startup  Current  Since
+agent    enabled  active   today at 07:48 UTC
+apiserver
+regiond  enabled  active   today at 07:48 UTC
+"""
+        mock_check_output.return_value = mock_output.encode()
+        result = MaasHelper.get_maas_status()
+        # Should skip the malformed line but keep the valid ones
+        self.assertEqual(len(result), 2)
+        self.assertIn("agent", result)
+        self.assertIn("regiond", result)
+        self.assertNotIn("apiserver", result)
+
+    @patch("helper.subprocess.check_output")
+    def test_get_maas_status_mixed_valid_invalid(self, mock_check_output):
+        mock_output = """Service    Startup   Current   Since
+agent      disabled  active    today at 07:48 UTC
+apiserver  invalid   active    today at 07:48 UTC
+regiond    enabled   unknown   today at 07:48 UTC
+rackd      enabled   active    today at 07:48 UTC
+"""
+        mock_check_output.return_value = mock_output.encode()
+        result = MaasHelper.get_maas_status()
+        # Should only include valid entries
+        self.assertEqual(len(result), 2)
+        self.assertIn("agent", result)
+        self.assertIn("rackd", result)
+        self.assertNotIn("apiserver", result)
+        self.assertNotIn("regiond", result)
 
 
 class TestHelperSetup(unittest.TestCase):

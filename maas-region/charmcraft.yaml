@@ -96,6 +96,8 @@ actions:
     description: Get MAAS API URL
   get-maas-secret:
     description: Get MAAS secret
+  get-maas-status:
+    description: Get MAAS status. Run on each unit to get its individual status.
   create-backup:
     description: Create a backup of MAAS data not stored in the database.
   restore-backup:
