@@ -180,12 +180,8 @@ class MaasRegionCharm(ops.CharmBase):
             backend_port=MAAS_TEMPORAL_PORT,
             **COMMON_DEFAULT_HAPROXY_ARGS,
         )
-        self.framework.observe(
-            self.haproxy_temporal_route.on.ready, self._reconcile_ha_proxy
-        )
-        self.framework.observe(
-            self.haproxy_temporal_route.on.removed, self._reconcile_ha_proxy
-        )
+        self.framework.observe(self.haproxy_temporal_route.on.ready, self._reconcile_ha_proxy)
+        self.framework.observe(self.haproxy_temporal_route.on.removed, self._reconcile_ha_proxy)
 
         # Internal HTTP API
         self.haproxy_internal_http_api_route = HaproxyRouteTcpRequirer(
@@ -486,10 +482,18 @@ class MaasRegionCharm(ops.CharmBase):
         haproxy_tls_enabled = self.model.get_relation(HAPROXY_TLS) is not None
 
         haproxy_temporal_route_enabled = self.model.get_relation(HAPROXY_TEMPORAL) is not None
-        haproxy_internal_api_route_enabled = self.model.get_relation(HAPROXY_INTERNAL_HTTP_API) is not None
+        haproxy_internal_http_api_route_enabled = (
+            self.model.get_relation(HAPROXY_INTERNAL_HTTP_API) is not None
+        )
 
         # if there are no relations, or the http relation is set and the https configuration is valid
-        haproxy_not_tls_fully_configured = all([haproxy_non_tls_enabled, haproxy_temporal_route_enabled, haproxy_internal_api_route_enabled])
+        haproxy_not_tls_fully_configured = all(
+            [
+                haproxy_non_tls_enabled,
+                haproxy_temporal_route_enabled,
+                haproxy_internal_http_api_route_enabled
+            ]
+        )
         unit_valid = (haproxy_not_tls_fully_configured or not haproxy_tls_enabled) and (
             self.is_tls_config_enabled == haproxy_tls_enabled
         )
@@ -519,14 +523,14 @@ class MaasRegionCharm(ops.CharmBase):
             self.haproxy_tls_route.update_relation_data()
         
         if haproxy_temporal_route_enabled:
-            self.haproxy_temporal_route.provide_haproxy_route_tcp_requirements(
-                port=MAAS_TEMPORAL_PORT, hosts=self.maas_ips, **COMMON_DEFAULT_HAPROXY_ARGS
-            )
+            # TODO: Remove type: ignore when hosts annotation is fixed: https://github.com/canonical/haproxy-operator/pull/383
+            self.haproxy_temporal_route.configure_hosts(self.maas_ips)  # type: ignore[arg-type]
+            self.haproxy_temporal_route.update_relation_data()
 
-        if haproxy_internal_api_route_enabled:
-            self.haproxy_internal_http_api_route.provide_haproxy_route_tcp_requirements(
-                port=MAAS_INTERNAL_HTTP_API_PORT, hosts=self.maas_ips, **COMMON_DEFAULT_HAPROXY_ARGS
-            )
+        if haproxy_internal_http_api_route_enabled:
+            # TODO: Remove type: ignore when hosts annotation is fixed: https://github.com/canonical/haproxy-operator/pull/383
+            self.haproxy_internal_http_api_route.configure_hosts(self.maas_ips)  # type: ignore[arg-type]
+            self.haproxy_internal_http_api_route.update_relation_data()
 
         if unit_valid:
             self.unit.status = ops.ActiveStatus()
@@ -636,14 +640,15 @@ class MaasRegionCharm(ops.CharmBase):
                 )
             )
         elif (
-            (self.model.get_relation(HAPROXY_NON_TLS) is not None or
-            self.model.get_relation(HAPROXY_TEMPORAL) is not None or
-            self.model.get_relation(HAPROXY_INTERNAL_HTTP_API) is not None) and
-            not all([
+            self.model.get_relation(HAPROXY_NON_TLS) is not None
+            or self.model.get_relation(HAPROXY_TEMPORAL) is not None
+            or self.model.get_relation(HAPROXY_INTERNAL_HTTP_API) is not None
+        ) and not all(
+            [
                 self.model.get_relation(HAPROXY_NON_TLS),
                 self.model.get_relation(HAPROXY_TEMPORAL),
-                self.model.get_relation(HAPROXY_INTERNAL_HTTP_API)
-            ])
+                self.model.get_relation(HAPROXY_INTERNAL_HTTP_API),
+            ]
         ):
             e.add_status(
                 ops.BlockedStatus(

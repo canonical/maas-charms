@@ -353,6 +353,12 @@ class TestClusterUpdates(unittest.TestCase):
         http_rel_id = self.harness.add_relation("ingress-tcp", "haproxy")
         self.harness.add_relation_unit(http_rel_id, "haproxy/0")
 
+        temporal_rel_id = self.harness.add_relation("ingress-tcp-temporal", "haproxy")
+        self.harness.add_relation_unit(temporal_rel_id, "haproxy/0")
+
+        internal_api_rel_id = self.harness.add_relation("ingress-tcp-internal-http-api", "haproxy")
+        self.harness.add_relation_unit(internal_api_rel_id, "haproxy/0")
+
         https_rel_id = self.harness.add_relation("ingress-tcp-tls", "haproxy")
         self.harness.add_relation_unit(https_rel_id, "haproxy/0")
 
@@ -390,6 +396,12 @@ class TestClusterUpdates(unittest.TestCase):
                 if http_enabled:
                     http_rel_id = harness.add_relation("ingress-tcp", "haproxy")
                     harness.add_relation_unit(http_rel_id, "haproxy/0")
+                    temporal_rel_id = harness.add_relation("ingress-tcp-temporal", "haproxy")
+                    harness.add_relation_unit(temporal_rel_id, "haproxy/0")
+                    internal_api_rel_id = harness.add_relation(
+                        "ingress-tcp-internal-http-api", "haproxy"
+                    )
+                    harness.add_relation_unit(internal_api_rel_id, "haproxy/0")
 
                 if https_enabled:
                     https_rel_id = harness.add_relation("ingress-tcp-tls", "haproxy")

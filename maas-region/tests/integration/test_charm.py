@@ -190,6 +190,8 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
 
     key, cacert, cert = generate_cert(ip_address=address, tmp_path=tmp_path)
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp", "haproxy")
+    await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-temporal", "haproxy")
+    await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-internal-http-api", "haproxy")
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-tls", "haproxy")
     await ops_test.model.applications[APP_NAME].set_config({"ssl_cert_content": cert})
     await ops_test.model.applications[APP_NAME].set_config({"ssl_key_content": key})
