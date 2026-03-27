@@ -521,7 +521,7 @@ class MaasRegionCharm(ops.CharmBase):
             else:
                 self.haproxy_tls_route.configure_hosts()
             self.haproxy_tls_route.update_relation_data()
-        
+
         if haproxy_temporal_route_enabled:
             # TODO: Remove type: ignore when hosts annotation is fixed: https://github.com/canonical/haproxy-operator/pull/383
             self.haproxy_temporal_route.configure_hosts(self.maas_ips)  # type: ignore[arg-type]
