@@ -181,6 +181,7 @@ class TestClusterUpdates(unittest.TestCase):
 
     def setUp(self):
         self.harness = self._make_harness()
+        self.harness.add_relation("initialize", "maas-region")
 
     def test_peer_relation_data(self):
         self.harness.set_leader(True)
@@ -440,6 +441,79 @@ class TestClusterUpdates(unittest.TestCase):
                     self.assertEqual(harness.model.unit.status, ops.ActiveStatus())
                 else:
                     self.assertNotEqual(harness.model.unit.status, ops.ActiveStatus())
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_haproxy_relation__reported_statuses(self, mock_helper):
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+
+        cases = [
+            # (maas_tls, relations, expected_status_message)
+            (True, [], "Invalid configuration: MAAS TLS is enabled but not connected to HAProxy"),
+            (
+                False,
+                ["ingress-tcp-tls"],
+                "Invalid HAProxy configuration: "
+                "Cannot have `ingress-tcp-tls` relation when MAAS TLS is not enabled; "
+                "Set the `ssl_cert_content` and `ssl_key_content` configuration options.",
+            ),
+            (
+                True,
+                ["ingress-tcp", "ingress-tcp-temporal", "ingress-tcp-internal-http-api"],
+                "Invalid HAProxy configuration: Missing `ingress-tcp-tls` relation "
+                "when MAAS TLS is enabled.",
+            ),
+            (
+                False,
+                ["ingress-tcp"],
+                "Invalid HAProxy configuration: "
+                "All of `ingress-tcp`, `ingress-tcp-temporal`, and `ingress-tcp-internal-http-api` "
+                "relations must be present together if any are provided.",
+            ),
+            (
+                False,
+                ["ingress-tcp-temporal"],
+                "Invalid HAProxy configuration: "
+                "All of `ingress-tcp`, `ingress-tcp-temporal`, and `ingress-tcp-internal-http-api` "
+                "relations must be present together if any are provided.",
+            ),
+            (
+                False,
+                ["ingress-tcp-internal-http-api"],
+                "Invalid HAProxy configuration: "
+                "All of `ingress-tcp`, `ingress-tcp-temporal`, and `ingress-tcp-internal-http-api` "
+                "relations must be present together if any are provided.",
+            ),
+        ]
+
+        for maas_tls, relations, expected_msg in cases:
+            with self.subTest(maas_tls=maas_tls, relations=relations):
+                harness = self._make_harness()
+                harness.add_relation("initialize", "maas-region")
+                harness.set_leader(True)
+                if maas_tls:
+                    harness.update_config(
+                        {
+                            "ssl_cert_content": "placeholder-cert",
+                            "ssl_key_content": "placeholder-key",
+                        }
+                    )
+                harness.begin()
+                db_rel = harness.add_relation(MAAS_DB_NAME, "postgresql")
+                harness.update_relation_data(
+                    db_rel,
+                    "postgresql",
+                    {
+                        "endpoints": "30.0.0.1:5432",
+                        "username": "test_maas_db",
+                        "password": "my_secret",
+                    },
+                )
+                for rel_name in relations:
+                    rel_id = harness.add_relation(rel_name, "haproxy")
+                    harness.add_relation_unit(rel_id, "haproxy/0")
+                harness.evaluate_status()
+                self.assertEqual(harness.model.unit.status, ops.BlockedStatus(expected_msg))
 
 
 class TestCharmActions(unittest.TestCase):
