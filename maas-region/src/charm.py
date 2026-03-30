@@ -511,26 +511,21 @@ class MaasRegionCharm(ops.CharmBase):
                 self.unit.status = ops.ActiveStatus()
             return
 
-        # TODO: Remove all the `type: ignore[arg-type]` when hosts annotation is fixed.
+        # TODO: Remove the `type: ignore[arg-type]` when hosts annotation is fixed.
         # Link: https://github.com/canonical/haproxy-operator/pull/383
-        if haproxy_non_tls_enabled:
-            self.haproxy_non_tls_route.configure_hosts(self.maas_ips)  # type: ignore[arg-type]
-            self.haproxy_non_tls_route.update_relation_data()
-
-        if haproxy_temporal_route_enabled:
-            self.haproxy_temporal_route.configure_hosts(self.maas_ips)  # type: ignore[arg-type]
-            self.haproxy_temporal_route.update_relation_data()
-
-        if haproxy_internal_http_api_route_enabled:
-            self.haproxy_internal_http_api_route.configure_hosts(self.maas_ips)  # type: ignore[arg-type]
-            self.haproxy_internal_http_api_route.update_relation_data()
-
-        if haproxy_tls_enabled:
-            if haproxy_non_tls_enabled and self.is_tls_config_enabled:
-                self.haproxy_tls_route.configure_hosts(self.maas_ips)  # type: ignore[arg-type]
-            else:
-                self.haproxy_tls_route.configure_hosts()
-            self.haproxy_tls_route.update_relation_data()
+        haproxy_relations = [
+            (haproxy_non_tls_enabled, self.haproxy_non_tls_route),
+            (haproxy_temporal_route_enabled, self.haproxy_temporal_route),
+            (haproxy_internal_http_api_route_enabled, self.haproxy_internal_http_api_route),
+            (haproxy_tls_enabled, self.haproxy_tls_route),
+        ]
+        for enabled, rel in haproxy_relations:
+            if enabled:
+                if unit_valid:
+                    rel.configure_hosts(self.maas_ips)  # type: ignore[arg-type]
+                else:
+                    rel.configure_hosts()
+                rel.update_relation_data()
 
         if unit_valid:
             self.unit.status = ops.ActiveStatus()

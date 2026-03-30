@@ -18,9 +18,11 @@ from charm import (
     MAAS_DB_NAME,
     MAAS_HTTP_PORT,
     MAAS_HTTPS_PORT,
+    MAAS_INTERNAL_HTTP_API_PORT,
     MAAS_PEER_NAME,
     MAAS_PROXY_PORT,
     MAAS_SNAP_CHANNEL,
+    MAAS_TEMPORAL_PORT,
     MAAS_TLS_PROXY_PORT,
     MaasRegionCharm,
 )
@@ -380,17 +382,18 @@ class TestClusterUpdates(unittest.TestCase):
 
     def test_haproxy_relation__leader_has_correct_data(self):
         cases = [
-            (False, False, False, True),
-            (True, False, False, True),
-            (False, True, False, False),
-            (True, True, False, False),
-            (False, False, True, False),
-            (True, False, True, False),
-            (False, True, True, False),
-            (True, True, True, True),
+            (False, False, False),
+            (True, False, False),
+            (False, True, False),
+            (True, True, False),
+            (False, False, True),
+            (True, False, True),
+            (False, True, True),
+            (True, True, True),
         ]
-        for http_enabled, https_enabled, tls_enabled, valid in cases:
+        for http_enabled, https_enabled, tls_enabled in cases:
             with self.subTest(http=http_enabled, https=https_enabled, tls=tls_enabled):
+                valid = (http_enabled or not https_enabled) and (tls_enabled == https_enabled)
                 harness = self._make_harness()
                 harness.set_leader(True)
 
@@ -424,15 +427,34 @@ class TestClusterUpdates(unittest.TestCase):
                     http_data = harness.get_relation_data(http_rel_id, harness.charm.app.name)
                     self.assertEqual(http_data["port"], str(MAAS_PROXY_PORT))
                     self.assertEqual(http_data["backend_port"], str(MAAS_HTTP_PORT))
-                    self.assertEqual(http_data["hosts"], dumps(["10.0.0.10"]))
+                    temporal_data = harness.get_relation_data(
+                        temporal_rel_id, harness.charm.app.name
+                    )
+                    self.assertEqual(temporal_data["port"], str(MAAS_TEMPORAL_PORT))
+                    self.assertEqual(temporal_data["backend_port"], str(MAAS_TEMPORAL_PORT))
+                    internal_api_data = harness.get_relation_data(
+                        internal_api_rel_id, harness.charm.app.name
+                    )
+                    self.assertEqual(internal_api_data["port"], str(MAAS_INTERNAL_HTTP_API_PORT))
+                    self.assertEqual(
+                        internal_api_data["backend_port"], str(MAAS_INTERNAL_HTTP_API_PORT)
+                    )
+                    # hosts are only set if topology is valid
+                    if valid:
+                        self.assertEqual(http_data["hosts"], dumps(["10.0.0.10"]))
+                        self.assertEqual(temporal_data["hosts"], dumps(["10.0.0.10"]))
+                        self.assertEqual(internal_api_data["hosts"], dumps(["10.0.0.10"]))
+                    else:
+                        self.assertNotIn("hosts", http_data)
+                        self.assertNotIn("hosts", temporal_data)
+                        self.assertNotIn("hosts", internal_api_data)
 
                 if https_enabled:
                     https_data = harness.get_relation_data(https_rel_id, harness.charm.app.name)
                     self.assertEqual(https_data["port"], str(MAAS_TLS_PROXY_PORT))
                     self.assertEqual(https_data["backend_port"], str(MAAS_HTTPS_PORT))
-
-                    # hosts are empty if the topology is invalid
-                    if http_enabled and tls_enabled:
+                    # hosts are only set if topology is valid
+                    if valid:
                         self.assertEqual(https_data["hosts"], dumps(["10.0.0.10"]))
                     else:
                         self.assertNotIn("hosts", https_data)
