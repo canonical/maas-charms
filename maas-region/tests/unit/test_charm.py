@@ -327,8 +327,12 @@ class TestClusterUpdates(unittest.TestCase):
     def test_haproxy_relation__leader_sets_http_data(self):
         self.harness.set_leader(True)
 
-        rel_id = self.harness.add_relation("ingress-tcp", "haproxy")
-        self.harness.add_relation_unit(rel_id, "haproxy/0")
+        http_rel_id = self.harness.add_relation("ingress-tcp", "haproxy")
+        self.harness.add_relation_unit(http_rel_id, "haproxy/0")
+        temporal_rel_id = self.harness.add_relation("ingress-tcp-temporal", "haproxy")
+        self.harness.add_relation_unit(temporal_rel_id, "haproxy/0")
+        internal_api_rel_id = self.harness.add_relation("ingress-tcp-internal-http-api", "haproxy")
+        self.harness.add_relation_unit(internal_api_rel_id, "haproxy/0")
         self.harness.begin()
 
         with patch.object(
@@ -382,18 +386,18 @@ class TestClusterUpdates(unittest.TestCase):
 
     def test_haproxy_relation__leader_has_correct_data(self):
         cases = [
-            (False, False, False),
-            (True, False, False),
-            (False, True, False),
-            (True, True, False),
-            (False, False, True),
-            (True, False, True),
-            (False, True, True),
-            (True, True, True),
+            # (http_enabled, https_enabled, tls_enabled, valid)
+            (False, False, False, True),  # No HAProxy, MAAS no TLS - Valid
+            (False, True, False, False),  # Only HAProxy TLS, MAAS no TLS - Invalid
+            (False, False, True, True),  # No HAProxy, MAAS TLS - Valid
+            (False, True, True, False),  # Only HAProxy TLS, MAAS TLS - Invalid
+            (True, False, False, True),  # All required, no HAProxy TLS, MAAS no TLS - Valid
+            (True, True, False, False),  # All required, HAProxy TLS, MAAS no TLS - Invalid
+            (True, False, True, False),  # All required, no HAProxy TLS, MAAS TLS - Invalid
+            (True, True, True, True),  # All required, HAProxy TLS, MAAS TLS - Valid
         ]
-        for http_enabled, https_enabled, tls_enabled in cases:
+        for http_enabled, https_enabled, tls_enabled, valid in cases:
             with self.subTest(http=http_enabled, https=https_enabled, tls=tls_enabled):
-                valid = (http_enabled or not https_enabled) and (tls_enabled == https_enabled)
                 harness = self._make_harness()
                 harness.set_leader(True)
 
@@ -471,7 +475,6 @@ class TestClusterUpdates(unittest.TestCase):
 
         cases = [
             # (maas_tls, relations, expected_status_message)
-            (True, [], "Invalid configuration: MAAS TLS is enabled but not connected to HAProxy"),
             (
                 False,
                 ["ingress-tcp-tls"],
@@ -484,6 +487,13 @@ class TestClusterUpdates(unittest.TestCase):
                 ["ingress-tcp", "ingress-tcp-temporal", "ingress-tcp-internal-http-api"],
                 "Invalid HAProxy configuration: Missing `ingress-tcp-tls` relation "
                 "when MAAS TLS is enabled.",
+            ),
+            (
+                True,
+                ["ingress-tcp-tls"],
+                "Invalid HAProxy configuration: "
+                "`ingress-tcp-tls` relation requires all base relations: "
+                "`ingress-tcp`, `ingress-tcp-temporal`, and `ingress-tcp-internal-http-api`.",
             ),
             (
                 False,

@@ -492,12 +492,18 @@ class MaasRegionCharm(ops.CharmBase):
             and haproxy_temporal_route_enabled
             and haproxy_internal_http_api_route_enabled
         )
+        has_any_haproxy_relation = (
+            haproxy_non_tls_enabled
+            or haproxy_tls_enabled
+            or haproxy_temporal_route_enabled
+            or haproxy_internal_http_api_route_enabled
+        )
         # Valid scenarios:
         # 1. No HAProxy relations at all (standalone MAAS)
         # 2. All required HAProxy relations present without TLS (MAAS also without TLS config)
         # 3. All required HAProxy relations present with TLS (MAAS also with TLS config)
-        unit_valid = (has_required_haproxy_relations or not haproxy_tls_enabled) and (
-            self.is_tls_config_enabled == haproxy_tls_enabled
+        unit_valid = not has_any_haproxy_relation or (
+            has_required_haproxy_relations and self.is_tls_config_enabled == haproxy_tls_enabled
         )
         logger.info(
             f"Reconciling HAProxy with haproxy_non_tls_enabled: {haproxy_non_tls_enabled}"
@@ -625,15 +631,8 @@ class MaasRegionCharm(ops.CharmBase):
                 haproxy_non_tls or haproxy_tls or haproxy_temporal or haproxy_internal_http_api
             )
 
-            # Invalid: MAAS TLS enabled but no HAProxy relations at all
-            if self.is_tls_config_enabled and not has_any_haproxy_relation:
-                e.add_status(
-                    ops.BlockedStatus(
-                        "Invalid configuration: MAAS TLS is enabled but not connected to HAProxy"
-                    )
-                )
             # Invalid: HAProxy TLS relation present but MAAS TLS not enabled
-            elif not self.is_tls_config_enabled and haproxy_tls:
+            if not self.is_tls_config_enabled and haproxy_tls:
                 e.add_status(
                     ops.BlockedStatus(
                         "Invalid HAProxy configuration: "
@@ -647,6 +646,15 @@ class MaasRegionCharm(ops.CharmBase):
                     ops.BlockedStatus(
                         "Invalid HAProxy configuration: Missing `ingress-tcp-tls` relation "
                         "when MAAS TLS is enabled."
+                    )
+                )
+            # Invalid: HAProxy TLS relation present without all required base relations
+            elif haproxy_tls and not has_required_relations:
+                e.add_status(
+                    ops.BlockedStatus(
+                        "Invalid HAProxy configuration: "
+                        "`ingress-tcp-tls` relation requires all base relations: "
+                        "`ingress-tcp`, `ingress-tcp-temporal`, and `ingress-tcp-internal-http-api`."
                     )
                 )
             # Invalid: Partial HAProxy relations (not all required together)
