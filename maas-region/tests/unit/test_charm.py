@@ -14,7 +14,10 @@ from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 
 from charm import (
+    HAPROXY_INTERNAL_HTTP_API,
     HAPROXY_NON_TLS,
+    HAPROXY_TEMPORAL,
+    HAPROXY_TLS,
     MAAS_DB_NAME,
     MAAS_HTTP_PORT,
     MAAS_HTTPS_PORT,
@@ -327,11 +330,11 @@ class TestClusterUpdates(unittest.TestCase):
     def test_haproxy_relation__leader_sets_http_data(self):
         self.harness.set_leader(True)
 
-        http_rel_id = self.harness.add_relation("ingress-tcp", "haproxy")
+        http_rel_id = self.harness.add_relation(HAPROXY_NON_TLS, "haproxy")
         self.harness.add_relation_unit(http_rel_id, "haproxy/0")
-        temporal_rel_id = self.harness.add_relation("ingress-tcp-temporal", "haproxy")
+        temporal_rel_id = self.harness.add_relation(HAPROXY_TEMPORAL, "haproxy")
         self.harness.add_relation_unit(temporal_rel_id, "haproxy/0")
-        internal_api_rel_id = self.harness.add_relation("ingress-tcp-internal-http-api", "haproxy")
+        internal_api_rel_id = self.harness.add_relation(HAPROXY_INTERNAL_HTTP_API, "haproxy")
         self.harness.add_relation_unit(internal_api_rel_id, "haproxy/0")
         self.harness.begin()
 
@@ -357,16 +360,16 @@ class TestClusterUpdates(unittest.TestCase):
             }
         )
 
-        http_rel_id = self.harness.add_relation("ingress-tcp", "haproxy")
+        http_rel_id = self.harness.add_relation(HAPROXY_NON_TLS, "haproxy")
         self.harness.add_relation_unit(http_rel_id, "haproxy/0")
 
-        temporal_rel_id = self.harness.add_relation("ingress-tcp-temporal", "haproxy")
+        temporal_rel_id = self.harness.add_relation(HAPROXY_TEMPORAL, "haproxy")
         self.harness.add_relation_unit(temporal_rel_id, "haproxy/0")
 
-        internal_api_rel_id = self.harness.add_relation("ingress-tcp-internal-http-api", "haproxy")
+        internal_api_rel_id = self.harness.add_relation(HAPROXY_INTERNAL_HTTP_API, "haproxy")
         self.harness.add_relation_unit(internal_api_rel_id, "haproxy/0")
 
-        https_rel_id = self.harness.add_relation("ingress-tcp-tls", "haproxy")
+        https_rel_id = self.harness.add_relation(HAPROXY_TLS, "haproxy")
         self.harness.add_relation_unit(https_rel_id, "haproxy/0")
 
         self.harness.begin()
@@ -402,17 +405,17 @@ class TestClusterUpdates(unittest.TestCase):
                 harness.set_leader(True)
 
                 if http_enabled:
-                    http_rel_id = harness.add_relation("ingress-tcp", "haproxy")
+                    http_rel_id = harness.add_relation(HAPROXY_NON_TLS, "haproxy")
                     harness.add_relation_unit(http_rel_id, "haproxy/0")
-                    temporal_rel_id = harness.add_relation("ingress-tcp-temporal", "haproxy")
+                    temporal_rel_id = harness.add_relation(HAPROXY_TEMPORAL, "haproxy")
                     harness.add_relation_unit(temporal_rel_id, "haproxy/0")
                     internal_api_rel_id = harness.add_relation(
-                        "ingress-tcp-internal-http-api", "haproxy"
+                        HAPROXY_INTERNAL_HTTP_API, "haproxy"
                     )
                     harness.add_relation_unit(internal_api_rel_id, "haproxy/0")
 
                 if https_enabled:
-                    https_rel_id = harness.add_relation("ingress-tcp-tls", "haproxy")
+                    https_rel_id = harness.add_relation(HAPROXY_TLS, "haproxy")
                     harness.add_relation_unit(https_rel_id, "haproxy/0")
 
                 if tls_enabled:
@@ -477,43 +480,43 @@ class TestClusterUpdates(unittest.TestCase):
             # (maas_tls, relations, expected_status_message)
             (
                 False,
-                ["ingress-tcp-tls"],
+                [HAPROXY_TLS],
                 "Invalid HAProxy configuration: "
-                "Cannot have `ingress-tcp-tls` relation when MAAS TLS is not enabled; "
+                f"Cannot have `{HAPROXY_TLS}` relation when MAAS TLS is not enabled; "
                 "Set the `ssl_cert_content` and `ssl_key_content` configuration options.",
             ),
             (
                 True,
-                ["ingress-tcp", "ingress-tcp-temporal", "ingress-tcp-internal-http-api"],
-                "Invalid HAProxy configuration: Missing `ingress-tcp-tls` relation "
+                [HAPROXY_NON_TLS, HAPROXY_TEMPORAL, HAPROXY_INTERNAL_HTTP_API],
+                f"Invalid HAProxy configuration: Missing `{HAPROXY_TLS}` relation "
                 "when MAAS TLS is enabled.",
             ),
             (
                 True,
-                ["ingress-tcp-tls"],
+                [HAPROXY_TLS],
                 "Invalid HAProxy configuration: "
-                "`ingress-tcp-tls` relation requires all base relations: "
-                "`ingress-tcp`, `ingress-tcp-temporal`, and `ingress-tcp-internal-http-api`.",
+                f"`{HAPROXY_TLS}` relation requires all base relations: "
+                f"`{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}`.",
             ),
             (
                 False,
-                ["ingress-tcp"],
+                [HAPROXY_NON_TLS],
                 "Invalid HAProxy configuration: "
-                "All of `ingress-tcp`, `ingress-tcp-temporal`, and `ingress-tcp-internal-http-api` "
+                f"All of `{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}` "
                 "relations must be present together if any are provided.",
             ),
             (
                 False,
-                ["ingress-tcp-temporal"],
+                [HAPROXY_TEMPORAL],
                 "Invalid HAProxy configuration: "
-                "All of `ingress-tcp`, `ingress-tcp-temporal`, and `ingress-tcp-internal-http-api` "
+                f"All of `{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}` "
                 "relations must be present together if any are provided.",
             ),
             (
                 False,
-                ["ingress-tcp-internal-http-api"],
+                [HAPROXY_INTERNAL_HTTP_API],
                 "Invalid HAProxy configuration: "
-                "All of `ingress-tcp`, `ingress-tcp-temporal`, and `ingress-tcp-internal-http-api` "
+                f"All of `{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}` "
                 "relations must be present together if any are provided.",
             ),
         ]

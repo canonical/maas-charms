@@ -636,7 +636,7 @@ class MaasRegionCharm(ops.CharmBase):
                 e.add_status(
                     ops.BlockedStatus(
                         "Invalid HAProxy configuration: "
-                        "Cannot have `ingress-tcp-tls` relation when MAAS TLS is not enabled; "
+                        f"Cannot have `{HAPROXY_TLS}` relation when MAAS TLS is not enabled; "
                         "Set the `ssl_cert_content` and `ssl_key_content` configuration options."
                     )
                 )
@@ -644,7 +644,7 @@ class MaasRegionCharm(ops.CharmBase):
             elif self.is_tls_config_enabled and has_required_relations and not haproxy_tls:
                 e.add_status(
                     ops.BlockedStatus(
-                        "Invalid HAProxy configuration: Missing `ingress-tcp-tls` relation "
+                        f"Invalid HAProxy configuration: Missing `{HAPROXY_TLS}` relation "
                         "when MAAS TLS is enabled."
                     )
                 )
@@ -653,8 +653,8 @@ class MaasRegionCharm(ops.CharmBase):
                 e.add_status(
                     ops.BlockedStatus(
                         "Invalid HAProxy configuration: "
-                        "`ingress-tcp-tls` relation requires all base relations: "
-                        "`ingress-tcp`, `ingress-tcp-temporal`, and `ingress-tcp-internal-http-api`."
+                        f"`{HAPROXY_TLS}` relation requires all base relations: "
+                        f"`{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}`."
                     )
                 )
             # Invalid: Partial HAProxy relations (not all required together)
@@ -662,7 +662,7 @@ class MaasRegionCharm(ops.CharmBase):
                 e.add_status(
                     ops.BlockedStatus(
                         "Invalid HAProxy configuration: "
-                        "All of `ingress-tcp`, `ingress-tcp-temporal`, and `ingress-tcp-internal-http-api` "
+                        f"All of `{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}` "
                         "relations must be present together if any are provided."
                     )
                 )
