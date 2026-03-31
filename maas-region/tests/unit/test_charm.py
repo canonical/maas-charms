@@ -14,13 +14,18 @@ from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 
 from charm import (
+    HAPROXY_INTERNAL_HTTP_API,
     HAPROXY_NON_TLS,
+    HAPROXY_TEMPORAL,
+    HAPROXY_TLS,
     MAAS_DB_NAME,
     MAAS_HTTP_PORT,
     MAAS_HTTPS_PORT,
+    MAAS_INTERNAL_HTTP_API_PORT,
     MAAS_PEER_NAME,
     MAAS_PROXY_PORT,
     MAAS_SNAP_CHANNEL,
+    MAAS_TEMPORAL_PORT,
     MAAS_TLS_PROXY_PORT,
     MaasRegionCharm,
 )
@@ -181,6 +186,7 @@ class TestClusterUpdates(unittest.TestCase):
 
     def setUp(self):
         self.harness = self._make_harness()
+        self.harness.add_relation("initialize", "maas-region")
 
     def test_peer_relation_data(self):
         self.harness.set_leader(True)
@@ -324,8 +330,12 @@ class TestClusterUpdates(unittest.TestCase):
     def test_haproxy_relation__leader_sets_http_data(self):
         self.harness.set_leader(True)
 
-        rel_id = self.harness.add_relation("ingress-tcp", "haproxy")
-        self.harness.add_relation_unit(rel_id, "haproxy/0")
+        http_rel_id = self.harness.add_relation(HAPROXY_NON_TLS, "haproxy")
+        self.harness.add_relation_unit(http_rel_id, "haproxy/0")
+        temporal_rel_id = self.harness.add_relation(HAPROXY_TEMPORAL, "haproxy")
+        self.harness.add_relation_unit(temporal_rel_id, "haproxy/0")
+        internal_api_rel_id = self.harness.add_relation(HAPROXY_INTERNAL_HTTP_API, "haproxy")
+        self.harness.add_relation_unit(internal_api_rel_id, "haproxy/0")
         self.harness.begin()
 
         with patch.object(
@@ -350,10 +360,16 @@ class TestClusterUpdates(unittest.TestCase):
             }
         )
 
-        http_rel_id = self.harness.add_relation("ingress-tcp", "haproxy")
+        http_rel_id = self.harness.add_relation(HAPROXY_NON_TLS, "haproxy")
         self.harness.add_relation_unit(http_rel_id, "haproxy/0")
 
-        https_rel_id = self.harness.add_relation("ingress-tcp-tls", "haproxy")
+        temporal_rel_id = self.harness.add_relation(HAPROXY_TEMPORAL, "haproxy")
+        self.harness.add_relation_unit(temporal_rel_id, "haproxy/0")
+
+        internal_api_rel_id = self.harness.add_relation(HAPROXY_INTERNAL_HTTP_API, "haproxy")
+        self.harness.add_relation_unit(internal_api_rel_id, "haproxy/0")
+
+        https_rel_id = self.harness.add_relation(HAPROXY_TLS, "haproxy")
         self.harness.add_relation_unit(https_rel_id, "haproxy/0")
 
         self.harness.begin()
@@ -373,14 +389,15 @@ class TestClusterUpdates(unittest.TestCase):
 
     def test_haproxy_relation__leader_has_correct_data(self):
         cases = [
-            (False, False, False, True),
-            (True, False, False, True),
-            (False, True, False, False),
-            (True, True, False, False),
-            (False, False, True, False),
-            (True, False, True, False),
-            (False, True, True, False),
-            (True, True, True, True),
+            # (http_enabled, https_enabled, tls_enabled, valid)
+            (False, False, False, True),  # No HAProxy, MAAS no TLS - Valid
+            (False, True, False, False),  # Only HAProxy TLS, MAAS no TLS - Invalid
+            (False, False, True, True),  # No HAProxy, MAAS TLS - Valid
+            (False, True, True, False),  # Only HAProxy TLS, MAAS TLS - Invalid
+            (True, False, False, True),  # All required, no HAProxy TLS, MAAS no TLS - Valid
+            (True, True, False, False),  # All required, HAProxy TLS, MAAS no TLS - Invalid
+            (True, False, True, False),  # All required, no HAProxy TLS, MAAS TLS - Invalid
+            (True, True, True, True),  # All required, HAProxy TLS, MAAS TLS - Valid
         ]
         for http_enabled, https_enabled, tls_enabled, valid in cases:
             with self.subTest(http=http_enabled, https=https_enabled, tls=tls_enabled):
@@ -388,11 +405,17 @@ class TestClusterUpdates(unittest.TestCase):
                 harness.set_leader(True)
 
                 if http_enabled:
-                    http_rel_id = harness.add_relation("ingress-tcp", "haproxy")
+                    http_rel_id = harness.add_relation(HAPROXY_NON_TLS, "haproxy")
                     harness.add_relation_unit(http_rel_id, "haproxy/0")
+                    temporal_rel_id = harness.add_relation(HAPROXY_TEMPORAL, "haproxy")
+                    harness.add_relation_unit(temporal_rel_id, "haproxy/0")
+                    internal_api_rel_id = harness.add_relation(
+                        HAPROXY_INTERNAL_HTTP_API, "haproxy"
+                    )
+                    harness.add_relation_unit(internal_api_rel_id, "haproxy/0")
 
                 if https_enabled:
-                    https_rel_id = harness.add_relation("ingress-tcp-tls", "haproxy")
+                    https_rel_id = harness.add_relation(HAPROXY_TLS, "haproxy")
                     harness.add_relation_unit(https_rel_id, "haproxy/0")
 
                 if tls_enabled:
@@ -411,15 +434,34 @@ class TestClusterUpdates(unittest.TestCase):
                     http_data = harness.get_relation_data(http_rel_id, harness.charm.app.name)
                     self.assertEqual(http_data["port"], str(MAAS_PROXY_PORT))
                     self.assertEqual(http_data["backend_port"], str(MAAS_HTTP_PORT))
-                    self.assertEqual(http_data["hosts"], dumps(["10.0.0.10"]))
+                    temporal_data = harness.get_relation_data(
+                        temporal_rel_id, harness.charm.app.name
+                    )
+                    self.assertEqual(temporal_data["port"], str(MAAS_TEMPORAL_PORT))
+                    self.assertEqual(temporal_data["backend_port"], str(MAAS_TEMPORAL_PORT))
+                    internal_api_data = harness.get_relation_data(
+                        internal_api_rel_id, harness.charm.app.name
+                    )
+                    self.assertEqual(internal_api_data["port"], str(MAAS_INTERNAL_HTTP_API_PORT))
+                    self.assertEqual(
+                        internal_api_data["backend_port"], str(MAAS_INTERNAL_HTTP_API_PORT)
+                    )
+                    # hosts are only set if topology is valid
+                    if valid:
+                        self.assertEqual(http_data["hosts"], dumps(["10.0.0.10"]))
+                        self.assertEqual(temporal_data["hosts"], dumps(["10.0.0.10"]))
+                        self.assertEqual(internal_api_data["hosts"], dumps(["10.0.0.10"]))
+                    else:
+                        self.assertNotIn("hosts", http_data)
+                        self.assertNotIn("hosts", temporal_data)
+                        self.assertNotIn("hosts", internal_api_data)
 
                 if https_enabled:
                     https_data = harness.get_relation_data(https_rel_id, harness.charm.app.name)
                     self.assertEqual(https_data["port"], str(MAAS_TLS_PROXY_PORT))
                     self.assertEqual(https_data["backend_port"], str(MAAS_HTTPS_PORT))
-
-                    # hosts are empty if the topology is invalid
-                    if http_enabled and tls_enabled:
+                    # hosts are only set if topology is valid
+                    if valid:
                         self.assertEqual(https_data["hosts"], dumps(["10.0.0.10"]))
                     else:
                         self.assertNotIn("hosts", https_data)
@@ -428,6 +470,85 @@ class TestClusterUpdates(unittest.TestCase):
                     self.assertEqual(harness.model.unit.status, ops.ActiveStatus())
                 else:
                     self.assertNotEqual(harness.model.unit.status, ops.ActiveStatus())
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_haproxy_relation__reported_statuses(self, mock_helper):
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+
+        cases = [
+            # (maas_tls, relations, expected_status_message)
+            (
+                False,
+                [HAPROXY_TLS],
+                "Invalid HAProxy configuration: "
+                f"Cannot have `{HAPROXY_TLS}` relation when MAAS TLS is not enabled; "
+                "Set the `ssl_cert_content` and `ssl_key_content` configuration options.",
+            ),
+            (
+                True,
+                [HAPROXY_NON_TLS, HAPROXY_TEMPORAL, HAPROXY_INTERNAL_HTTP_API],
+                f"Invalid HAProxy configuration: Missing `{HAPROXY_TLS}` relation "
+                "when MAAS TLS is enabled.",
+            ),
+            (
+                True,
+                [HAPROXY_TLS],
+                "Invalid HAProxy configuration: "
+                f"`{HAPROXY_TLS}` relation requires all base relations: "
+                f"`{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}`.",
+            ),
+            (
+                False,
+                [HAPROXY_NON_TLS],
+                "Invalid HAProxy configuration: "
+                f"All of `{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}` "
+                "relations must be present together if any are provided.",
+            ),
+            (
+                False,
+                [HAPROXY_TEMPORAL],
+                "Invalid HAProxy configuration: "
+                f"All of `{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}` "
+                "relations must be present together if any are provided.",
+            ),
+            (
+                False,
+                [HAPROXY_INTERNAL_HTTP_API],
+                "Invalid HAProxy configuration: "
+                f"All of `{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}` "
+                "relations must be present together if any are provided.",
+            ),
+        ]
+
+        for maas_tls, relations, expected_msg in cases:
+            with self.subTest(maas_tls=maas_tls, relations=relations):
+                harness = self._make_harness()
+                harness.add_relation("initialize", "maas-region")
+                harness.set_leader(True)
+                if maas_tls:
+                    harness.update_config(
+                        {
+                            "ssl_cert_content": "placeholder-cert",
+                            "ssl_key_content": "placeholder-key",
+                        }
+                    )
+                harness.begin()
+                db_rel = harness.add_relation(MAAS_DB_NAME, "postgresql")
+                harness.update_relation_data(
+                    db_rel,
+                    "postgresql",
+                    {
+                        "endpoints": "30.0.0.1:5432",
+                        "username": "test_maas_db",
+                        "password": "my_secret",
+                    },
+                )
+                for rel_name in relations:
+                    rel_id = harness.add_relation(rel_name, "haproxy")
+                    harness.add_relation_unit(rel_id, "haproxy/0")
+                harness.evaluate_status()
+                self.assertEqual(harness.model.unit.status, ops.BlockedStatus(expected_msg))
 
 
 class TestCharmActions(unittest.TestCase):

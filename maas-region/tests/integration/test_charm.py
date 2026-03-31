@@ -190,6 +190,8 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
 
     key, cacert, cert = generate_cert(ip_address=address, tmp_path=tmp_path)
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp", "haproxy")
+    await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-temporal", "haproxy")
+    await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-internal-http-api", "haproxy")
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-tls", "haproxy")
     await ops_test.model.applications[APP_NAME].set_config({"ssl_cert_content": cert})
     await ops_test.model.applications[APP_NAME].set_config({"ssl_key_content": key})
@@ -215,8 +217,14 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
             if return_code == 0:
                 haproxy_data = read_haproxy_blocks(stdout)
                 http_frontend = haproxy_data["frontend haproxy_route_tcp_80"]
+                temporal_frontend = haproxy_data["frontend haproxy_route_tcp_5271"]
+                internal_http_api_frontend = haproxy_data["frontend haproxy_route_tcp_5242"]
                 https_frontend = haproxy_data["frontend haproxy_route_tcp_443"]
                 http_backend = haproxy_data["backend haproxy_route_tcp_80_default_backend"]
+                temporal_backend = haproxy_data["backend haproxy_route_tcp_5271_default_backend"]
+                internal_http_api_backend = haproxy_data[
+                    "backend haproxy_route_tcp_5242_default_backend"
+                ]
                 https_backend = haproxy_data["backend haproxy_route_tcp_443_default_backend"]
                 break
         except KeyError:
@@ -230,6 +238,14 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
     assert "mode tcp" in http_frontend
     assert "bind [::]:80" in http_frontend
     assert re.search(r"server maas-region-0 (\d+\.){3}\d+:5240", http_backend)
+
+    assert "mode tcp" in temporal_frontend
+    assert "bind [::]:5271" in temporal_frontend
+    assert re.search(r"server maas-region-0 (\d+\.){3}\d+:5271", temporal_backend)
+
+    assert "mode tcp" in internal_http_api_frontend
+    assert "bind [::]:5242" in internal_http_api_frontend
+    assert re.search(r"server maas-region-0 (\d+\.){3}\d+:5242", internal_http_api_backend)
 
     assert "mode tcp" in https_frontend
     assert "bind [::]:443" in https_frontend
