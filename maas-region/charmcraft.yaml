@@ -52,6 +52,14 @@ requires:
     interface: haproxy-route-tcp
     limit: 1
     optional: true
+  ingress-tcp-temporal:
+    interface: haproxy-route-tcp
+    limit: 1
+    optional: true
+  ingress-tcp-internal-http-api:
+    interface: haproxy-route-tcp
+    limit: 1
+    optional: true
 
 peers:
   initialize:
