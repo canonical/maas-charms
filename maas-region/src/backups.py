@@ -15,9 +15,9 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
 from datetime import datetime
-from io import BytesIO
+from io import BufferedReader, BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO, cast
 
 from boto3.session import Session
 from botocore import loaders
@@ -117,6 +117,29 @@ class DownloadProgressPercentage(ProgressPercentage):
         self._size = size
         self._verb = "downloading"
         self._direction = "from"
+
+
+class ProgressStreamPercentage:
+    """Wrap the progress percentage for use in stream download/uploads."""
+
+    def __init__(
+        self,
+        stream: BinaryIO,
+        progress_callback: UploadProgressPercentage | DownloadProgressPercentage,
+    ) -> None:
+        self._stream = stream
+        self._progress_callback = progress_callback
+
+    def read(self, count: int = -1) -> bytes:
+        """Read the filestream one chunk at a time."""
+        chunk = self._stream.read(count)
+        if chunk:
+            self._progress_callback(len(chunk))
+        return chunk
+
+    def __getattr__(self, name: str) -> Any:
+        """Fetch the attributes of the underlying stream."""
+        return getattr(self._stream, name)
 
 
 class MAASBackups(Object):
@@ -906,6 +929,61 @@ Juju Version: {self.charm.model.juju_version!s}
         )
         return False
 
+    @contextmanager
+    def _file_exceptions_handler(
+        self, event: ActionEvent, s3_paramters: dict[str, str], s3_path: str, operation: str = ""
+    ) -> Iterator[None]:
+        msg_prefix = f"{operation} failed".strip().capitalize()
+        filename = self._pathname(s3_path)
+        bucket = s3_paramters["bucket"]
+
+        try:
+            yield
+
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "404":
+                self._log_error(
+                    event,
+                    f"Could not find file in {bucket}:{s3_path}",
+                    msg_prefix=msg_prefix,
+                    exc=e,
+                )
+
+            else:
+                self._log_error(
+                    event,
+                    f"Could not read file from {bucket}:{s3_path}",
+                    msg_prefix=msg_prefix,
+                    exc=e,
+                )
+
+        except tarfile.TarError as e:
+            self._log_error(
+                event,
+                f"{filename.capitalize()} is not a valid .tar.gz file or is corrupted.",
+                msg_prefix=msg_prefix,
+                exc=e,
+            )
+
+        except (FileNotFoundError, OSError) as e:
+            self._log_error(
+                event,
+                f"Filesystem error with {filename}",
+                msg_prefix=msg_prefix,
+                exc=e,
+            )
+
+        except Exception as e:
+            self._log_error(
+                event,
+                f"Error reading file from {bucket}:{s3_path}",
+                msg_prefix="Download failed",
+                exc=e,
+            )
+
+        finally:
+            return
+
     def _download_and_unarchive_from_s3(
         self,
         event: ActionEvent,
@@ -920,23 +998,48 @@ Juju Version: {self.charm.model.juju_version!s}
         shutil.rmtree(local_path, ignore_errors=True)
         if local_path.exists():
             self._log_error(
-                event, f"Could not remove existing {file_type}", msg_prefix="Untar failed"
+                event,
+                f"Could not remove existing {file_type}",
+                msg_prefix="Filepath operation failed",
             )
             return False
         local_path.mkdir(parents=True)
 
         event.log(f"Downloading {file_type} from s3...")
-        with self._download_file_from_s3(
-            event=event, s3_path=s3_path, s3_parameters=s3_parameters
-        ) as f:
-            if f is None:
-                self._log_error(
-                    event, f"Could not read {file_type} from s3", msg_prefix="Untar failed"
-                )
-                return False
 
-            try:
-                with tarfile.open(f, mode="r:gz") as tar:
+        bucket = s3_parameters["bucket"]
+
+        with self._file_exceptions_handler(
+            event=event, s3_paramters=s3_parameters, s3_path=s3_path, operation="untar"
+        ):
+            with self._s3_client(s3_parameters=s3_parameters) as client:
+                size = client.head_object(Bucket=bucket, Key=s3_path)["ContentLength"]
+
+                if (free := shutil.disk_usage(local_path).free) and (size > free):
+                    self._log_error(
+                        event,
+                        f"Not enough free storage to download {s3_path}, required {size} but has {free}",
+                        msg_prefix="Download failed",
+                    )
+                    return False
+
+                file_content = client.get_object(Bucket=bucket, Key=s3_path)["Body"]
+                if file_content is None:
+                    self._log_error(
+                        event, f"Could not read {file_type} from s3", msg_prefix="Untar failed"
+                    )
+                    return False
+
+                progress = DownloadProgressPercentage(
+                    self._pathname(s3_path),
+                    log_label=file_type,
+                    size=size,
+                )
+                wrapped_file = ProgressStreamPercentage(
+                    stream=file_content, progress_callback=progress
+                )
+
+                with tarfile.open(fileobj=cast(BufferedReader, wrapped_file), mode="r|gz") as tar:
                     tar.extractall(path=local_path)
 
                 if local_path.exists() and any(local_path.iterdir()):
@@ -946,22 +1049,6 @@ Juju Version: {self.charm.model.juju_version!s}
                     event,
                     f"{file_type.capitalize()} from S3 did not contain any files.",
                     msg_prefix="Untar failed",
-                )
-                return False
-
-            except tarfile.TarError as e:
-                self._log_error(
-                    event,
-                    f"{file_type.capitalize()} is not a valid .tar.gz file or is corrupted.",
-                    msg_prefix="Untar failed",
-                    exc=e,
-                )
-            except (FileNotFoundError, OSError) as e:
-                self._log_error(
-                    event,
-                    f"Filesystem error while extracting {file_type}",
-                    msg_prefix="Untar failed",
-                    exc=e,
                 )
 
         return False
@@ -981,62 +1068,43 @@ Juju Version: {self.charm.model.juju_version!s}
         logger.info(f"Download request for {bucket}:{s3_path}")
 
         try:
-            with self._s3_client(s3_parameters) as client:
-                with tempfile.NamedTemporaryFile(suffix=Path(s3_path).suffix, delete=False) as f:
-                    tmp_path = f.name
+            with self._file_exceptions_handler(
+                event=event, s3_paramters=s3_parameters, s3_path=s3_path, operation="download"
+            ):
+                with self._s3_client(s3_parameters) as client:
+                    with tempfile.NamedTemporaryFile(
+                        suffix=Path(s3_path).suffix, delete=False
+                    ) as f:
+                        tmp_path = f.name
 
-                size = client.head_object(Bucket=bucket, Key=s3_path)["ContentLength"]
+                    size = client.head_object(Bucket=bucket, Key=s3_path)["ContentLength"]
 
-                if (free := shutil.disk_usage(tmp_path).free) and (size >= free):
-                    self._log_error(
-                        event,
-                        f"Not enough free storage to download {s3_path}, required {size} but has {free}",
-                        msg_prefix="Download failed",
+                    if (free := shutil.disk_usage(tmp_path).free) and (size > free):
+                        self._log_error(
+                            event,
+                            f"Not enough free storage to download {s3_path}, required {size} but has {free}",
+                            msg_prefix="Download failed",
+                        )
+                        yield None
+                        return
+
+                    client.download_file(
+                        bucket,
+                        s3_path,
+                        tmp_path,
+                        Callback=DownloadProgressPercentage(
+                            f.name, log_label=file_type or self._pathname(s3_path), size=size
+                        ),
                     )
 
-                client.download_file(
-                    bucket,
-                    s3_path,
-                    tmp_path,
-                    Callback=DownloadProgressPercentage(
-                        f.name, log_label=file_type or self._pathname(s3_path), size=size
-                    ),
-                )
+                    yield Path(tmp_path)
+                    return
 
-                yield Path(tmp_path)
-
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "404":
-                self._log_error(
-                    event,
-                    f"Could not find object in {bucket}:{s3_path}",
-                    msg_prefix="Download failed",
-                    exc=e,
-                )
-
-            else:
-                self._log_error(
-                    event,
-                    f"Could not read object from {bucket}:{s3_path}",
-                    msg_prefix="Download failed",
-                    exc=e,
-                )
-            yield None
-
-        except Exception as e:
-            self._log_error(
-                event,
-                f"Could not read content from {bucket}:{s3_path}",
-                msg_prefix="Download failed",
-                exc=e,
-            )
             yield None
 
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
-
-        return None
 
     def _pathname(self, pathname: str) -> str:
         return Path(pathname).name.split(".")[0]
