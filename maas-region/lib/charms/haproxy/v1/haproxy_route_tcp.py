@@ -186,7 +186,7 @@ LIBAPI = 1
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 1
+LIBPATCH = 2
 
 logger = logging.getLogger(__name__)
 HAPROXY_ROUTE_TCP_RELATION_NAME = "haproxy-route-tcp"
@@ -976,7 +976,7 @@ class HaproxyRouteTcpRequirer(Object):
         *,
         port: Optional[int] = None,
         backend_port: Optional[int] = None,
-        hosts: Optional[list[str]] = None,
+        hosts: Optional[list[IPvAnyAddress]] = None,
         sni: Optional[str] = None,
         check_interval: Optional[int] = None,
         check_rise: Optional[int] = None,
@@ -1102,7 +1102,7 @@ class HaproxyRouteTcpRequirer(Object):
         *,
         port: int,
         backend_port: Optional[int] = None,
-        hosts: Optional[list[str]] = None,
+        hosts: Optional[list[IPvAnyAddress]] = None,
         sni: Optional[str] = None,
         check_interval: Optional[int] = None,
         check_rise: Optional[int] = None,
@@ -1200,7 +1200,7 @@ class HaproxyRouteTcpRequirer(Object):
         *,
         port: Optional[int] = None,
         backend_port: Optional[int] = None,
-        hosts: Optional[list[str]] = None,
+        hosts: Optional[list[IPvAnyAddress]] = None,
         sni: Optional[str] = None,
         check_interval: Optional[int] = None,
         check_rise: Optional[int] = None,
@@ -1558,7 +1558,7 @@ class HaproxyRouteTcpRequirer(Object):
         self._application_data["backend_port"] = backend_port
         return self
 
-    def configure_hosts(self, hosts: Optional[list[int]] = None) -> "Self":
+    def configure_hosts(self, hosts: Optional[list[IPvAnyAddress]] = None) -> "Self":
         """Set backend hosts.
 
         Args:
