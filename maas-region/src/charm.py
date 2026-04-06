@@ -345,9 +345,13 @@ class MaasRegionCharm(ops.CharmBase):
             list[IPvAnyAddress]: The list of connected MAAS IPs
         """
         region_ips = {self.bind_address}
-        if relation := self.peers:
-            region_ips.update(self.get_peer_data(unit, "bind-address") for unit in relation.units)
-        return [ip_address(str(r).strip("'\"")) for r in region_ips]
+        if self.peers:
+            region_ips.update(
+                addr
+                for unit in self.peers.units
+                if isinstance(addr := self.get_peer_data(unit, "bind-address"), str)
+            )
+        return list(map(ip_address, region_ips))
 
     def get_operational_mode(self) -> str:
         """Get expected MAAS mode.
@@ -706,7 +710,7 @@ class MaasRegionCharm(ops.CharmBase):
     def _on_maas_peer_changed(self, event: ops.RelationEvent) -> None:
         logger.info(event)
         self.set_peer_data(self.unit, "system-name", socket.gethostname())
-        self.set_peer_data(self.unit, "bind-address", str(self.bind_address))
+        self.set_peer_data(self.unit, "bind-address", self.bind_address)
         self._reconcile_ha_proxy_and_initialise(event)
 
     def _on_create_admin_action(self, event: ops.ActionEvent):
