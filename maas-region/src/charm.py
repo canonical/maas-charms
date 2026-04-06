@@ -10,6 +10,7 @@ import random
 import socket
 import string
 import subprocess
+from ipaddress import ip_address
 from typing import Any
 
 import ops
@@ -22,6 +23,7 @@ from charms.rolling_ops.v0.rollingops import RollingOpsManager, RunWithLock
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
 from ops.model import SecretNotFoundError
+from pydantic import IPvAnyAddress
 
 from backups import MAASBackups
 from helper import MaasHelper
@@ -336,16 +338,16 @@ class MaasRegionCharm(ops.CharmBase):
         return f"http://{self.bind_address}:{MAAS_HTTP_PORT}/MAAS"
 
     @property
-    def maas_ips(self) -> list[str]:
+    def maas_ips(self) -> list[IPvAnyAddress]:
         """Get the IP addresses of MAAS Regions in the cluster.
 
         Return:
-            list[str]: The list of connected MAAS IPs
+            list[IPvAnyAddress]: The list of connected MAAS IPs
         """
         region_ips = {self.bind_address}
         if relation := self.peers:
             region_ips.update(self.get_peer_data(unit, "bind-address") for unit in relation.units)
-        return [str(r).strip("'\"") for r in region_ips]
+        return [ip_address(str(r).strip("'\"")) for r in region_ips]
 
     def get_operational_mode(self) -> str:
         """Get expected MAAS mode.
@@ -517,8 +519,6 @@ class MaasRegionCharm(ops.CharmBase):
                 self.unit.status = ops.ActiveStatus()
             return
 
-        # TODO: Remove the `type: ignore[arg-type]` when hosts annotation is fixed.
-        # Link: https://github.com/canonical/haproxy-operator/pull/383
         haproxy_relations = [
             (haproxy_non_tls_enabled, self.haproxy_non_tls_route),
             (haproxy_temporal_route_enabled, self.haproxy_temporal_route),
@@ -528,7 +528,7 @@ class MaasRegionCharm(ops.CharmBase):
         for enabled, rel in haproxy_relations:
             if enabled:
                 if unit_valid:
-                    rel.configure_hosts(self.maas_ips)  # type: ignore[arg-type]
+                    rel.configure_hosts(self.maas_ips)
                 else:
                     rel.configure_hosts()
                 rel.update_relation_data()
