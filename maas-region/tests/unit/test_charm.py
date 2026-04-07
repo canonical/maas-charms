@@ -5,6 +5,7 @@
 
 import subprocess
 import unittest
+from ipaddress import ip_address
 from json import dumps
 from unittest.mock import PropertyMock, call, patch
 
@@ -346,7 +347,7 @@ class TestClusterUpdates(unittest.TestCase):
             configure_hosts.assert_called_once()
 
             args = configure_hosts.call_args.args
-            self.assertEqual(args, (["10.0.0.10"],))
+            self.assertEqual(args, ([ip_address("10.0.0.10")],))
 
             self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
 
@@ -383,7 +384,7 @@ class TestClusterUpdates(unittest.TestCase):
 
             args = configure_hosts.call_args.args
 
-            self.assertEqual(args, (["10.0.0.10"],))
+            self.assertEqual(args, ([ip_address("10.0.0.10")],))
 
             self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
 
