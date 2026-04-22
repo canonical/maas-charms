@@ -12,6 +12,7 @@ import string
 import subprocess
 from ipaddress import ip_address
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 import ops
 from charms.data_platform_libs.v0 import data_interfaces as db
@@ -305,18 +306,22 @@ class MaasRegionCharm(ops.CharmBase):
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
 
-        scheme, port, proxy_port = (
-            ("https", MAAS_HTTPS_PORT, MAAS_TLS_PROXY_PORT)
+        scheme, port, relation_name = (
+            ("https", MAAS_HTTPS_PORT, HAPROXY_TLS)
             if self.is_tls_config_enabled
-            else ("http", MAAS_HTTP_PORT, MAAS_PROXY_PORT)
+            else ("http", MAAS_HTTP_PORT, HAPROXY_NON_TLS)
         )
 
         # TODO: Read the vip from HAProxy, if the relation exists, once
         # https://github.com/canonical/haproxy-operator/issues/365 or similar is implemented
-        if relation := self.model.get_relation(HAPROXY_NON_TLS):
-            unit = next(iter(relation.units), None)
-            if unit and (addr := relation.data[unit].get("public-address")):
-                return f"{scheme}://{addr}:{proxy_port}/MAAS"
+        if relation := self.model.get_relation(relation_name):
+            if endpoints := relation.data[relation.app].get("endpoints"):
+                try:
+                    endpoint_list = json.loads(endpoints)
+                    if isinstance(endpoint_list, list) and endpoint_list:
+                        return f"{scheme}://{endpoint_list[0]}/MAAS"
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(f"Invalid endpoints format from HAProxy: {endpoints}")
         return f"{scheme}://{self.bind_address}:{port}/MAAS"
 
     @property
@@ -327,14 +332,22 @@ class MaasRegionCharm(ops.CharmBase):
             str: The API URL
         """
         if maas_url := self.config["maas_url"]:
-            return str(maas_url)
+            parsed = urlparse(str(maas_url))
+            # Force http scheme for internal API initialization
+            if parsed.scheme == "https":
+                parsed = parsed._replace(scheme="http")
+            return urlunparse(parsed)
 
         # TODO: Read the vip from HAProxy, if the relation exists, once
         # https://github.com/canonical/haproxy-operator/issues/365 or similar is implemented
         if relation := self.model.get_relation(HAPROXY_NON_TLS):
-            unit = next(iter(relation.units), None)
-            if unit and (addr := relation.data[unit].get("public-address")):
-                return f"http://{addr}:{MAAS_PROXY_PORT}/MAAS"
+            if endpoints := relation.data[relation.app].get("endpoints"):
+                try:
+                    endpoint_list = json.loads(endpoints)
+                    if isinstance(endpoint_list, list) and endpoint_list:
+                        return f"http://{endpoint_list[0]}/MAAS"
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(f"Invalid endpoints format from HAProxy: {endpoints}")
         return f"http://{self.bind_address}:{MAAS_HTTP_PORT}/MAAS"
 
     @property
@@ -772,6 +785,14 @@ class MaasRegionCharm(ops.CharmBase):
             if not cert or not key:
                 raise ValueError(
                     "Both ssl_cert_content and ssl_key_content must be defined when using configuring TLS"
+                )
+
+        # validate maas_url if provided
+        if maas_url := self.config["maas_url"]:
+            parsed = urlparse(str(maas_url))
+            if not parsed.scheme or not parsed.netloc:
+                raise ValueError(
+                    f"Invalid maas_url: {maas_url}. Must be a valid URL with scheme and host."
                 )
         self._reconcile_ha_proxy(event)
         maas_details = MaasHelper.get_maas_details()
