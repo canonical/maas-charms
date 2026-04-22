@@ -102,6 +102,7 @@ COMMON_DEFAULT_HAPROXY_ARGS = {
     "check_rise": 2,
     "check_fall": 3,
     "check_interval": 2,
+    "server_timeout": 900,
 }
 
 
