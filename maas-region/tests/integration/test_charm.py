@@ -68,7 +68,7 @@ async def test_database_integration(ops_test: OpsTest):
     )
 
 
-def generate_cert(ip_address: str, tmp_path: Path):
+def generate_cert(ip_addresses: list[str], tmp_path: Path):
     ca_key = tmp_path / "ca.key"
     ca_crt = tmp_path / "ca.crt"
     maas_key = tmp_path / "maas.key"
@@ -76,6 +76,7 @@ def generate_cert(ip_address: str, tmp_path: Path):
     maas_crt = tmp_path / "maas.crt"
     conf = tmp_path / "maas.conf"
 
+    alt_names = "\n".join(f"IP.{i + 1} = {ip}" for i, ip in enumerate(ip_addresses))
     conf.write_text(f"""\
 [ req ]
 default_bits       = 4096
@@ -85,13 +86,13 @@ distinguished_name = dn
 req_extensions     = req_ext
 
 [ dn ]
-CN = {ip_address}
+CN = {ip_addresses[0]}
 
 [ req_ext ]
 subjectAltName = @alt_names
 
 [ alt_names ]
-IP.1 = {ip_address}
+{alt_names}
 """)
 
     for key in [ca_key, maas_key]:
@@ -187,8 +188,9 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
     )
 
     address = await ops_test.model.applications[APP_NAME].units[0].get_public_address()
+    haproxy_address = await ops_test.model.applications["haproxy"].units[0].get_public_address()
 
-    key, cacert, cert = generate_cert(ip_address=address, tmp_path=tmp_path)
+    key, cacert, cert = generate_cert(ip_addresses=[address, haproxy_address], tmp_path=tmp_path)
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp", "haproxy")
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-temporal", "haproxy")
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-internal-http-api", "haproxy")

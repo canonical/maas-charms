@@ -320,7 +320,7 @@ class MaasRegionCharm(ops.CharmBase):
                     endpoint_list = json.loads(endpoints)
                     if isinstance(endpoint_list, list) and endpoint_list:
                         return f"{scheme}://{endpoint_list[0]}/MAAS"
-                except (json.JSONDecodeError, TypeError):
+                except json.JSONDecodeError:
                     logger.warning(f"Invalid endpoints format from HAProxy: {endpoints}")
         return f"{scheme}://{self.bind_address}:{port}/MAAS"
 
@@ -346,7 +346,7 @@ class MaasRegionCharm(ops.CharmBase):
                     endpoint_list = json.loads(endpoints)
                     if isinstance(endpoint_list, list) and endpoint_list:
                         return f"http://{endpoint_list[0]}/MAAS"
-                except (json.JSONDecodeError, TypeError):
+                except json.JSONDecodeError:
                     logger.warning(f"Invalid endpoints format from HAProxy: {endpoints}")
         return f"http://{self.bind_address}:{MAAS_HTTP_PORT}/MAAS"
 
