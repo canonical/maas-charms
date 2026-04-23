@@ -214,6 +214,17 @@ class TestClusterUpdates(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.harness.update_config({"ssl_cert_content": "test_cert"})
 
+    def test_invalid_maas_url_config(self):
+        """Test that invalid maas_url raises ValueError on config change."""
+        invalid_urls = ["not-a-url", "/just/a/path", "http://"]
+        for invalid_url in invalid_urls:
+            with self.subTest(url=invalid_url):
+                harness = self._make_harness()
+                harness.begin()
+                with self.assertRaises(ValueError) as cm:
+                    harness.update_config({"maas_url": invalid_url})
+                self.assertIn("Invalid maas_url", str(cm.exception))
+
     @patch("charm.MaasHelper", autospec=True)
     def test_on_maas_cluster_changed_prometheus_enabled(self, mock_helper):
         mock_helper.get_maas_mode.return_value = "region"
@@ -710,3 +721,126 @@ class TestCharmActions(unittest.TestCase):
         self.harness.begin()
         with self.assertRaises(subprocess.CalledProcessError):
             self.harness.charm.get_region_system_ids()
+
+
+class TestMAASURLs(unittest.TestCase):
+    """Test maas_cli_url and maas_api_url properties."""
+
+    def setUp(self):
+        self.harness = ops.testing.Harness(MaasRegionCharm)
+        self.harness.add_network("10.0.0.10")
+        self.addCleanup(self.harness.cleanup)
+
+    def test_maas_cli_url_with_config(self):
+        """Test maas_cli_url returns configured URL when maas_url is set."""
+        self.harness.update_config({"maas_url": "https://custom.maas.example.com/MAAS"})
+        self.harness.begin()
+        self.assertEqual(self.harness.charm.maas_cli_url, "https://custom.maas.example.com/MAAS")
+
+    def test_maas_cli_url_with_haproxy_non_tls(self):
+        """Test maas_cli_url uses HAProxy non-TLS endpoint when TLS is disabled."""
+        self.harness.begin()
+        rel_id = self.harness.add_relation(HAPROXY_NON_TLS, "haproxy")
+        self.harness.update_relation_data(rel_id, "haproxy", {"endpoints": '["10.226.71.86:80"]'})
+        self.assertEqual(self.harness.charm.maas_cli_url, "http://10.226.71.86:80/MAAS")
+
+    def test_maas_cli_url_with_haproxy_tls(self):
+        """Test maas_cli_url uses HAProxy TLS endpoint when TLS is enabled."""
+        self.harness.update_config(
+            {
+                "ssl_cert_content": "cert-content",
+                "ssl_key_content": "key-content",
+            }
+        )
+        self.harness.begin()
+        rel_id = self.harness.add_relation(HAPROXY_TLS, "haproxy")
+        self.harness.update_relation_data(rel_id, "haproxy", {"endpoints": '["10.226.71.86:443"]'})
+        self.assertEqual(self.harness.charm.maas_cli_url, "https://10.226.71.86:443/MAAS")
+
+    def test_maas_cli_url_fallback_to_bind_address_non_tls(self):
+        """Test maas_cli_url falls back to bind address when no HAProxy (non-TLS)."""
+        self.harness.begin()
+        self.assertEqual(
+            self.harness.charm.maas_cli_url, f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS"
+        )
+
+    def test_maas_cli_url_fallback_to_bind_address_tls(self):
+        """Test maas_cli_url falls back to bind address when no HAProxy (TLS)."""
+        self.harness.update_config(
+            {
+                "ssl_cert_content": "cert-content",
+                "ssl_key_content": "key-content",
+            }
+        )
+        self.harness.begin()
+        self.assertEqual(
+            self.harness.charm.maas_cli_url, f"https://10.0.0.10:{MAAS_HTTPS_PORT}/MAAS"
+        )
+
+    def test_maas_cli_url_handles_malformed_endpoints(self):
+        """Test maas_cli_url handles malformed HAProxy endpoints and falls back to bind address."""
+        cases = [
+            ("invalid_json", "invalid-json"),
+            ("empty_list", "[]"),
+            ("non_list_json", '{"key": "value"}'),
+        ]
+        for name, endpoints_value in cases:
+            with self.subTest(case=name):
+                self.harness.begin()
+                rel_id = self.harness.add_relation(HAPROXY_NON_TLS, "haproxy")
+                self.harness.update_relation_data(
+                    rel_id, "haproxy", {"endpoints": endpoints_value}
+                )
+                self.assertEqual(
+                    self.harness.charm.maas_cli_url, f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS"
+                )
+                self.harness.cleanup()
+                self.harness = ops.testing.Harness(MaasRegionCharm)
+                self.harness.add_network("10.0.0.10")
+
+    def test_maas_api_url_with_config(self):
+        """Test maas_api_url converts https to http from configured URL."""
+        self.harness.update_config({"maas_url": "https://custom.maas.example.com/MAAS"})
+        self.harness.begin()
+        self.assertEqual(self.harness.charm.maas_api_url, "http://custom.maas.example.com/MAAS")
+
+    def test_maas_api_url_with_http_config(self):
+        """Test maas_api_url keeps http scheme from configured URL."""
+        self.harness.update_config({"maas_url": "http://custom.maas.example.com/MAAS"})
+        self.harness.begin()
+        self.assertEqual(self.harness.charm.maas_api_url, "http://custom.maas.example.com/MAAS")
+
+    def test_maas_api_url_with_haproxy(self):
+        """Test maas_api_url uses HAProxy non-TLS endpoint."""
+        self.harness.begin()
+        rel_id = self.harness.add_relation(HAPROXY_NON_TLS, "haproxy")
+        self.harness.update_relation_data(rel_id, "haproxy", {"endpoints": '["10.226.71.86:80"]'})
+        self.assertEqual(self.harness.charm.maas_api_url, "http://10.226.71.86:80/MAAS")
+
+    def test_maas_api_url_fallback_to_bind_address(self):
+        """Test maas_api_url falls back to bind address when no HAProxy."""
+        self.harness.begin()
+        self.assertEqual(
+            self.harness.charm.maas_api_url, f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS"
+        )
+
+    def test_maas_api_url_handles_malformed_endpoints(self):
+        """Test maas_api_url handles malformed HAProxy endpoints and falls back to bind address."""
+        cases = [
+            ("invalid_json", "invalid-json"),
+            ("empty_list", "[]"),
+            ("non_list_json", '{"key": "value"}'),
+        ]
+        for name, endpoints_value in cases:
+            with self.subTest(case=name):
+                self.harness.begin()
+                rel_id = self.harness.add_relation(HAPROXY_NON_TLS, "haproxy")
+                self.harness.update_relation_data(
+                    rel_id, "haproxy", {"endpoints": endpoints_value}
+                )
+                self.assertEqual(
+                    self.harness.charm.maas_api_url, f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS"
+                )
+                self.harness.cleanup()
+                self.harness = ops.testing.Harness(MaasRegionCharm)
+                self.harness.add_network("10.0.0.10")
