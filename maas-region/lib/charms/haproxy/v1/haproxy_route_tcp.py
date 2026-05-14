@@ -186,7 +186,7 @@ LIBAPI = 1
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 2
+LIBPATCH = 3
 
 logger = logging.getLogger(__name__)
 HAPROXY_ROUTE_TCP_RELATION_NAME = "haproxy-route-tcp"
@@ -603,6 +603,7 @@ class TcpRequirerApplicationData(_DatabagModel):
         ip_deny_list: List of source IP addresses to block.
         enforce_tls: Whether to enforce TLS for all traffic coming to the backend.
         tls_terminate: Whether to enable tls termination on the dedicated frontend.
+        proxy_protocol: Whether to enable PROXY protocol when connecting to backend servers.
     """
 
     port: int = Field(description="The port exposed on the provider.", gt=0, le=65535)
@@ -653,6 +654,10 @@ class TcpRequirerApplicationData(_DatabagModel):
     )
     enforce_tls: bool = Field(description="Whether to enforce TLS for all traffic.", default=True)
     tls_terminate: bool = Field(description="Whether to enable tls termination.", default=True)
+    proxy_protocol: bool = Field(
+        description="Whether to enable PROXY protocol when connecting to backend servers.",
+        default=False,
+    )
 
     @model_validator(mode="after")
     def assign_default_backend_port(self) -> "Self":
@@ -1000,6 +1005,7 @@ class HaproxyRouteTcpRequirer(Object):
         ip_deny_list: Optional[list[IPvAnyAddress]] = None,
         enforce_tls: bool = True,
         tls_terminate: bool = True,
+        proxy_protocol: bool = False,
         unit_address: Optional[str] = None,
     ) -> None:
         """Initialize the HaproxyRouteRequirer.
@@ -1037,6 +1043,7 @@ class HaproxyRouteTcpRequirer(Object):
             ip_deny_list: List of source IP addresses to block.
             enforce_tls: Whether to enforce TLS for all traffic coming to the backend.
             tls_terminate: Whether to enable tls termination on the dedicated frontend.
+            proxy_protocol: Whether to enable PROXY protocol when connecting to backend servers.
             unit_address: IP address of the unit (if not provided, will use binding address).
         """
         super().__init__(charm, relation_name)
@@ -1074,6 +1081,7 @@ class HaproxyRouteTcpRequirer(Object):
             ip_deny_list=ip_deny_list,
             enforce_tls=enforce_tls,
             tls_terminate=tls_terminate,
+            proxy_protocol=proxy_protocol,
         )
         self._unit_address = unit_address
 
@@ -1126,6 +1134,7 @@ class HaproxyRouteTcpRequirer(Object):
         ip_deny_list: Optional[list[IPvAnyAddress]] = None,
         enforce_tls: bool = True,
         tls_terminate: bool = True,
+        proxy_protocol: bool = False,
         unit_address: Optional[str] = None,
     ) -> None:
         """Update haproxy-route requirements data in the relation.
@@ -1161,6 +1170,7 @@ class HaproxyRouteTcpRequirer(Object):
             ip_deny_list: List of source IP addresses to block.
             enforce_tls: Whether to enforce TLS for all traffic coming to the backend.
             tls_terminate: Whether to enable tls termination on the dedicated frontend.
+            proxy_protocol: Whether to enable PROXY protocol when connecting to backend servers.
             unit_address: IP address of the unit (if not provided, will use binding address).
         """
         self._unit_address = unit_address
@@ -1191,6 +1201,7 @@ class HaproxyRouteTcpRequirer(Object):
             ip_deny_list=ip_deny_list,
             enforce_tls=enforce_tls,
             tls_terminate=tls_terminate,
+            proxy_protocol=proxy_protocol,
         )
         self.update_relation_data()
 
@@ -1224,6 +1235,7 @@ class HaproxyRouteTcpRequirer(Object):
         ip_deny_list: Optional[list[IPvAnyAddress]] = None,
         enforce_tls: bool = True,
         tls_terminate: bool = True,
+        proxy_protocol: bool = False,
     ) -> dict[str, Any]:
         """Generate the complete application data structure.
 
@@ -1258,6 +1270,7 @@ class HaproxyRouteTcpRequirer(Object):
             ip_deny_list: List of source IP addresses to block.
             enforce_tls: Whether to enforce TLS for all traffic coming to the backend.
             tls_terminate: Whether to enable tls termination on the dedicated frontend.
+            proxy_protocol: Whether to enable PROXY protocol when connecting to backend servers.
 
         Returns:
             dict: A dictionary containing the complete application data structure.
@@ -1300,6 +1313,7 @@ class HaproxyRouteTcpRequirer(Object):
             "server_maxconn": server_maxconn,
             "enforce_tls": enforce_tls,
             "tls_terminate": tls_terminate,
+            "proxy_protocol": proxy_protocol,
         }
 
         return application_data
@@ -1758,4 +1772,13 @@ class HaproxyRouteTcpRequirer(Object):
         if not ip_deny_list:
             ip_deny_list = []
         self._application_data["ip_deny_list"] = ip_deny_list
+        return self
+
+    def enable_proxy_protocol(self) -> "Self":
+        """Enable PROXY protocol when connecting to backend servers.
+
+        Returns:
+            Self: The HaproxyRouteTcpRequirer class
+        """
+        self._application_data["proxy_protocol"] = True
         return self
