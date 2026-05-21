@@ -9,7 +9,11 @@ on:
 jobs:
   pull-request-region:
     name: PR Region
-    uses: canonical/observability/.github/workflows/charm-pull-request.yaml@v0
+    uses: canonical/observability/.github/workflows/charm-pull-request.yaml@5e76ffc10eb6b4b2c6b7537e1d1398b64ee438d4 # Branch v0
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
     secrets: inherit
     with:
       charm-path: maas-region
