@@ -26,6 +26,8 @@ links:
 platforms:
   ubuntu@24.04:amd64:
   ubuntu@24.04:arm64:
+  ubuntu@26.04:amd64:
+  ubuntu@26.04:arm64:
 
 requires:
   maas-db:
