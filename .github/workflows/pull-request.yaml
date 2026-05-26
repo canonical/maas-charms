@@ -20,3 +20,4 @@ jobs:
       juju-channel: 3.6/stable
       python-version: "3.10"
       provider: lxd
+      charmcraft-channel: latest/candidate

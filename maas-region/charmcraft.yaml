@@ -127,11 +127,6 @@ actions:
       List available MAAS backups
 
 parts:
-  charm:
-    override-build: |
-      echo "Running the build step"
-      craftctl default
-
   prometheus-alerts:
     plugin: dump
     source: https://github.com/canonical/maas-prometheus-alert-rules.git
