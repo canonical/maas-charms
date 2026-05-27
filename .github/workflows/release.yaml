@@ -47,4 +47,4 @@ jobs:
       release-tag-prefix: maas-region
       provider: lxd
       build-for-arm: true
-      charmcraft-channel: latest/candidate
+      charmcraft-channel: latest/edge
