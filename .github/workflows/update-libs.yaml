@@ -18,4 +18,3 @@ jobs:
       charm-path: maas-region
       commit-username: maas-lander
       commit-email: 115650013+maas-lander@users.noreply.github.com
-      charmcraft-channel: latest/edge
