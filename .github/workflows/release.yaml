@@ -34,7 +34,7 @@ jobs:
     name: Release MAAS Region charm to edge
     needs: detect-region-changes
     if: needs.detect-region-changes.outputs.any_changed == 'true'
-    uses: canonical/observability/.github/workflows/charm-release.yaml@5e76ffc10eb6b4b2c6b7537e1d1398b64ee438d4 # Branch v0
+    uses: canonical/observability/.github/workflows/charm-release.yaml@632d811436c708a897389e0419fefc87808637be  # Branch v0
     permissions:
       security-events: write
       actions: read
