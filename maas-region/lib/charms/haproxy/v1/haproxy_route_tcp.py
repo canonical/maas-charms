@@ -186,7 +186,7 @@ LIBAPI = 1
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 3
+LIBPATCH = 4
 
 logger = logging.getLogger(__name__)
 HAPROXY_ROUTE_TCP_RELATION_NAME = "haproxy-route-tcp"
@@ -575,12 +575,15 @@ class TimeoutConfiguration(BaseModel):
 
     server: Optional[int] = Field(
         description="Timeout (in seconds) for requests from haproxy to backend servers.",
+        gt=0,
     )
     connect: Optional[int] = Field(
         description="Timeout (in seconds) for client requests to haproxy.",
+        gt=0,
     )
     queue: Optional[int] = Field(
         description="Timeout (in seconds) for requests in the queue.",
+        gt=0,
     )
 
 
