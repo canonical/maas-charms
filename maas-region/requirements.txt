@@ -54,7 +54,7 @@ pydantic==2.13.4
     # via
     #   -r requirements.in
     #   cosl
-pydantic-core==2.46.4
+pydantic-core==2.47.0
     # via pydantic
 python-dateutil==2.9.0.post0
     # via botocore
