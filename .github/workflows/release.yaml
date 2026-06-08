@@ -39,6 +39,7 @@ jobs:
       security-events: write
       actions: read
       contents: write
+      issues: write
     secrets: inherit
     with:
       charm-path: maas-region
