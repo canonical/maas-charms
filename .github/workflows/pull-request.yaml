@@ -9,7 +9,7 @@ on:
 jobs:
   pull-request-region:
     name: PR Region
-    uses: canonical/observability/.github/workflows/charm-pull-request.yaml@ec942dec1412fed70466189e257337ecad08fa87 # Branch v0
+    uses: canonical/observability/.github/workflows/charm-pull-request.yaml@3414ea10e5fd0c10246c07937a3f621ff54cadc2 # Branch v0
     permissions:
       security-events: write
       actions: read
@@ -22,3 +22,4 @@ jobs:
       python-version: "3.10"
       provider: lxd
       charmcraft-channel: latest/stable
+      check-library-labels: false

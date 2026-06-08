@@ -34,11 +34,12 @@ jobs:
     name: Release MAAS Region charm to edge
     needs: detect-region-changes
     if: needs.detect-region-changes.outputs.any_changed == 'true'
-    uses: canonical/observability/.github/workflows/charm-release.yaml@ec942dec1412fed70466189e257337ecad08fa87 # Branch v0
+    uses: canonical/observability/.github/workflows/charm-release.yaml@3414ea10e5fd0c10246c07937a3f621ff54cadc2 # Branch v0
     permissions:
       security-events: write
       actions: read
       contents: write
+      issues: write
     secrets: inherit
     with:
       charm-path: maas-region
@@ -48,3 +49,4 @@ jobs:
       provider: lxd
       build-for-arm: true
       charmcraft-channel: latest/stable
+      check-library-labels: false
