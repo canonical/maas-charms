@@ -46,7 +46,7 @@ ops==3.7.1
     # via
     #   -r requirements.in
     #   cosl
-protobuf==6.33.6
+protobuf==7.35.0
     # via
     #   googleapis-common-protos
     #   opentelemetry-proto
