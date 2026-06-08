@@ -41,11 +41,11 @@ include = [ "src/**.py" ]
 
 [tool.pytest]
 ini_options.minversion = "6.0"
-ini_options.log_cli_level = "INFO"
 ini_options.filterwarnings = [
-  "ignore::PendingDeprecationWarning",
   "ignore::DeprecationWarning",
+  "ignore::PendingDeprecationWarning",
 ]
+ini_options.log_cli_level = "INFO"
 
 [tool.coverage]
 # Formatting tools configuration
