@@ -126,10 +126,10 @@ actions:
 
 parts:
   charm:
-    plugin: python
+    plugin: uv
     source: .
-    python-requirements:
-      - requirements.txt
+    build-snaps:
+      - astral-uv
 
   prometheus-alerts:
     plugin: dump
