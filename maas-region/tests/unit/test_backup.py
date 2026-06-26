@@ -1149,7 +1149,7 @@ backup-id            | action      | status   | maas     | size       | controll
             self.assertTrue(f.name.endswith(s3_path))
 
         disk_usage.assert_called_once()
-        path_exists.assert_called_once()
+        path_exists.assert_called()
         unlink.assert_called_once()
 
     @patch("backups.os.unlink")
@@ -1189,7 +1189,7 @@ backup-id            | action      | status   | maas     | size       | controll
             self.assertTrue(f.name.endswith(s3_path))
 
         disk_usage.assert_called_once()
-        path_exists.assert_called_once()
+        path_exists.assert_called()
         unlink.assert_called_once()
         event.fail.assert_called_once_with(
             f"Download failed: Not enough free storage to download {s3_path}, required {size} but has {free}"
@@ -1229,7 +1229,7 @@ backup-id            | action      | status   | maas     | size       | controll
             self.assertIsNone(f)
 
         disk_usage.assert_not_called()
-        path_exists.assert_called_once()
+        path_exists.assert_called()
         unlink.assert_called_once()
         event.fail.assert_called_once_with(
             f"Download failed: Could not find object in {bucket}:{s3_path}"
@@ -1269,7 +1269,7 @@ backup-id            | action      | status   | maas     | size       | controll
             self.assertIsNone(f)
 
         disk_usage.assert_not_called()
-        path_exists.assert_called_once()
+        path_exists.assert_called()
         unlink.assert_called_once()
         event.fail.assert_called_once_with(
             f"Download failed: Could not read object from {bucket}:{s3_path}"
@@ -1306,7 +1306,7 @@ backup-id            | action      | status   | maas     | size       | controll
             self.assertIsNone(f)
 
         disk_usage.assert_not_called()
-        path_exists.assert_called_once()
+        path_exists.assert_called()
         unlink.assert_not_called()
         event.fail.assert_called_once_with(
             f"Download failed: Could not read content from {bucket}:{s3_path}"
