@@ -185,7 +185,7 @@ LIBAPI = 1
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 5
+LIBPATCH = 6
 
 logger = logging.getLogger(__name__)
 HAPROXY_ROUTE_TCP_RELATION_NAME = "haproxy-route-tcp"
@@ -1250,7 +1250,7 @@ class HaproxyRouteTcpRequirer(Object):
         *,
         port: Optional[int] = None,
         backend_port: Optional[int] = None,
-        port_mapping: Optional[str] = None,
+        port_mapping: Optional[PortMapping] = None,
         hosts: Optional[list[IPvAnyAddress]] = None,
         sni: Optional[str] = None,
         check_interval: Optional[int] = None,
@@ -1285,8 +1285,7 @@ class HaproxyRouteTcpRequirer(Object):
             relation_name: The name of the relation to bind to.
             port: The port exposed on the provider.
             backend_port: The port where the backend service is listening.
-            port_mapping: Port mapping in the form
-                "frontend_start-frontend_end:backend_start-backend_end".
+            port_mapping: A PortMapping object specifying the frontend and backend port ranges.
             hosts: List of backend server addresses. Currently only support IP addresses.
             sni: List of URL paths to route to this service.
             check_interval: Interval between health checks in seconds.
@@ -1326,10 +1325,11 @@ class HaproxyRouteTcpRequirer(Object):
         self.app = self.charm.app
 
         # build the full application data
+        port_mapping_str = str(port_mapping) if port_mapping is not None else None
         self._application_data = self._generate_application_data(
             port=port,
             backend_port=backend_port,
-            port_mapping=port_mapping,
+            port_mapping=port_mapping_str,
             hosts=hosts,
             sni=sni,
             check_interval=check_interval,
@@ -1383,7 +1383,7 @@ class HaproxyRouteTcpRequirer(Object):
         *,
         port: Optional[int] = None,
         backend_port: Optional[int] = None,
-        port_mapping: Optional[str] = None,
+        port_mapping: Optional[PortMapping] = None,
         hosts: Optional[list[IPvAnyAddress]] = None,
         sni: Optional[str] = None,
         check_interval: Optional[int] = None,
@@ -1416,8 +1416,7 @@ class HaproxyRouteTcpRequirer(Object):
         Args:
             port: The port exposed on the provider.
             backend_port: The port where the backend service is listening.
-            port_mapping: Port mapping in the form
-                "frontend_start-frontend_end:backend_start-backend_end".
+            port_mapping: A PortMapping object specifying the frontend and backend port ranges.
             hosts: List of backend server addresses. Currently only support IP addresses.
             sni: List of URL paths to route to this service.
             check_interval: Interval between health checks in seconds.
@@ -1450,10 +1449,11 @@ class HaproxyRouteTcpRequirer(Object):
             unit_address: IP address of the unit (if not provided, will use binding address).
         """
         self._unit_address = unit_address
+        port_mapping_str = str(port_mapping) if port_mapping is not None else None
         self._application_data = self._generate_application_data(
             port=port,
             backend_port=backend_port,
-            port_mapping=port_mapping,
+            port_mapping=port_mapping_str,
             hosts=hosts,
             sni=sni,
             check_interval=check_interval,
@@ -1855,7 +1855,7 @@ class HaproxyRouteTcpRequirer(Object):
         self._application_data["backend_port"] = backend_port
         return self
 
-    def configure_port_mapping(self, port_mapping: str) -> "Self":
+    def configure_port_mapping(self, port_mapping: PortMapping | str) -> "Self":
         """Set the port mapping.
 
         The mapping is of the form
@@ -1863,12 +1863,12 @@ class HaproxyRouteTcpRequirer(Object):
         mapping, port and backend_port are cleared.
 
         Args:
-            port_mapping: The port mapping string.
+            port_mapping: A PortMapping object or string specifying the port mapping.
 
         Returns:
             Self: The HaproxyRouteTcpRequirer class
         """
-        self._application_data["port_mapping"] = port_mapping
+        self._application_data["port_mapping"] = str(port_mapping)
         self._application_data.pop("port", None)
         self._application_data.pop("backend_port", None)
         return self
