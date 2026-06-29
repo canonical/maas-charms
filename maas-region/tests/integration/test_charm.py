@@ -3,6 +3,7 @@
 # See LICENSE file for licensing details.
 
 import asyncio
+import json
 import logging
 import re
 from pathlib import Path
@@ -187,14 +188,30 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
         apps=["haproxy", APP_NAME], status="active", raise_on_blocked=True, timeout=3600
     )
 
-    address = await ops_test.model.applications[APP_NAME].units[0].get_public_address()
-    haproxy_address = await ops_test.model.applications["haproxy"].units[0].get_public_address()
-
-    key, cacert, cert = generate_cert(ip_addresses=[address, haproxy_address], tmp_path=tmp_path)
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp", "haproxy")
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-temporal", "haproxy")
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-internal-http-api", "haproxy")
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-tls", "haproxy")
+    await ops_test.model.wait_for_idle(
+        apps=["haproxy"], status="active", raise_on_blocked=True, timeout=3600
+    )
+
+    address = await ops_test.model.applications[APP_NAME].units[0].get_public_address()
+    _, stdout, _ = await ops_test.juju("show-unit", f"{APP_NAME}/0", "--format", "json")
+    relation_info = json.loads(stdout)[f"{APP_NAME}/0"]["relation-info"]
+    haproxy_address = None
+    for relation in relation_info:
+        if relation["endpoint"] != "ingress-tcp":
+            continue
+        raw_endpoints = relation["application-data"]["endpoints"]
+        endpoints = json.loads(raw_endpoints)
+        # endpoints is a list of "ip:port" strings, e.g. ["10.226.71.117:80"]
+        haproxy_address = endpoints[0].rsplit(":", 1)[0]
+        break
+    assert haproxy_address, "Could not find HAProxy address on the ingress-tcp relation"
+
+    key, cacert, cert = generate_cert(ip_addresses=[address, haproxy_address], tmp_path=tmp_path)
+
     await ops_test.model.applications[APP_NAME].set_config({"ssl_cert_content": cert})
     await ops_test.model.applications[APP_NAME].set_config({"ssl_key_content": key})
     await ops_test.model.applications[APP_NAME].set_config({"ssl_cacert_content": cacert})
