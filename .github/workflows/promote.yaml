@@ -19,7 +19,7 @@ on:
 jobs:
   promote:
     name: Promote
-    uses: canonical/observability/.github/workflows/charm-promote.yaml@4ffb7e29487fd047f6b88e833aaf22ceaad0430e # Branch v0
+    uses: canonical/observability/.github/workflows/charm-promote.yaml@c8b90c2e6dea32e59a5deb089c3e76565bdee8b3 # Branch v0
     with:
       charm-path: ${{ github.event.inputs.charm }}
       promotion: ${{ github.event.inputs.promotion }}
