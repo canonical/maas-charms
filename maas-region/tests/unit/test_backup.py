@@ -1120,6 +1120,8 @@ backup-id            | action      | status   | maas     | size       | controll
     @patch("backups.shutil.disk_usage")
     @patch("backups.MAASBackups._s3_client")
     def test_download_file_from_s3(self, client, disk_usage, temp_file, path_exists, unlink):
+        Path(".charm_tracing_buffer.raw").touch()
+        self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
@@ -1160,6 +1162,8 @@ backup-id            | action      | status   | maas     | size       | controll
     def test_download_file_from_s3__not_enough_free_space(
         self, client, disk_usage, temp_file, path_exists, unlink
     ):
+        Path(".charm_tracing_buffer.raw").touch()
+        self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
@@ -1203,6 +1207,8 @@ backup-id            | action      | status   | maas     | size       | controll
     def test_download_file_from_s3__could_not_find_object(
         self, client, disk_usage, temp_file, path_exists, unlink
     ):
+        Path(".charm_tracing_buffer.raw").touch()
+        self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
@@ -1243,6 +1249,8 @@ backup-id            | action      | status   | maas     | size       | controll
     def test_download_file_from_s3__could_not_read_object(
         self, client, disk_usage, temp_file, path_exists, unlink
     ):
+        Path(".charm_tracing_buffer.raw").touch()
+        self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
@@ -1283,6 +1291,8 @@ backup-id            | action      | status   | maas     | size       | controll
     def test_download_file_from_s3__could_not_read_content(
         self, client, disk_usage, temp_file, path_exists, unlink
     ):
+        Path(".charm_tracing_buffer.raw").touch()
+        self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
