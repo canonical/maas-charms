@@ -19,12 +19,16 @@ from charm import (
     HAPROXY_NON_TLS,
     HAPROXY_TEMPORAL,
     HAPROXY_TLS,
+    MAAS_AGENT_METRICS_ENDPOINT,
+    MAAS_AGENT_METRICS_PORT,
+    MAAS_CLUSTER_METRICS_PORT,
     MAAS_DB_NAME,
     MAAS_HTTP_PORT,
     MAAS_HTTPS_PORT,
     MAAS_INTERNAL_HTTP_API_PORT,
     MAAS_PEER_NAME,
     MAAS_PROXY_PORT,
+    MAAS_REGION_METRICS_PORT,
     MAAS_SNAP_CHANNEL,
     MAAS_TEMPORAL_PORT,
     MAAS_TLS_PROXY_PORT,
@@ -844,3 +848,92 @@ class TestMAASURLs(unittest.TestCase):
                 self.harness.cleanup()
                 self.harness = ops.testing.Harness(MaasRegionCharm)
                 self.harness.add_network("10.0.0.10")
+
+
+class TestScrapeConfigs(unittest.TestCase):
+    def setUp(self):
+        self.harness = ops.testing.Harness(MaasRegionCharm)
+        self.harness.add_network("10.0.0.10")
+        self.addCleanup(self.harness.cleanup)
+
+    @staticmethod
+    def _by_path(scrape_configs):
+        return {cfg["metrics_path"]: cfg for cfg in scrape_configs}
+
+    def test_non_tls_mode(self):
+        """All MAAS endpoints are scraped over http when TLS is disabled."""
+        self.harness.update_config({"enable_rack_mode": False})
+        self.harness.begin()
+
+        configs = self.harness.charm._generate_scrape_configs()
+        by_path = self._by_path(configs)
+
+        self.assertEqual(set(by_path), {"/metrics", "/MAAS/metrics", "/metrics/temporal"})
+        # No https scheme nor tls_config in non-TLS mode.
+        for cfg in configs:
+            self.assertNotIn("scheme", cfg)
+            self.assertNotIn("tls_config", cfg)
+        self.assertEqual(
+            by_path["/metrics"]["static_configs"][0]["targets"],
+            [f"localhost:{MAAS_REGION_METRICS_PORT}"],
+        )
+        self.assertEqual(
+            by_path["/MAAS/metrics"]["static_configs"][0]["targets"],
+            [f"localhost:{MAAS_CLUSTER_METRICS_PORT}"],
+        )
+        self.assertEqual(
+            by_path["/metrics/temporal"]["static_configs"][0]["targets"],
+            [f"localhost:{MAAS_HTTP_PORT}"],
+        )
+
+    def test_tls_mode(self):
+        """/MAAS/metrics and /metrics/temporal move to https:5443 when TLS is enabled."""
+        self.harness.update_config(
+            {
+                "enable_rack_mode": False,
+                "ssl_cert_content": "placeholder-cert",
+                "ssl_key_content": "placeholder-key",
+            }
+        )
+        self.harness.begin()
+
+        configs = self.harness.charm._generate_scrape_configs()
+        by_path = self._by_path(configs)
+
+        self.assertEqual(set(by_path), {"/metrics", "/MAAS/metrics", "/metrics/temporal"})
+        # The region metrics endpoint stays plain http.
+        self.assertNotIn("scheme", by_path["/metrics"])
+        self.assertEqual(
+            by_path["/metrics"]["static_configs"][0]["targets"],
+            [f"localhost:{MAAS_REGION_METRICS_PORT}"],
+        )
+        for path in ("/MAAS/metrics", "/metrics/temporal"):
+            cfg = by_path[path]
+            self.assertEqual(cfg["scheme"], "https")
+            self.assertEqual(cfg["tls_config"], {"insecure_skip_verify": True})
+            self.assertEqual(cfg["static_configs"][0]["targets"], [f"localhost:{MAAS_HTTPS_PORT}"])
+
+    def test_rack_mode_adds_agent_endpoint(self):
+        """Rack mode adds the http agent metrics endpoint."""
+        self.harness.update_config({"enable_rack_mode": True})
+        self.harness.begin()
+
+        configs = self.harness.charm._generate_scrape_configs()
+        by_path = self._by_path(configs)
+
+        self.assertIn(MAAS_AGENT_METRICS_ENDPOINT, by_path)
+        agent_cfg = by_path[MAAS_AGENT_METRICS_ENDPOINT]
+        self.assertNotIn("scheme", agent_cfg)
+        self.assertEqual(
+            agent_cfg["static_configs"][0]["targets"],
+            [f"localhost:{MAAS_AGENT_METRICS_PORT}"],
+        )
+
+    def test_rack_mode_disabled_omits_agent_endpoint(self):
+        """Without rack mode the agent metrics endpoint is not scraped."""
+        self.harness.update_config({"enable_rack_mode": False})
+        self.harness.begin()
+
+        by_path = self._by_path(self.harness.charm._generate_scrape_configs())
+
+        self.assertNotIn(MAAS_AGENT_METRICS_ENDPOINT, by_path)

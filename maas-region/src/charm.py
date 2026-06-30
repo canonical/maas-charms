@@ -203,21 +203,12 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
         # COS
-        endpoints: list[cos_agent._MetricsEndpointDict] = [
-            {"path": "/metrics", "port": MAAS_REGION_METRICS_PORT},
-            {"path": "/MAAS/metrics", "port": MAAS_CLUSTER_METRICS_PORT},
-            {"path": "/metrics/temporal", "port": MAAS_HTTP_PORT},
-        ]
-        if self.config["enable_rack_mode"]:
-            endpoints.append(
-                {"path": MAAS_AGENT_METRICS_ENDPOINT, "port": MAAS_AGENT_METRICS_PORT}
-            )
         self._grafana_agent = cos_agent.COSAgentProvider(
             self,
-            metrics_endpoints=endpoints,
             metrics_rules_dir="./src/prometheus",
             logs_rules_dir="./src/loki",
             dashboard_dirs=["./src/grafana_dashboards"],
+            scrape_configs=self._generate_scrape_configs,
         )
         self.tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
         self.charm_tracing_endpoint, _ = charm_tracing_config(self.tracing, None)
@@ -397,6 +388,74 @@ class MaasRegionCharm(ops.CharmBase):
             return {}
         data = self.peers.data[app_or_unit].get(key, "")
         return json.loads(data) if data else {}
+
+    def _generate_scrape_configs(self) -> list[dict]:
+        """Build Prometheus scrape_configs for the cos-agent relation.
+
+        The scheme/port of some MAAS metrics endpoints depend on whether TLS is
+        enabled, so they are generated dynamically. The COSAgentProvider invokes
+        this callable on each of its refresh events, which by default include this
+        (maas-region) charm's ``config_changed`` plus cos-agent relation changes.
+        So toggling the ``ssl_*`` config options regenerates the scrape jobs.
+
+        Returns:
+            list[dict]: standard Prometheus scrape_config dicts
+        """
+        # The region metrics endpoint is plain http and identical in both modes.
+        scrape_configs: list[dict] = [
+            {
+                "metrics_path": "/metrics",
+                "static_configs": [{"targets": [f"localhost:{MAAS_REGION_METRICS_PORT}"]}],
+            },
+        ]
+
+        # /MAAS/metrics and /metrics/temporal move from http:5240 to https:5443
+        # when TLS is enabled.
+        if self.is_tls_config_enabled:
+            # We include insecure_skip_verify because we are always scraping localhost.
+            # Even if we have the certs for the scrape targets, we'd rather specify the scrape
+            # jobs with localhost rather than the SAN (region/HAProxy IP) the cert was issued for.
+            tls_config = {"insecure_skip_verify": True}
+            scrape_configs.append(
+                {
+                    "scheme": "https",
+                    "metrics_path": "/MAAS/metrics",
+                    "static_configs": [{"targets": [f"localhost:{MAAS_HTTPS_PORT}"]}],
+                    "tls_config": tls_config,
+                }
+            )
+            scrape_configs.append(
+                {
+                    "scheme": "https",
+                    "metrics_path": "/metrics/temporal",
+                    "static_configs": [{"targets": [f"localhost:{MAAS_HTTPS_PORT}"]}],
+                    "tls_config": tls_config,
+                }
+            )
+        else:
+            scrape_configs.append(
+                {
+                    "metrics_path": "/MAAS/metrics",
+                    "static_configs": [{"targets": [f"localhost:{MAAS_CLUSTER_METRICS_PORT}"]}],
+                }
+            )
+            scrape_configs.append(
+                {
+                    "metrics_path": "/metrics/temporal",
+                    "static_configs": [{"targets": [f"localhost:{MAAS_HTTP_PORT}"]}],
+                }
+            )
+
+        # Agent metrics are plain http and only present in rack mode.
+        if self.config["enable_rack_mode"]:
+            scrape_configs.append(
+                {
+                    "metrics_path": MAAS_AGENT_METRICS_ENDPOINT,
+                    "static_configs": [{"targets": [f"localhost:{MAAS_AGENT_METRICS_PORT}"]}],
+                }
+            )
+
+        return scrape_configs
 
     def _setup_network(self) -> bool:
         """Open the network ports.
