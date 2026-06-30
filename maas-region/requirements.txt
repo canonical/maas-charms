@@ -42,7 +42,7 @@ opentelemetry-sdk==1.42.1
     # via opentelemetry-exporter-otlp-proto-http
 opentelemetry-semantic-conventions==0.63b1
     # via opentelemetry-sdk
-ops==3.7.1
+ops==3.8.0
     # via
     #   -r requirements.in
     #   cosl
