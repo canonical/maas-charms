@@ -27,7 +27,8 @@ jobs:
         id: echo-changes
         run: |
           echo "Changes made: ${{ steps.changed-files.outputs.any_changed }}"
-          echo "any_changed=${{ steps.changed-files.outputs.any_changed }}" >> "$GITHUB_OUTPUT"
+          echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
+          echo "any_changed=${{ steps.changed-files.outputs.any_changed }}" >> $GITHUB_OUTPUT
 
   release-region:
     name: Release MAAS Region charm to edge
@@ -43,7 +44,7 @@ jobs:
     with:
       charm-path: maas-region
       juju-channel: 3.6/stable
-      python-version: "3.10"
+      python-version: "3.14"
       release-tag-prefix: maas-region
       provider: lxd
       build-for-arm: true

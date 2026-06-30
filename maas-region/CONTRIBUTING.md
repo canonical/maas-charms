@@ -21,6 +21,8 @@ that can be used for linting and formatting code when you're preparing contribut
 ```shell
 tox run -e format        # update your code according to linting rules
 tox run -e lint          # code style & static type checking
+tox run -e static-charm  # type checking for the charm source
+tox run -e static-lib    # type checking for charm libraries
 tox run -e unit          # unit tests
 tox run -e integration   # integration tests
 tox                      # runs 'format', 'lint', and 'unit' environments
