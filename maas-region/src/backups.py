@@ -471,7 +471,7 @@ class MAASBackups(Object):
 
         try:
             self._create_bucket_if_not_exists(s3_parameters)
-        except ClientError, ValueError, ParamValidationError, SSLError:
+        except (ClientError, ValueError, ParamValidationError, SSLError):
             self.charm.unit.status = BlockedStatus(FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE)
             return
 
