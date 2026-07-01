@@ -52,7 +52,7 @@ SNAP_PATH_TO_PRESEEDS = "/var/snap/maas/current/preseeds"
 METADATA_PATH = "backup/latest"
 REFER_TO_DEBUG_LOG = " Please check the juju debug-log for more details."
 MAAS_REGION_RELATION = "maas-cluster"
-
+S3_CONFIGURATION_BLOCKED_KEY = "s3-configuration-blocked-message"
 # filenames
 MODEL_UUID_FILENAME = "model-uuid.txt"
 METADATA_FILENAME = "backup_metadata.json"
@@ -465,6 +465,8 @@ class MAASBackups(Object):
         if not self.charm.unit.is_leader():
             return
 
+        self.charm.set_peer_data(self.charm.app, S3_CONFIGURATION_BLOCKED_KEY, "")
+
         s3_parameters, _ = self._retrieve_s3_parameters()
         if not s3_parameters:
             return
@@ -472,14 +474,16 @@ class MAASBackups(Object):
         try:
             self._create_bucket_if_not_exists(s3_parameters)
         except (ClientError, ValueError, ParamValidationError, SSLError):
-            self.charm.unit.status = BlockedStatus(FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE)
+            self.charm.set_peer_data(
+                self.charm.app,
+                S3_CONFIGURATION_BLOCKED_KEY,
+                FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
+            )
             return
-
-        self.charm.unit.status = ActiveStatus()
 
     def _on_s3_credential_gone(self, event) -> None:
         if self.charm.is_blocked and self.charm.unit.status.message in S3_BLOCK_MESSAGES:
-            self.charm.unit.status = ActiveStatus()
+            self.charm.set_peer_data(self.charm.app, S3_CONFIGURATION_BLOCKED_KEY, "")
 
     def _on_create_backup_action(self, event) -> None:
         can_unit_perform_backup, validation_message = self._can_unit_perform_backup()

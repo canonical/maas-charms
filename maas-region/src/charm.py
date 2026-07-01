@@ -26,7 +26,7 @@ from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, cha
 from ops.model import SecretNotFoundError
 from pydantic import IPvAnyAddress
 
-from backups import MAASBackups
+from backups import S3_CONFIGURATION_BLOCKED_KEY, MAASBackups
 from helper import MaasHelper
 
 logger = logging.getLogger(__name__)
@@ -692,6 +692,10 @@ class MaasRegionCharm(ops.CharmBase):
             e.add_status(ops.WaitingStatus("Waiting for database DSN"))
         elif not self.maas_api_url:
             e.add_status(ops.WaitingStatus("Waiting for MAAS initialization"))
+        elif (
+            blocked_msg := self.get_peer_data(self.app, S3_CONFIGURATION_BLOCKED_KEY)
+        ) and self.unit.is_leader():
+            e.add_status(ops.BlockedStatus(blocked_msg))
         else:
             # Check HAProxy configuration validity
             haproxy_non_tls = self.model.get_relation(HAPROXY_NON_TLS) is not None
@@ -745,6 +749,7 @@ class MaasRegionCharm(ops.CharmBase):
                 )
             else:
                 logger.debug("no status change based on prerequisites")
+                e.add_status(ops.ActiveStatus())
 
     def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
         """Database is ready.
