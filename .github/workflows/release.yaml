@@ -34,7 +34,7 @@ jobs:
     name: Release MAAS Region charm to edge
     needs: detect-region-changes
     if: needs.detect-region-changes.outputs.any_changed == 'true'
-uses: canonical/operator-workflows/.github/workflows/publish_charm.yaml@main
+    uses: canonical/operator-workflows/.github/workflows/publish_charm.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f
     permissions:
       contents: write
       packages: write

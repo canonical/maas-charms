@@ -8,7 +8,7 @@ on:
 jobs:
   update-lib-region:
     name: Check libraries
-uses: canonical/operator-workflows/.github/workflows/auto_update_charm_libs.yaml@main
+    uses: canonical/operator-workflows/.github/workflows/auto_update_charm_libs.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f
     permissions:
       id-token: write
       pull-requests: write
