@@ -17,10 +17,31 @@ on:
           - candidate -> stable
 
 jobs:
+  parse-promotion:
+    name: Parse promotion channels
+    runs-on: ubuntu-latest
+    outputs:
+      origin: ${{ steps.parse.outputs.origin }}
+      destination: ${{ steps.parse.outputs.destination }}
+    steps:
+      - id: parse
+        run: |
+          PROMO="${{ github.event.inputs.promotion }}"
+          ORIGIN="latest/$(echo $PROMO | cut -d' ' -f1)"
+          DEST="latest/$(echo $PROMO | cut -d' ' -f3)"
+          echo "origin=$ORIGIN" >> $GITHUB_OUTPUT
+          echo "destination=$DEST" >> $GITHUB_OUTPUT
+
   promote:
     name: Promote
-    uses: canonical/observability/.github/workflows/charm-promote.yaml@1ec946694be5bfc972aa36d2cde6d4c339bac110 # Branch v0
+needs: parse-promotion
+    uses: canonical/operator-workflows/.github/workflows/promote_charm.yaml@main
+    permissions:
+      contents: write
+    secrets:
+      CHARMHUB_TOKEN: ${{ secrets.CHARMHUB_TOKEN }}
     with:
-      charm-path: ${{ github.event.inputs.charm }}
-      promotion: ${{ github.event.inputs.promotion }}
-    secrets: inherit
+      working-directory: ${{ github.event.inputs.charm }}
+      tag-prefix: ${{ github.event.inputs.charm }}
+      origin-channel: ${{ needs.parse-promotion.outputs.origin }}
+      destination-channel: ${{ needs.parse-promotion.outputs.destination }}
