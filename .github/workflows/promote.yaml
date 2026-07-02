@@ -40,7 +40,7 @@ jobs:
   promote:
     name: Promote
     needs: parse-promotion
-    uses: canonical/operator-workflows/.github/workflows/promote_charm.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f
+    uses: canonical/operator-workflows/.github/workflows/promote_charm.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f # main as of 2026-07-01
     permissions:
       contents: write
     secrets:

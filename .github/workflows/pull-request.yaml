@@ -9,7 +9,7 @@ on:
 jobs:
 quality-checks:
     name: Quality Checks
-    uses: canonical/operator-workflows/.github/workflows/test.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f
+    uses: canonical/operator-workflows/.github/workflows/test.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f # main as of 2026-07-01
     permissions:
       contents: read
       pull-requests: write
@@ -21,7 +21,7 @@ quality-checks:
 
   integration-tests:
     name: Integration Tests
-    uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f
+    uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f # main as of 2026-07-01
     permissions:
       contents: read
       packages: write
