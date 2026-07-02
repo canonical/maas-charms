@@ -25,7 +25,7 @@ tox run -e static-charm  # type checking for the charm source
 tox run -e static-lib    # no-op, usually type checking for charm libraries
 tox run -e unit          # unit tests
 tox run -e integration   # integration tests
-tox                      # runs 'format', 'lint', and 'unit' environments
+tox                      # runs 'format', 'lint', 'static-charm', 'static-lib', 'unit', and 'scenario' environments
 ```
 
 ## Build the charm
