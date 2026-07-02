@@ -33,7 +33,7 @@ from botocore.regions import EndpointResolver
 from charms.data_platform_libs.v0.s3 import CredentialsChangedEvent, S3Requirer
 from ops.charm import ActionEvent
 from ops.framework import Object
-from ops.model import ActiveStatus, MaintenanceStatus
+from ops.model import MaintenanceStatus
 
 from helper import MaasHelper
 
@@ -482,7 +482,10 @@ class MAASBackups(Object):
             return
 
     def _on_s3_credential_gone(self, event) -> None:
-        if self.charm.is_blocked:
+        if (
+            self.charm.is_blocked
+            and self.charm.unit.status.message in S3_BLOCK_MESSAGES
+        ):
             self.charm.set_peer_data(self.charm.app, S3_CONFIGURATION_BLOCKED_KEY, "")
 
     def _on_create_backup_action(self, event) -> None:
@@ -743,8 +746,6 @@ Juju Version: {self.charm.model.juju_version!s}
         )
 
         event.log("Region restore complete")
-
-        self.charm.unit.status = ActiveStatus()
         event.set_results({"restore-status": "restore finished"})
 
     def _run_restore(
