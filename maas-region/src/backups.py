@@ -33,7 +33,7 @@ from botocore.regions import EndpointResolver
 from charms.data_platform_libs.v0.s3 import CredentialsChangedEvent, S3Requirer
 from ops.charm import ActionEvent
 from ops.framework import Object
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+from ops.model import MaintenanceStatus
 
 from helper import MaasHelper
 
@@ -52,7 +52,7 @@ SNAP_PATH_TO_PRESEEDS = "/var/snap/maas/current/preseeds"
 METADATA_PATH = "backup/latest"
 REFER_TO_DEBUG_LOG = " Please check the juju debug-log for more details."
 MAAS_REGION_RELATION = "maas-cluster"
-
+S3_CONFIGURATION_BLOCKED_KEY = "s3-configuration-blocked-message"
 # filenames
 MODEL_UUID_FILENAME = "model-uuid.txt"
 METADATA_FILENAME = "backup_metadata.json"
@@ -465,6 +465,8 @@ class MAASBackups(Object):
         if not self.charm.unit.is_leader():
             return
 
+        self.charm.set_peer_data(self.charm.app, S3_CONFIGURATION_BLOCKED_KEY, "")
+
         s3_parameters, _ = self._retrieve_s3_parameters()
         if not s3_parameters:
             return
@@ -472,14 +474,19 @@ class MAASBackups(Object):
         try:
             self._create_bucket_if_not_exists(s3_parameters)
         except (ClientError, ValueError, ParamValidationError, SSLError):
-            self.charm.unit.status = BlockedStatus(FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE)
+            self.charm.set_peer_data(
+                self.charm.app,
+                S3_CONFIGURATION_BLOCKED_KEY,
+                FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
+            )
             return
 
-        self.charm.unit.status = ActiveStatus()
-
     def _on_s3_credential_gone(self, event) -> None:
-        if self.charm.is_blocked and self.charm.unit.status.message in S3_BLOCK_MESSAGES:
-            self.charm.unit.status = ActiveStatus()
+        if (
+            self.charm.is_blocked
+            and self.charm.unit.status.message in S3_BLOCK_MESSAGES
+        ):
+            self.charm.set_peer_data(self.charm.app, S3_CONFIGURATION_BLOCKED_KEY, "")
 
     def _on_create_backup_action(self, event) -> None:
         can_unit_perform_backup, validation_message = self._can_unit_perform_backup()
@@ -513,8 +520,6 @@ Juju Version: {self.charm.model.juju_version!s}
         self.charm.unit.status = MaintenanceStatus("creating backup")
 
         self._run_backup(event, s3_parameters)
-
-        self.charm.unit.status = ActiveStatus()
 
     def _run_backup(
         self,
@@ -741,8 +746,6 @@ Juju Version: {self.charm.model.juju_version!s}
         )
 
         event.log("Region restore complete")
-
-        self.charm.unit.status = ActiveStatus()
         event.set_results({"restore-status": "restore finished"})
 
     def _run_restore(

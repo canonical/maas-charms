@@ -26,7 +26,7 @@ from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, cha
 from ops.model import SecretNotFoundError
 from pydantic import IPvAnyAddress
 
-from backups import MAASBackups
+from backups import S3_CONFIGURATION_BLOCKED_KEY, MAASBackups
 from helper import MaasHelper
 
 logger = logging.getLogger(__name__)
@@ -686,6 +686,12 @@ class MaasRegionCharm(ops.CharmBase):
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
         if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
             e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
+        elif (
+            # If the S3 configuration is marked as blocked in the application data bag,
+            # mark the leader as blocked.
+            blocked_msg := self.get_peer_data(self.app, S3_CONFIGURATION_BLOCKED_KEY)
+        ) and self.unit.is_leader():
+            e.add_status(ops.BlockedStatus(blocked_msg))
         elif not self.unit.opened_ports().issuperset(MAAS_REGION_PORTS):
             e.add_status(ops.WaitingStatus("Waiting for service ports"))
         elif not self.connection_string:
@@ -745,6 +751,7 @@ class MaasRegionCharm(ops.CharmBase):
                 )
             else:
                 logger.debug("no status change based on prerequisites")
+                e.add_status(ops.ActiveStatus())
 
     def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
         """Database is ready.
