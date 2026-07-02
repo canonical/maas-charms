@@ -43,9 +43,6 @@ BACKUP_ID_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE = (
     "failed to access/create the bucket, check your S3 settings"
 )
-S3_BLOCK_MESSAGES = [
-    FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
-]
 SNAP_PATH_TO_IDS = "/var/snap/maas/common/maas/maas_id"
 SNAP_PATH_TO_IMAGES = "/var/snap/maas/common/maas/image-storage"
 SNAP_PATH_TO_PRESEEDS = "/var/snap/maas/current/preseeds"
@@ -482,10 +479,10 @@ class MAASBackups(Object):
             return
 
     def _on_s3_credential_gone(self, event) -> None:
-        if (
-            self.charm.is_blocked
-            and self.charm.unit.status.message in S3_BLOCK_MESSAGES
-        ):
+        if not self.charm.unit.is_leader():
+            return
+
+        if self.charm.get_peer_data(self.charm.app, S3_CONFIGURATION_BLOCKED_KEY):
             self.charm.set_peer_data(self.charm.app, S3_CONFIGURATION_BLOCKED_KEY, "")
 
     def _on_create_backup_action(self, event) -> None:
