@@ -518,8 +518,6 @@ Juju Version: {self.charm.model.juju_version!s}
 
         self._run_backup(event, s3_parameters)
 
-        self.charm.unit.status = ActiveStatus()
-
     def _run_backup(
         self,
         event: ActionEvent,
