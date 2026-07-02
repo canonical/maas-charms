@@ -26,6 +26,8 @@ jobs:
       - name: Echo changed files
         id: echo-changes
         run: |
+          echo "Changes made: ${{ steps.changed-files.outputs.any_changed }}"
+          echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
           echo "any_changed=${{ steps.changed-files.outputs.any_changed }}" >> $GITHUB_OUTPUT
 
   release-region:
