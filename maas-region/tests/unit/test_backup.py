@@ -575,7 +575,7 @@ backup-id            | action      | status   | maas     | size       | controll
         }
         create_bucket.side_effect = ValueError()
         self.harness.begin()
-        # self.harness.add_relation(MAAS_REGION_RELATION, "maas-region")
+        self.harness.add_relation(MAAS_REGION_RELATION, "maas-region")
         self.harness.set_leader(True)
         self.harness.add_relation("s3-parameters", "s3-integrator", app_data=s3_parameters_dict)
         s3_parameters_dict["delete-older-than-days"] = 9999999
@@ -616,6 +616,23 @@ backup-id            | action      | status   | maas     | size       | controll
         self.harness.remove_relation(rel)
         self.assertFalse(
             self.harness.charm.get_peer_data(self.harness.charm.app, S3_CONFIGURATION_BLOCKED_KEY)
+        )
+        self.harness.evaluate_status()
+        self.assertEqual(self.harness.charm.unit.status, ops.ActiveStatus())
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_collect_status_s3_blocked_ignored_for_non_leader(self, mock_helper):
+        self._satisfy_status_ladder(mock_helper)
+        self.harness.add_relation(MAAS_REGION_RELATION, "maas-region")
+        self.harness.set_leader(False)
+        self.harness.begin()
+        self.harness.charm._setup_network()
+        app_name = self.harness.charm.app.name
+        # Simulate a blocked message in the data bag
+        self.harness.update_relation_data(
+            self.harness.charm.peers.id,
+            app_name,
+            {S3_CONFIGURATION_BLOCKED_KEY: '"some message"'},
         )
         self.harness.evaluate_status()
         self.assertEqual(self.harness.charm.unit.status, ops.ActiveStatus())
