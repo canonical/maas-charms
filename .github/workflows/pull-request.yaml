@@ -18,6 +18,7 @@ quality-checks:
       working-directory: maas-region
       with-uv: true
       require-check-lib: false
+      python-version: "3.14"
 
   integration-tests:
     name: Integration Tests
@@ -32,3 +33,4 @@ quality-checks:
       juju-channel: 3.6/stable
       with-uv: true
       charmcraft-channel: latest/stable
+      python-version: "3.14"
