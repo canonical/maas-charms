@@ -516,7 +516,6 @@ class MaasRegionCharm(ops.CharmBase):
                     self.config["enable_prometheus_metrics"],  # type: ignore
                     str(self.config["ssl_cacert_content"]),
                 )
-            self.unit.status = ops.ActiveStatus()
             return True
         except subprocess.CalledProcessError:
             return False
@@ -552,7 +551,8 @@ class MaasRegionCharm(ops.CharmBase):
         """Configure the two HAProxy relations.
 
         Provides the MAAS Region IP addresses to each HAProxy relation.
-        Sets the unit to an active status if we have a valid relation/configuration topology.
+        Status setting is left to `_on_collect_status`, which evaluates the
+        relation/configuration topology.
 
         Returns:
             None
@@ -592,8 +592,6 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
         if not self.unit.is_leader():
-            if unit_valid:
-                self.unit.status = ops.ActiveStatus()
             return
 
         haproxy_relations = [
@@ -609,9 +607,6 @@ class MaasRegionCharm(ops.CharmBase):
                 else:
                     rel.configure_hosts()
                 rel.update_relation_data()
-
-        if unit_valid:
-            self.unit.status = ops.ActiveStatus()
 
     def _reconcile_ha_proxy_and_initialise(self, event: ops.EventBase) -> None:
         self._reconcile_ha_proxy(event)
