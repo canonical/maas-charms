@@ -5,6 +5,7 @@
 
 import json
 import logging
+import platform
 import subprocess
 import tempfile
 from os import remove
@@ -35,12 +36,40 @@ class MaasHelper:
     """MAAS helper."""
 
     @staticmethod
+    def _daemon_reload_for_resolute() -> None:
+        """Workaround for snap install failures on Ubuntu 26.04+ (Resolute).
+
+        Juju's remove-juju-services script placed at /sbin/remove-juju-services
+        prevents the /sbin -> /usr/sbin symlink from being created, causing
+        snapd to fail when trying to mount snap units. Running systemctl
+        daemon-reload before snap operations works around this by letting
+        systemd re-read unit files and recover from the broken state.
+
+        See: https://github.com/juju/juju/issues/22713
+        """
+        try:
+            os_release = platform.freedesktop_os_release()
+            if os_release.get("ID") != "ubuntu":
+                return
+            version = os_release.get("VERSION_ID", "")
+            if not version.startswith("26.04"):
+                return
+            subprocess.run(
+                ["systemctl", "daemon-reload"],
+                capture_output=True,
+                check=False,
+            )
+        except Exception:
+            logger.debug("Failed to run daemon-reload workaround", exc_info=True)
+
+    @staticmethod
     def install(channel: str) -> None:
         """Install snap.
 
         Args:
             channel (str): snapstore channel
         """
+        MaasHelper._daemon_reload_for_resolute()
         maas = SnapCache()[MAAS_SNAP_NAME]
         if not maas.present:
             maas.ensure(SnapState.Latest, channel=channel)
