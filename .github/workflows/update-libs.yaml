@@ -9,7 +9,7 @@ on:
 jobs:
   update-lib-region:
     name: Check libraries
-    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@c8b90c2e6dea32e59a5deb089c3e76565bdee8b3 # Branch v0
+    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@1ec946694be5bfc972aa36d2cde6d4c339bac110 # Branch v0
     permissions:
       contents: write
       pull-requests: write
