@@ -14,7 +14,7 @@ from os import remove
 from pathlib import Path
 
 import yaml
-from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
+from charms.operator_libs_linux.v2.snap import SnapCache, SnapError, SnapState
 from tenacity import retry, stop_after_delay, wait_fixed
 
 MAAS_SNAP_NAME = "maas"
@@ -98,7 +98,19 @@ class MaasHelper:
         MaasHelper._fix_sbin_for_resolute()
         maas = SnapCache()[MAAS_SNAP_NAME]
         if not maas.present:
-            maas.ensure(SnapState.Latest, channel=channel)
+            try:
+                maas.ensure(SnapState.Latest, channel=channel)
+            except SnapError:
+                # The snap install may have failed due to stale snapd mount
+                # units. Run daemon-reload and retry once.
+                logger.info("Retrying snap installation after daemon-reload")
+                subprocess.run(
+                    ["systemctl", "daemon-reload"],
+                    capture_output=True,
+                    check=False,
+                )
+                maas = SnapCache()[MAAS_SNAP_NAME]
+                maas.ensure(SnapState.Latest, channel=channel)
             maas.hold()
 
     @staticmethod
