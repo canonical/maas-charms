@@ -42,10 +42,11 @@ class MaasHelper:
         """Workaround for snap install failures on Ubuntu 26.04+ (Resolute).
 
         Juju 3.6 places a remove-juju-services script at /sbin/remove-juju-services,
-        blocking the /sbin -> /usr/sbin merged-usr symlink. This causes snapd mount
-        operations to fail. We fix by moving the script to /usr/sbin/, restoring the
-        symlink, and restarting snapd so mount units are re-read against the correct
-        filesystem layout.
+        which forces /sbin to be a real directory instead of the /sbin -> /usr/sbin
+        merged-usr symlink that Ubuntu 26.04 expects. This breaks snapd, which looks
+        for mount helpers (mount.fuse, mount.fuse3) in /sbin. We move every entry in
+        /sbin into /usr/sbin, replace /sbin with the expected symlink, and restart
+        snapd so it re-reads its mount units against the corrected layout.
 
         See: https://github.com/juju/juju/issues/22713
         """
@@ -59,20 +60,25 @@ class MaasHelper:
 
             sbin = Path("/sbin")
             usr_sbin = Path("/usr/sbin")
-            remove_script = sbin / "remove-juju-services"
-            target = usr_sbin / "remove-juju-services"
 
-            if not remove_script.exists() and not sbin.exists():
-                return
-
+            # Already the expected merged-usr symlink, nothing to do.
             if sbin.is_symlink():
                 return
+            if not sbin.is_dir():
+                return
 
-            logger.info("Fixing /sbin -> /usr/sbin symlink for Resolute compatibility")
-            if remove_script.exists():
-                shutil.move(str(remove_script), str(target))
-            if sbin.exists():
-                os.remove(sbin)
+            logger.warning("Restoring /sbin -> /usr/sbin symlink for Resolute (juju#22713)")
+
+            # Move every entry in the real /sbin directory into /usr/sbin so that
+            # nothing is lost when we replace /sbin with a symlink.
+            for entry in sbin.iterdir():
+                dest = usr_sbin / entry.name
+                if dest.exists():
+                    os.remove(entry)
+                else:
+                    shutil.move(str(entry), str(dest))
+
+            os.rmdir(sbin)
             sbin.symlink_to("/usr/sbin")
 
             subprocess.run(
@@ -86,7 +92,7 @@ class MaasHelper:
                 check=False,
             )
         except Exception:
-            logger.debug("Failed to fix /sbin symlink", exc_info=True)
+            logger.warning("Failed to restore /sbin symlink", exc_info=True)
 
     @staticmethod
     def install(channel: str) -> None:
