@@ -38,13 +38,14 @@ class MaasHelper:
     """MAAS helper."""
 
     @staticmethod
-    def _fix_sbin_symlink_for_resolute() -> None:
+    def _fix_sbin_for_resolute() -> None:
         """Workaround for snap install failures on Ubuntu 26.04+ (Resolute).
 
         Juju 3.6 places a remove-juju-services script at /sbin/remove-juju-services,
-        which blocks the /sbin -> /usr/sbin merged-usr symlink from being created.
-        This causes snapd mount operations to fail. We fix this by moving the script
-        to /usr/sbin/ and re-creating the symlink.
+        blocking the /sbin -> /usr/sbin merged-usr symlink. This causes snapd mount
+        operations to fail. We fix by moving the script to /usr/sbin/, restoring the
+        symlink, and restarting snapd so mount units are re-read against the correct
+        filesystem layout.
 
         See: https://github.com/juju/juju/issues/22713
         """
@@ -61,18 +62,26 @@ class MaasHelper:
             remove_script = sbin / "remove-juju-services"
             target = usr_sbin / "remove-juju-services"
 
-            if not remove_script.exists():
+            if not remove_script.exists() and not sbin.exists():
                 return
 
             if sbin.is_symlink():
                 return
 
             logger.info("Fixing /sbin -> /usr/sbin symlink for Resolute compatibility")
-            shutil.move(str(remove_script), str(target))
-            os.remove(sbin)
+            if remove_script.exists():
+                shutil.move(str(remove_script), str(target))
+            if sbin.exists():
+                os.remove(sbin)
             sbin.symlink_to("/usr/sbin")
+
             subprocess.run(
                 ["systemctl", "daemon-reload"],
+                capture_output=True,
+                check=False,
+            )
+            subprocess.run(
+                ["systemctl", "restart", "snapd.service", "snapd.socket"],
                 capture_output=True,
                 check=False,
             )
@@ -86,7 +95,7 @@ class MaasHelper:
         Args:
             channel (str): snapstore channel
         """
-        MaasHelper._fix_sbin_symlink_for_resolute()
+        MaasHelper._fix_sbin_for_resolute()
         maas = SnapCache()[MAAS_SNAP_NAME]
         if not maas.present:
             maas.ensure(SnapState.Latest, channel=channel)
