@@ -5,7 +5,9 @@
 
 import json
 import logging
+import os
 import platform
+import shutil
 import subprocess
 import tempfile
 from os import remove
@@ -36,14 +38,13 @@ class MaasHelper:
     """MAAS helper."""
 
     @staticmethod
-    def _daemon_reload_for_resolute() -> None:
+    def _fix_sbin_symlink_for_resolute() -> None:
         """Workaround for snap install failures on Ubuntu 26.04+ (Resolute).
 
-        Juju's remove-juju-services script placed at /sbin/remove-juju-services
-        prevents the /sbin -> /usr/sbin symlink from being created, causing
-        snapd to fail when trying to mount snap units. Running systemctl
-        daemon-reload before snap operations works around this by letting
-        systemd re-read unit files and recover from the broken state.
+        Juju 3.6 places a remove-juju-services script at /sbin/remove-juju-services,
+        which blocks the /sbin -> /usr/sbin merged-usr symlink from being created.
+        This causes snapd mount operations to fail. We fix this by moving the script
+        to /usr/sbin/ and re-creating the symlink.
 
         See: https://github.com/juju/juju/issues/22713
         """
@@ -54,13 +55,29 @@ class MaasHelper:
             version = os_release.get("VERSION_ID", "")
             if not version.startswith("26.04"):
                 return
+
+            sbin = Path("/sbin")
+            usr_sbin = Path("/usr/sbin")
+            remove_script = sbin / "remove-juju-services"
+            target = usr_sbin / "remove-juju-services"
+
+            if not remove_script.exists():
+                return
+
+            if sbin.is_symlink():
+                return
+
+            logger.info("Fixing /sbin -> /usr/sbin symlink for Resolute compatibility")
+            shutil.move(str(remove_script), str(target))
+            os.remove(sbin)
+            sbin.symlink_to("/usr/sbin")
             subprocess.run(
                 ["systemctl", "daemon-reload"],
                 capture_output=True,
                 check=False,
             )
         except Exception:
-            logger.debug("Failed to run daemon-reload workaround", exc_info=True)
+            logger.debug("Failed to fix /sbin symlink", exc_info=True)
 
     @staticmethod
     def install(channel: str) -> None:
@@ -69,7 +86,7 @@ class MaasHelper:
         Args:
             channel (str): snapstore channel
         """
-        MaasHelper._daemon_reload_for_resolute()
+        MaasHelper._fix_sbin_symlink_for_resolute()
         maas = SnapCache()[MAAS_SNAP_NAME]
         if not maas.present:
             maas.ensure(SnapState.Latest, channel=channel)
