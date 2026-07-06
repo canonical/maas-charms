@@ -13,7 +13,7 @@ certifi==2026.5.20
     # via requests
 charset-normalizer==3.4.7
     # via requests
-cosl==1.9.1
+cosl==1.9.2
     # via -r requirements.in
 googleapis-common-protos==1.75.0
     # via opentelemetry-exporter-otlp-proto-http
