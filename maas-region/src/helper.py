@@ -5,13 +5,16 @@
 
 import json
 import logging
+import os
+import platform
+import shutil
 import subprocess
 import tempfile
 from os import remove
 from pathlib import Path
 
 import yaml
-from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
+from charms.operator_libs_linux.v2.snap import SnapCache, SnapError, SnapState
 from tenacity import retry, stop_after_delay, wait_fixed
 
 MAAS_SNAP_NAME = "maas"
@@ -35,15 +38,85 @@ class MaasHelper:
     """MAAS helper."""
 
     @staticmethod
+    def _fix_sbin_for_resolute() -> None:
+        """Workaround for snap install failures on Ubuntu 26.04+ (Resolute).
+
+        Juju 3.6 places a remove-juju-services script at /sbin/remove-juju-services,
+        which forces /sbin to be a real directory instead of the /sbin -> /usr/sbin
+        merged-usr symlink that Ubuntu 26.04 expects. This breaks snapd, which looks
+        for mount helpers (mount.fuse, mount.fuse3) in /sbin. We move every entry in
+        /sbin into /usr/sbin, replace /sbin with the expected symlink, and restart
+        snapd so it re-reads its mount units against the corrected layout.
+
+        See: https://github.com/juju/juju/issues/22713
+        """
+        try:
+            os_release = platform.freedesktop_os_release()
+            if os_release.get("ID") != "ubuntu":
+                return
+            version = os_release.get("VERSION_ID", "")
+            if not version.startswith("26.04"):
+                return
+
+            sbin = Path("/sbin")
+            usr_sbin = Path("/usr/sbin")
+
+            # Already the expected merged-usr symlink, nothing to do.
+            if sbin.is_symlink():
+                return
+            if not sbin.is_dir():
+                return
+
+            logger.warning("Restoring /sbin -> /usr/sbin symlink for Resolute (juju#22713)")
+
+            # Move every entry in the real /sbin directory into /usr/sbin so that
+            # nothing is lost when we replace /sbin with a symlink.
+            for entry in sbin.iterdir():
+                dest = usr_sbin / entry.name
+                if dest.exists():
+                    os.remove(entry)
+                else:
+                    shutil.move(str(entry), str(dest))
+
+            os.rmdir(sbin)
+            sbin.symlink_to("/usr/sbin")
+
+            subprocess.run(
+                ["systemctl", "daemon-reload"],
+                capture_output=True,
+                check=False,
+            )
+            subprocess.run(
+                ["systemctl", "restart", "snapd.service", "snapd.socket"],
+                capture_output=True,
+                check=False,
+            )
+        except Exception:
+            logger.warning("Failed to restore /sbin symlink", exc_info=True)
+
+    @staticmethod
     def install(channel: str) -> None:
         """Install snap.
 
         Args:
             channel (str): snapstore channel
         """
+        MaasHelper._fix_sbin_for_resolute()
         maas = SnapCache()[MAAS_SNAP_NAME]
         if not maas.present:
-            maas.ensure(SnapState.Latest, channel=channel)
+            try:
+                maas.ensure(SnapState.Latest, channel=channel)
+            except SnapError:
+                # The snap install may have failed due to stale snapd mount
+                # units. Run daemon-reload and retry once.
+                logger.info("Retrying snap installation after daemon-reload")
+                subprocess.run(
+                    ["systemctl", "daemon-reload"],
+                    capture_output=True,
+                    check=False,
+                )
+                maas = SnapCache()[MAAS_SNAP_NAME]
+                maas.ensure(SnapState.Latest, channel=channel)
             maas.hold()
 
     @staticmethod
