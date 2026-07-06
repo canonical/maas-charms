@@ -518,7 +518,7 @@ backup-id            | action      | status   | maas     | size       | controll
             "delete-older-than-days": "9999999",
         }
         read_content.return_value = None
-        # self.harness.add_relation(MAAS_REGION_RELATION, "maas-region")
+        self.harness.add_relation(MAAS_REGION_RELATION, "maas-region")
         self.harness.set_leader(True)
         self.harness.begin()
         self.harness.charm._setup_network()
