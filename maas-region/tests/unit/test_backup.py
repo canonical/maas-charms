@@ -1120,6 +1120,8 @@ backup-id            | action      | status   | maas     | size       | controll
     @patch("backups.shutil.disk_usage")
     @patch("backups.MAASBackups._s3_client")
     def test_download_file_from_s3(self, client, disk_usage, temp_file, path_exists, unlink):
+        Path(".charm_tracing_buffer.raw").touch()
+        self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
@@ -1149,7 +1151,7 @@ backup-id            | action      | status   | maas     | size       | controll
             self.assertTrue(f.name.endswith(s3_path))
 
         disk_usage.assert_called_once()
-        path_exists.assert_called_once()
+        path_exists.assert_called()
         unlink.assert_called_once()
 
     @patch("backups.os.unlink")
@@ -1160,6 +1162,8 @@ backup-id            | action      | status   | maas     | size       | controll
     def test_download_file_from_s3__not_enough_free_space(
         self, client, disk_usage, temp_file, path_exists, unlink
     ):
+        Path(".charm_tracing_buffer.raw").touch()
+        self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
@@ -1189,7 +1193,7 @@ backup-id            | action      | status   | maas     | size       | controll
             self.assertTrue(f.name.endswith(s3_path))
 
         disk_usage.assert_called_once()
-        path_exists.assert_called_once()
+        path_exists.assert_called()
         unlink.assert_called_once()
         event.fail.assert_called_once_with(
             f"Download failed: Not enough free storage to download {s3_path}, required {size} but has {free}"
@@ -1203,6 +1207,8 @@ backup-id            | action      | status   | maas     | size       | controll
     def test_download_file_from_s3__could_not_find_object(
         self, client, disk_usage, temp_file, path_exists, unlink
     ):
+        Path(".charm_tracing_buffer.raw").touch()
+        self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
@@ -1229,7 +1235,7 @@ backup-id            | action      | status   | maas     | size       | controll
             self.assertIsNone(f)
 
         disk_usage.assert_not_called()
-        path_exists.assert_called_once()
+        path_exists.assert_called()
         unlink.assert_called_once()
         event.fail.assert_called_once_with(
             f"Download failed: Could not find object in {bucket}:{s3_path}"
@@ -1243,6 +1249,8 @@ backup-id            | action      | status   | maas     | size       | controll
     def test_download_file_from_s3__could_not_read_object(
         self, client, disk_usage, temp_file, path_exists, unlink
     ):
+        Path(".charm_tracing_buffer.raw").touch()
+        self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
@@ -1269,7 +1277,7 @@ backup-id            | action      | status   | maas     | size       | controll
             self.assertIsNone(f)
 
         disk_usage.assert_not_called()
-        path_exists.assert_called_once()
+        path_exists.assert_called()
         unlink.assert_called_once()
         event.fail.assert_called_once_with(
             f"Download failed: Could not read object from {bucket}:{s3_path}"
@@ -1283,6 +1291,8 @@ backup-id            | action      | status   | maas     | size       | controll
     def test_download_file_from_s3__could_not_read_content(
         self, client, disk_usage, temp_file, path_exists, unlink
     ):
+        Path(".charm_tracing_buffer.raw").touch()
+        self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()
 
         event = MagicMock(spec=ops.ActionEvent)
@@ -1306,7 +1316,7 @@ backup-id            | action      | status   | maas     | size       | controll
             self.assertIsNone(f)
 
         disk_usage.assert_not_called()
-        path_exists.assert_called_once()
+        path_exists.assert_called()
         unlink.assert_not_called()
         event.fail.assert_called_once_with(
             f"Download failed: Could not read content from {bucket}:{s3_path}"

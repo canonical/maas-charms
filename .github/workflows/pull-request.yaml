@@ -19,7 +19,7 @@ jobs:
     with:
       charm-path: maas-region
       juju-channel: 3.6/stable
-      python-version: "3.10"
+      python-version: "3.14"
       provider: lxd
       charmcraft-channel: latest/stable
       check-library-labels: false
