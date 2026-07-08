@@ -29,7 +29,7 @@ lint = [
   "pyproject-fmt",
   "pyright",
   "ruff",
-  "toml-fmt-common<1.3.3",
+  "toml-fmt-common<1.3.6",
   "tox-ini-fmt",
 ]
 scenario = [
