@@ -9,8 +9,12 @@ header:
       Copyright \d{4} Canonical( Ltd\.)?
       See LICENSE file for licensing details\.
 
+  paths:
+    - 'maas-region/**'
+
   paths-ignore:
     - '.git/**'
+    - '.github/**'
     - '**/.gitkeep'
     - '**/*.md'
     - '**/*.svg'
@@ -26,7 +30,7 @@ header:
     - '**/.mypy_cache/**'
     - '**/.pytest_cache/**'
     - '**/.ruff_cache/**'
-    - 'lib/charms/**'
+    - 'maas-region/lib/charms/**'
 
   comment: on-failure
 
