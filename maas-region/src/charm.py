@@ -745,7 +745,6 @@ class MaasRegionCharm(ops.CharmBase):
                     )
                 )
             else:
-                logger.debug("no status change based on prerequisites")
                 e.add_status(ops.ActiveStatus())
 
     def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
