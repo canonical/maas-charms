@@ -3,11 +3,6 @@ name: Promote Charm
 on:
   workflow_dispatch:
     inputs:
-      charm:
-        type: choice
-        description: Charm to promote
-        options:
-          - maas-region
       track:
         type: string
         description: Charmhub track (e.g. latest, 3.8)
@@ -46,7 +41,7 @@ jobs:
     secrets:
       CHARMHUB_TOKEN: ${{ secrets.CHARMHUB_TOKEN }}
     with:
-      working-directory: ${{ github.event.inputs.charm }}
-      tag-prefix: ${{ github.event.inputs.charm }}
+      working-directory: maas-region
+      tag-prefix: maas-region
       origin-channel: ${{ needs.parse-promotion.outputs.origin }}
       destination-channel: ${{ needs.parse-promotion.outputs.destination }}
