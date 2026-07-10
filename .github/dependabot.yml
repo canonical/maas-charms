@@ -1,8 +1,0 @@
-version: 2
-updates:
-  - package-ecosystem: "uv"
-    directory: "/maas-region"
-    schedule:
-      interval: "weekly"
-    labels:
-      - "dependencies"

@@ -4,7 +4,7 @@
     "config:recommended"
   ],
   "ignoreDeps": [
-    "canonical/observability",
+    "canonical/operator-workflows",
     "tj-actions/changed-files"
   ],
   "packageRules": [
