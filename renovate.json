@@ -1,0 +1,17 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "schedule": ["every week"],
+  "ignoreDeps": [
+    "canonical/operator-workflows",
+    "tj-actions/changed-files"
+  ],
+  "packageRules": [
+    {
+      "groupName": "weekly dependencies",
+      "matchPackageNames": ["*"]
+    }
+  ]
+}
