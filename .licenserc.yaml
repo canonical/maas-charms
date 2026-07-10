@@ -1,0 +1,41 @@
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+header:
+  license:
+    spdx-id: GPL-3.0-only
+    copyright-owner: Canonical Ltd.
+    content: |
+      Copyright {year} Canonical Ltd.
+      See LICENSE file for licensing details.
+    pattern: |
+      Copyright \d{4}(-\d{4})? Canonical( Ltd\.)?
+      See LICENSE file for licensing details\.
+
+  paths:
+    - 'maas-region/**'
+
+  paths-ignore:
+    - '.git/**'
+    - '.github/**'
+    - '**/.gitkeep'
+    - '**/*.md'
+    - '**/*.svg'
+    - '**/uv.lock'
+    - '**/LICENSE'
+    - '**/__pycache__/**'
+    - '**/*.pyc'
+    - '**/.tox/**'
+    - '**/.venv/**'
+    - '**/build/**'
+    - '**/dist/**'
+    - '**/*.egg-info/**'
+    - '**/.mypy_cache/**'
+    - '**/.pytest_cache/**'
+    - '**/.ruff_cache/**'
+    - 'maas-region/lib/charms/**'
+    - '**/.licenserc.yaml'
+
+  comment: on-failure
+
+  license-location-threshold: 80

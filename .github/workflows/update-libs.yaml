@@ -1,4 +1,5 @@
 name: Auto-update Charm Libraries
+
 on:
   # Manual trigger
   workflow_dispatch:
@@ -9,13 +10,11 @@ on:
 jobs:
   update-lib-region:
     name: Check libraries
-    uses: canonical/observability/.github/workflows/charm-update-libs.yaml@1ec946694be5bfc972aa36d2cde6d4c339bac110 # Branch v0
+    uses: canonical/operator-workflows/.github/workflows/auto_update_charm_libs.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f # main as of 2026-07-01
     permissions:
-      contents: write
+      id-token: write
       pull-requests: write
+      contents: write
     secrets: inherit
     with:
-      charm-path: maas-region
-      commit-username: maas-lander
-      commit-email: 115650013+maas-lander@users.noreply.github.com
-      charmcraft-channel: latest/stable
+      working-directory: maas-region

@@ -1,4 +1,4 @@
-# Copyright 2025 Canonical
+# Copyright 2025-2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
@@ -1120,6 +1120,10 @@ backup-id            | action      | status   | maas     | size       | controll
     @patch("backups.shutil.disk_usage")
     @patch("backups.MAASBackups._s3_client")
     def test_download_file_from_s3(self, client, disk_usage, temp_file, path_exists, unlink):
+        # Python 3.14 reworked pathlib: Path.exists() calls os.path.exists()
+        # which is mocked globally via @patch("backups.os.path.exists"). The
+        # default truthy MagicMock prevents short-circuit in is_empty, causing
+        # stat() to FileNotFoundError. Ensure the real file exists first.
         Path(".charm_tracing_buffer.raw").touch()
         self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()
@@ -1162,6 +1166,10 @@ backup-id            | action      | status   | maas     | size       | controll
     def test_download_file_from_s3__not_enough_free_space(
         self, client, disk_usage, temp_file, path_exists, unlink
     ):
+        # Python 3.14 reworked pathlib: Path.exists() calls os.path.exists()
+        # which is mocked globally via @patch("backups.os.path.exists"). The
+        # default truthy MagicMock prevents short-circuit in is_empty, causing
+        # stat() to FileNotFoundError. Ensure the real file exists first.
         Path(".charm_tracing_buffer.raw").touch()
         self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()
@@ -1207,6 +1215,10 @@ backup-id            | action      | status   | maas     | size       | controll
     def test_download_file_from_s3__could_not_find_object(
         self, client, disk_usage, temp_file, path_exists, unlink
     ):
+        # Python 3.14 reworked pathlib: Path.exists() calls os.path.exists()
+        # which is mocked globally via @patch("backups.os.path.exists"). The
+        # default truthy MagicMock prevents short-circuit in is_empty, causing
+        # stat() to FileNotFoundError. Ensure the real file exists first.
         Path(".charm_tracing_buffer.raw").touch()
         self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()
@@ -1249,6 +1261,10 @@ backup-id            | action      | status   | maas     | size       | controll
     def test_download_file_from_s3__could_not_read_object(
         self, client, disk_usage, temp_file, path_exists, unlink
     ):
+        # Python 3.14 reworked pathlib: Path.exists() calls os.path.exists()
+        # which is mocked globally via @patch("backups.os.path.exists"). The
+        # default truthy MagicMock prevents short-circuit in is_empty, causing
+        # stat() to FileNotFoundError. Ensure the real file exists first.
         Path(".charm_tracing_buffer.raw").touch()
         self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()
@@ -1291,6 +1307,10 @@ backup-id            | action      | status   | maas     | size       | controll
     def test_download_file_from_s3__could_not_read_content(
         self, client, disk_usage, temp_file, path_exists, unlink
     ):
+        # Python 3.14 reworked pathlib: Path.exists() calls os.path.exists()
+        # which is mocked globally via @patch("backups.os.path.exists"). The
+        # default truthy MagicMock prevents short-circuit in is_empty, causing
+        # stat() to FileNotFoundError. Ensure the real file exists first.
         Path(".charm_tracing_buffer.raw").touch()
         self.addCleanup(Path(".charm_tracing_buffer.raw").unlink, missing_ok=True)
         self.harness.begin()

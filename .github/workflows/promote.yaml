@@ -3,11 +3,10 @@ name: Promote Charm
 on:
   workflow_dispatch:
     inputs:
-      charm:
-        type: choice
-        description: Charm to promote
-        options:
-          - maas-region
+      track:
+        type: string
+        description: Charmhub track (e.g. latest, 3.8)
+        default: latest
       promotion:
         type: choice
         description: Channel to promote from
@@ -17,10 +16,32 @@ on:
           - candidate -> stable
 
 jobs:
+  parse-promotion:
+    name: Parse promotion channels
+    runs-on: ubuntu-latest
+    outputs:
+      origin: ${{ steps.parse.outputs.origin }}
+      destination: ${{ steps.parse.outputs.destination }}
+    steps:
+      - id: parse
+        run: |
+          PROMO="${{ github.event.inputs.promotion }}"
+          TRACK="${{ github.event.inputs.track }}"
+          ORIGIN="$TRACK/$(echo $PROMO | cut -d' ' -f1)"
+          DEST="$TRACK/$(echo $PROMO | cut -d' ' -f3)"
+          echo "origin=$ORIGIN" >> $GITHUB_OUTPUT
+          echo "destination=$DEST" >> $GITHUB_OUTPUT
+
   promote:
     name: Promote
-    uses: canonical/observability/.github/workflows/charm-promote.yaml@1ec946694be5bfc972aa36d2cde6d4c339bac110 # Branch v0
+    needs: parse-promotion
+    uses: canonical/operator-workflows/.github/workflows/promote_charm.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f # main as of 2026-07-01
+    permissions:
+      contents: write
+    secrets:
+      CHARMHUB_TOKEN: ${{ secrets.CHARMHUB_TOKEN }}
     with:
-      charm-path: ${{ github.event.inputs.charm }}
-      promotion: ${{ github.event.inputs.promotion }}
-    secrets: inherit
+      working-directory: maas-region
+      tag-prefix: maas-region
+      origin-channel: ${{ needs.parse-promotion.outputs.origin }}
+      destination-channel: ${{ needs.parse-promotion.outputs.destination }}
