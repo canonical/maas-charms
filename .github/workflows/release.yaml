@@ -34,19 +34,13 @@ jobs:
     name: Release MAAS Region charm to edge
     needs: detect-region-changes
     if: needs.detect-region-changes.outputs.any_changed == 'true'
-    uses: canonical/observability/.github/workflows/charm-release.yaml@1ec946694be5bfc972aa36d2cde6d4c339bac110 # Branch v0
+    uses: canonical/operator-workflows/.github/workflows/publish_charm.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f # main as of 2026-07-01
     permissions:
-      security-events: write
-      actions: read
       contents: write
-      issues: write
+      packages: write
+      actions: read
     secrets: inherit
     with:
-      charm-path: maas-region
-      juju-channel: 3.6/stable
-      python-version: "3.14"
-      release-tag-prefix: maas-region
-      provider: lxd
-      build-for-arm: true
-      charmcraft-channel: latest/stable
-      check-library-labels: false
+      working-directory: maas-region
+      channel: latest/edge
+      tag-prefix: maas-region

@@ -20,12 +20,12 @@ that can be used for linting and formatting code when you're preparing contribut
 
 ```shell
 tox run -e format        # update your code according to linting rules
-tox run -e lint          # code style & static type checking
-tox run -e static-charm  # type checking for the charm source
-tox run -e static-lib    # no-op, Expected to exist as part of the observability workflow.
+tox run -e lint          # code style
+tox run -e static        # static type checking for the charm source
 tox run -e unit          # unit tests
+tox run -e scenario      # scenario tests
 tox run -e integration   # integration tests
-tox                      # runs 'format', 'lint', 'static-charm', 'static-lib', 'unit', and 'scenario' environments
+tox                      # runs 'format', 'lint', 'static', 'coverage-report', 'scenario', and 'integration' environments
 ```
 
 ## Build the charm

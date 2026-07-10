@@ -7,19 +7,30 @@ on:
       - track/*
 
 jobs:
-  pull-request-region:
-    name: PR Region
-    uses: canonical/observability/.github/workflows/charm-pull-request.yaml@1ec946694be5bfc972aa36d2cde6d4c339bac110 # Branch v0
+  quality-checks:
+    name: Quality Checks
+    uses: canonical/operator-workflows/.github/workflows/test.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f # main as of 2026-07-01
     permissions:
-      security-events: write
-      actions: read
-      contents: write
-      issues: write
+      contents: read
+      pull-requests: write
     secrets: inherit
     with:
-      charm-path: maas-region
-      juju-channel: 3.6/stable
+      working-directory: maas-region
+      with-uv: true
+      require-check-lib: false
       python-version: "3.14"
+
+  integration-tests:
+    name: Integration Tests
+    uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f # main as of 2026-07-01
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      working-directory: maas-region
       provider: lxd
+      juju-channel: 3.6/stable
+      with-uv: true
       charmcraft-channel: latest/stable
-      check-library-labels: false
+      python-version: "3.14"
