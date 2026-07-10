@@ -14,5 +14,9 @@
       "matchPackageNames": ["botocore", "boto3"],
       "groupName": "botocore"
     }
+  ],
+  "description": [
+    "Uncomment the block below to batch all updates into a single weekly PR:",
+    "{\"groupName\": \"weekly dependencies\", \"matchPackageNames\": [\"*\"], \"schedule\": [\"every week\"]}"
   ]
 }
