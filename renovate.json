@@ -3,7 +3,7 @@
   "extends": [
     "config:recommended"
   ],
-  "schedule": ["before 6am on monday"],
+  "schedule": ["* 0-4 * * 1"],
   "ignoreDeps": [
     "canonical/operator-workflows",
     "tj-actions/changed-files"
