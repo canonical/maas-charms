@@ -364,8 +364,6 @@ class TestClusterUpdates(unittest.TestCase):
             args = configure_hosts.call_args.args
             self.assertEqual(args, ([ip_address("10.0.0.10")],))
 
-            self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
-
     def test_haproxy_relation__leader_sets_https_data(self):
         self.harness.set_leader(True)
 
@@ -400,8 +398,6 @@ class TestClusterUpdates(unittest.TestCase):
             args = configure_hosts.call_args.args
 
             self.assertEqual(args, ([ip_address("10.0.0.10")],))
-
-            self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
 
     def test_haproxy_relation__leader_has_correct_data(self):
         cases = [
@@ -482,11 +478,6 @@ class TestClusterUpdates(unittest.TestCase):
                     else:
                         self.assertNotIn("hosts", https_data)
 
-                if valid:
-                    self.assertEqual(harness.model.unit.status, ops.ActiveStatus())
-                else:
-                    self.assertNotEqual(harness.model.unit.status, ops.ActiveStatus())
-
     @patch("charm.MaasHelper", autospec=True)
     def test_haproxy_relation__reported_statuses(self, mock_helper):
         mock_helper.get_installed_version.return_value = "mock-ver"
@@ -565,6 +556,27 @@ class TestClusterUpdates(unittest.TestCase):
                     harness.add_relation_unit(rel_id, "haproxy/0")
                 harness.evaluate_status()
                 self.assertEqual(harness.model.unit.status, ops.BlockedStatus(expected_msg))
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_haproxy_relation__valid_topology_reaches_active(self, mock_helper):
+        mock_helper.get_installed_version.return_value = "mock-ver"
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        mock_helper.is_maas_initialized.return_value = True
+        self.harness.set_leader(True)
+        self.harness.begin()
+        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
+        self.harness.update_relation_data(
+            db_rel,
+            "postgresql",
+            {
+                "endpoints": "30.0.0.1:5432",
+                "username": "test_maas_db",
+                "password": "my_secret",
+            },
+        )
+        # No HAProxy relations and no TLS config, valid topology
+        self.harness.evaluate_status()
+        self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
 
 
 class TestCharmActions(unittest.TestCase):

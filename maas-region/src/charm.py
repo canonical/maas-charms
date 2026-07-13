@@ -26,7 +26,7 @@ from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, cha
 from ops.model import SecretNotFoundError
 from pydantic import IPvAnyAddress
 
-from backups import MAASBackups
+from backups import S3_CONFIGURATION_BLOCKED_KEY, MAASBackups
 from helper import MaasHelper
 
 logger = logging.getLogger(__name__)
@@ -516,7 +516,6 @@ class MaasRegionCharm(ops.CharmBase):
                     self.config["enable_prometheus_metrics"],  # type: ignore
                     str(self.config["ssl_cacert_content"]),
                 )
-            self.unit.status = ops.ActiveStatus()
             return True
         except subprocess.CalledProcessError:
             return False
@@ -552,7 +551,8 @@ class MaasRegionCharm(ops.CharmBase):
         """Configure the two HAProxy relations.
 
         Provides the MAAS Region IP addresses to each HAProxy relation.
-        Sets the unit to an active status if we have a valid relation/configuration topology.
+        Status setting is left to `_on_collect_status`, which evaluates the
+        relation/configuration topology.
 
         Returns:
             None
@@ -592,8 +592,6 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
         if not self.unit.is_leader():
-            if unit_valid:
-                self.unit.status = ops.ActiveStatus()
             return
 
         haproxy_relations = [
@@ -609,9 +607,6 @@ class MaasRegionCharm(ops.CharmBase):
                 else:
                     rel.configure_hosts()
                 rel.update_relation_data()
-
-        if unit_valid:
-            self.unit.status = ops.ActiveStatus()
 
     def _reconcile_ha_proxy_and_initialise(self, event: ops.EventBase) -> None:
         self._reconcile_ha_proxy(event)
@@ -686,6 +681,12 @@ class MaasRegionCharm(ops.CharmBase):
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
         if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
             e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
+        elif (
+            # If the S3 configuration is marked as blocked in the application data bag,
+            # mark the leader as blocked.
+            blocked_msg := self.get_peer_data(self.app, S3_CONFIGURATION_BLOCKED_KEY)
+        ) and self.unit.is_leader():
+            e.add_status(ops.BlockedStatus(blocked_msg))
         elif not self.unit.opened_ports().issuperset(MAAS_REGION_PORTS):
             e.add_status(ops.WaitingStatus("Waiting for service ports"))
         elif not self.connection_string:
@@ -744,7 +745,7 @@ class MaasRegionCharm(ops.CharmBase):
                     )
                 )
             else:
-                logger.debug("no status change based on prerequisites")
+                e.add_status(ops.ActiveStatus())
 
     def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
         """Database is ready.
