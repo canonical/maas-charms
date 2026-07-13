@@ -27,6 +27,7 @@ from backups import (
     MAAS_REGION_RELATION,
     METADATA_FILENAME,
     PRESEED_TAR_FILENAME,
+    S3_CONFIGURATION_BLOCKED_KEY,
     SNAP_PATH_TO_IMAGES,
     SNAP_PATH_TO_PRESEEDS,
     DownloadProgressPercentage,
@@ -34,7 +35,7 @@ from backups import (
     UploadProgressPercentage,
     as_size,
 )
-from charm import MaasRegionCharm
+from charm import MAAS_DB_NAME, MAAS_SNAP_CHANNEL, MaasRegionCharm
 
 
 class TestMAASBackups(unittest.TestCase):
@@ -42,6 +43,28 @@ class TestMAASBackups(unittest.TestCase):
         self.harness = ops.testing.Harness(MaasRegionCharm)
         self.addCleanup(self.harness.cleanup)
         self.harness.add_relation("initialize", "maas-region")
+
+    def _satisfy_status_ladder(self, mock_helper) -> None:
+        """Set up everything the collect-status ladder needs to reach ActiveStatus.
+
+        Mocks the snap channel and adds a maas-db relation with valid data, so
+        that after ``self.harness.begin()`` + ``self.harness.charm._setup_network()``
+        + ``self.harness.evaluate_status()``, only whatever the test itself
+        controls (e.g. the S3-blocked peer-data flag) determines the final
+        status.
+        """
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        self.harness.add_network("10.0.0.10")
+        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
+        self.harness.update_relation_data(
+            db_rel,
+            "postgresql",
+            {
+                "endpoints": "30.0.0.1:5432",
+                "username": "test_maas_db",
+                "password": "my_secret",
+            },
+        )
 
     @patch("boto3.session.Session.resource")
     @patch("backups.Config")
@@ -479,9 +502,11 @@ backup-id            | action      | status   | maas     | size       | controll
             },
         )
 
+    @patch("charm.MaasHelper", autospec=True)
     @patch("backups.MAASBackups._create_bucket_if_not_exists")
     @patch("backups.MAASBackups._read_content_from_s3")
-    def test_on_s3_credential_changed(self, read_content, create_bucket):
+    def test_on_s3_credential_changed(self, read_content, create_bucket, mock_helper):
+        self._satisfy_status_ladder(mock_helper)
         s3_parameters_dict = {
             "bucket": "test-bucket",
             "region": "test-region",
@@ -493,11 +518,17 @@ backup-id            | action      | status   | maas     | size       | controll
             "delete-older-than-days": "9999999",
         }
         read_content.return_value = None
-        self.harness.begin()
+        self.harness.add_relation(MAAS_REGION_RELATION, "maas-region")
         self.harness.set_leader(True)
+        self.harness.begin()
+        self.harness.charm._setup_network()
         self.harness.add_relation("s3-parameters", "s3-integrator", app_data=s3_parameters_dict)
         s3_parameters_dict["delete-older-than-days"] = 9999999
         create_bucket.assert_called_once_with(s3_parameters_dict)
+        self.assertFalse(
+            self.harness.charm.get_peer_data(self.harness.charm.app, S3_CONFIGURATION_BLOCKED_KEY)
+        )
+        self.harness.evaluate_status()
         self.assertEqual(self.harness.charm.unit.status, ops.ActiveStatus())
 
     @patch("backups.MAASBackups._create_bucket_if_not_exists")
@@ -529,8 +560,9 @@ backup-id            | action      | status   | maas     | size       | controll
         )
         create_bucket.assert_not_called()
 
+    @patch("charm.MaasHelper.get_installed_channel", return_value=MAAS_SNAP_CHANNEL)
     @patch("backups.MAASBackups._create_bucket_if_not_exists")
-    def test_on_s3_credential_changed__bucket_error(self, create_bucket):
+    def test_on_s3_credential_changed__bucket_error(self, create_bucket, _get_installed_channel):
         s3_parameters_dict = {
             "bucket": "test-bucket",
             "region": "test-region",
@@ -543,10 +575,16 @@ backup-id            | action      | status   | maas     | size       | controll
         }
         create_bucket.side_effect = ValueError()
         self.harness.begin()
+        self.harness.add_relation(MAAS_REGION_RELATION, "maas-region")
         self.harness.set_leader(True)
         self.harness.add_relation("s3-parameters", "s3-integrator", app_data=s3_parameters_dict)
         s3_parameters_dict["delete-older-than-days"] = 9999999
         create_bucket.assert_called_once_with(s3_parameters_dict)
+        self.assertEqual(
+            self.harness.charm.get_peer_data(self.harness.charm.app, S3_CONFIGURATION_BLOCKED_KEY),
+            FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
+        )
+        self.harness.evaluate_status()
         self.assertEqual(
             self.harness.charm.unit.status,
             ops.BlockedStatus(FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE),
@@ -562,32 +600,63 @@ backup-id            | action      | status   | maas     | size       | controll
             ops.ActiveStatus(),
         )
 
-    def test_on_s3_credential_gone__set_active(self):
+    @patch("charm.MaasHelper", autospec=True)
+    def test_on_s3_credential_gone__set_active(self, mock_helper):
+        self._satisfy_status_ladder(mock_helper)
         rel = self.harness.add_relation("s3-parameters", "s3-integrator")
+        self.harness.add_relation(MAAS_REGION_RELATION, "maas-region")
+        self.harness.set_leader(True)
         self.harness.begin()
-        self.harness.charm.unit.status = ops.BlockedStatus(
-            FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE
+        self.harness.charm._setup_network()
+        self.harness.charm.set_peer_data(
+            self.harness.charm.app,
+            S3_CONFIGURATION_BLOCKED_KEY,
+            FAILED_TO_ACCESS_CREATE_BUCKET_ERROR_MESSAGE,
         )
         self.harness.remove_relation(rel)
-        self.assertEqual(
-            self.harness.charm.unit.status,
-            ops.ActiveStatus(),
+        self.assertFalse(
+            self.harness.charm.get_peer_data(self.harness.charm.app, S3_CONFIGURATION_BLOCKED_KEY)
         )
+        self.harness.evaluate_status()
+        self.assertEqual(self.harness.charm.unit.status, ops.ActiveStatus())
 
+    @patch("charm.MaasHelper", autospec=True)
+    def test_collect_status_s3_blocked_ignored_for_non_leader(self, mock_helper):
+        self._satisfy_status_ladder(mock_helper)
+        self.harness.add_relation(MAAS_REGION_RELATION, "maas-region")
+        self.harness.set_leader(False)
+        self.harness.begin()
+        self.harness.charm._setup_network()
+        app_name = self.harness.charm.app.name
+        # Simulate a blocked message in the data bag
+        self.harness.update_relation_data(
+            self.harness.charm.peers.id,
+            app_name,
+            {S3_CONFIGURATION_BLOCKED_KEY: '"some message"'},
+        )
+        self.harness.evaluate_status()
+        self.assertEqual(self.harness.charm.unit.status, ops.ActiveStatus())
+
+    @patch("charm.MaasHelper", autospec=True)
     @patch("backups.MAASBackups._run_backup")
     @patch("backups.MAASBackups._upload_content_to_s3")
     @patch("backups.MAASBackups._retrieve_s3_parameters")
     @patch("backups.MAASBackups._can_unit_perform_backup")
-    def test_on_create_backup_action(self, can_unit_backup, s3_params, upload_content, run_backup):
+    def test_on_create_backup_action(
+        self, can_unit_backup, s3_params, upload_content, run_backup, mock_helper
+    ):
+        self._satisfy_status_ladder(mock_helper)
         can_unit_backup.return_value = True, ""
         s3_params.return_value = ({}, [])
         self.harness.begin()
+        self.harness.charm._setup_network()
         self.harness.run_action("create-backup")
         can_unit_backup.assert_called_once()
         s3_params.assert_called_once()
         run_backup.assert_called_once()
         upload_content.assert_called_once()
-        self.assertIsInstance(self.harness.charm.unit.status, ops.ActiveStatus)
+        self.harness.evaluate_status()
+        self.assertEqual(self.harness.charm.unit.status, ops.ActiveStatus())
 
     @patch("backups.MAASBackups._can_unit_perform_backup")
     def test_on_create_backup_action_cannot_perform_backup(self, can_unit_backup):
@@ -952,7 +1021,8 @@ backup-id            | action      | status   | maas     | size       | controll
             self.harness.run_action("list-backups")
         err = e.exception
         self.assertEqual(
-            err.message, "Failed to list MAAS backups with error: An unspecified error occurred"
+            err.message,
+            "Failed to list MAAS backups with error: An unspecified error occurred",
         )
 
     @patch("charms.data_platform_libs.v0.s3.S3Requirer.get_s3_connection_info")
@@ -1109,7 +1179,8 @@ backup-id            | action      | status   | maas     | size       | controll
         download_file.side_effect = None
         buf_obj.getvalue.return_value = content.encode()
         self.assertEqual(
-            self.harness.charm.backup._read_content_from_s3(s3_path, s3_parameters), content
+            self.harness.charm.backup._read_content_from_s3(s3_path, s3_parameters),
+            content,
         )
         _named_temporary_file.assert_called_once()
         download_file.assert_called_once_with("test-path/test-file", buf_obj)
@@ -1558,7 +1629,10 @@ backup-id            | action      | status   | maas     | size       | controll
         self.harness.add_relation("s3-parameters", "s3-integrator")
         s3_parameters.return_value = {}, []
         action_event = MagicMock(spec=ops.ActionEvent)
-        action_event.params = {"backup-id": "2025-08-23T06:26:00Z", "controller-id": "abc123"}
+        action_event.params = {
+            "backup-id": "2025-08-23T06:26:00Z",
+            "controller-id": "abc123",
+        }
 
         self.assertTrue(self.harness.charm.backup._pre_restore_checks(event=action_event))
         action_event.fail.assert_not_called()
@@ -1620,7 +1694,10 @@ backup-id            | action      | status   | maas     | size       | controll
         self.harness.charm.unit.status = ops.BlockedStatus("fake blocked state")
         s3_parameters.return_value = {}, []
         action_event = MagicMock(spec=ops.ActionEvent)
-        action_event.params = {"backup-id": "2025-08-23T06:26:00Z", "controller-id": "abc123"}
+        action_event.params = {
+            "backup-id": "2025-08-23T06:26:00Z",
+            "controller-id": "abc123",
+        }
 
         self.assertFalse(self.harness.charm.backup._pre_restore_checks(event=action_event))
         action_event.fail.assert_called_once_with(
@@ -1634,7 +1711,10 @@ backup-id            | action      | status   | maas     | size       | controll
         self.harness.add_relation("maas-db", "postgresql")
         s3_parameters.return_value = {}, []
         action_event = MagicMock(spec=ops.ActionEvent)
-        action_event.params = {"backup-id": "2025-08-23T06:26:00Z", "controller-id": "abc123"}
+        action_event.params = {
+            "backup-id": "2025-08-23T06:26:00Z",
+            "controller-id": "abc123",
+        }
 
         self.assertFalse(self.harness.charm.backup._pre_restore_checks(event=action_event))
         action_event.fail.assert_called_once_with(
@@ -1643,13 +1723,15 @@ backup-id            | action      | status   | maas     | size       | controll
             "then retry this action",
         )
 
+    @patch("charm.MaasHelper", autospec=True)
     @patch("backups.MAASBackups._run_restore")
     @patch("backups.MAASBackups._list_backups")
     @patch("backups.MAASBackups._retrieve_s3_parameters")
     @patch("backups.MAASBackups._pre_restore_checks")
     def test_on_restore_backup_action(
-        self, pre_restore_checks, s3_params, list_backups, run_backup
+        self, pre_restore_checks, s3_params, list_backups, run_backup, mock_helper
     ):
+        self._satisfy_status_ladder(mock_helper)
         pre_restore_checks.return_value = True
         s3_params.return_value = (
             {
@@ -1664,14 +1746,17 @@ backup-id            | action      | status   | maas     | size       | controll
             {"id": "2025-08-23T06:26:00Z"},
         ]
         self.harness.begin()
+        self.harness.charm._setup_network()
         self.harness.run_action(
-            "restore-backup", {"backup-id": "2025-08-23T06:26:00Z", "controller-id": "abc123"}
+            "restore-backup",
+            {"backup-id": "2025-08-23T06:26:00Z", "controller-id": "abc123"},
         )
         pre_restore_checks.assert_called_once()
         s3_params.assert_called_once()
         list_backups.assert_called_once()
         run_backup.assert_called_once()
-        self.assertIsInstance(self.harness.charm.unit.status, ops.ActiveStatus)
+        self.harness.evaluate_status()
+        self.assertEqual(self.harness.charm.unit.status, ops.ActiveStatus())
 
     @patch("backups.MAASBackups._pre_restore_checks")
     def test_on_restore_backup_action__fail_pre_restore(self, pre_restore_checks):
