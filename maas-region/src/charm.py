@@ -39,7 +39,7 @@ HAPROXY_TLS = "ingress-tcp-tls"
 HAPROXY_TEMPORAL = "ingress-tcp-temporal"
 HAPROXY_INTERNAL_HTTP_API = "ingress-tcp-internal-http-api"
 
-MAAS_SNAP_CHANNEL = "latest/edge"
+MAAS_SNAP_CHANNEL = "3.8/edge"
 
 MAAS_PROXY_PORT = 80
 MAAS_TLS_PROXY_PORT = 443
