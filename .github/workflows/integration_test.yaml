@@ -2,6 +2,14 @@ name: Integration tests
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+      - track/*
+    paths:
+      - maas-region/**
+      - .github/workflows/integration_test.yaml
+      - .github/workflows/release.yaml
 
 jobs:
   integration-tests:
