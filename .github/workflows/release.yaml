@@ -1,13 +1,14 @@
 name: Release Charms to Edge and Publish Libraries
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - Integration tests
+    types:
+      - completed
     branches:
       - main
       - track/*
-    paths:
-      - maas-region/**
-      - .github/workflows/release.yaml
 
 jobs:
   detect-region-changes:
@@ -33,29 +34,12 @@ jobs:
           echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
           echo "any_changed=${{ steps.changed-files.outputs.any_changed }}" >> $GITHUB_OUTPUT
 
-  integration-tests:
-    name: Integration Tests
-    needs: detect-region-changes
-    if: needs.detect-region-changes.outputs.any_changed == 'true'
-    uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f # main as of 2026-07-01
-    permissions:
-      contents: read
-      packages: write
-    secrets: inherit
-    with:
-      working-directory: maas-region
-      provider: lxd
-      juju-channel: 3.6/stable
-      with-uv: true
-      charmcraft-channel: latest/stable
-      python-version: "3.14"
-
   release-region:
     name: Release MAAS Region charm to edge
-    needs:
-      - detect-region-changes
-      - integration-tests
-    if: needs.detect-region-changes.outputs.any_changed == 'true'
+    needs: detect-region-changes
+    if: >
+      github.event.workflow_run.conclusion == 'success'
+      && needs.detect-region-changes.outputs.any_changed == 'true'
     uses: canonical/operator-workflows/.github/workflows/publish_charm.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f # main as of 2026-07-01
     permissions:
       contents: write
