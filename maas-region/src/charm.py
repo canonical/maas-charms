@@ -1054,7 +1054,11 @@ class MaasRegionCharm(ops.CharmBase):
             event.fail("MAAS is not initialized yet or failed to retrieve status")
 
     def _on_stop_maas_action(self, event: ops.ActionEvent):
-        """Handle the stop-maas action."""
+        """Handle the stop-maas action.
+
+        This is intended to be called by the user as part of the MAAS upgrade process.
+        When the snap is stopped, other charm actions may behave unexpectedly.
+        """
         try:
             MaasHelper.set_running(False)
             event.set_results({"status": "stopped"})

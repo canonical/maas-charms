@@ -110,7 +110,7 @@ actions:
   get-maas-status:
     description: Get MAAS status. Run on each unit to get its individual status.
   stop-maas:
-    description: Stop the MAAS snap on a unit (wraps `snap stop maas`). Useful prior to minor/major upgrades to prevent different MAAS versions running simultaneously.
+    description: Stop the MAAS snap on a unit (wraps `snap stop maas`). Note that stopping MAAS may cause other actions to fail unexpectedly. This will result in downtime. Useful prior to minor/major upgrades to prevent different MAAS versions running simultaneously.
   start-maas:
     description: Start the MAAS snap on a unit (wraps `snap start maas`). Only useful in the case that a unit's snap has been stopped.
   create-backup:
