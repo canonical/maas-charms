@@ -304,10 +304,6 @@ class MaasRegionCharm(ops.CharmBase):
         target_channel = event.params.get("channel")
         if not target_channel:
             target_channel = MAAS_SNAP_CHANNEL
-        REPORT_INFO_KEY = "info"
-        INSTALLED_KEY = "installed-snap"
-        UPGRADE_TARGET_KEY = "upgrade-target-snap"
-        
 
         installed_version = MaasHelper.get_installed_version()
         installed_revision = MaasHelper.get_installed_revision()
@@ -320,7 +316,7 @@ class MaasRegionCharm(ops.CharmBase):
         # the snap revision installed will be the same across all units in the application, therefore the report
         # for this unit is representative for all units in the cluster.
         results = {
-            INSTALLED_KEY: f"{installed_version} (revision {installed_revision}) on channel {installed_channel}",
+            "installed-snap": f"{installed_version} (revision {installed_revision}) on channel {installed_channel}",
         }
 
         try:
@@ -341,13 +337,13 @@ class MaasRegionCharm(ops.CharmBase):
         target_revision = target_channel_info.get("revision", "")
 
         if target_revision == installed_revision:
-            results[REPORT_INFO_KEY] = (
+            results["info"] = (
                 f"Current installed revision ({installed_revision}) is the latest available on channel {target_channel}. No upgrade is needed."
             )
             event.set_results(results)
             return
 
-        results[UPGRADE_TARGET_KEY] = (
+        results["upgrade-target-snap"] = (
             f"{target_version} (revision {target_revision}) on channel {target_channel}"
         )
         if _version_tuple(target_version) < _version_tuple(installed_version):
@@ -360,7 +356,7 @@ class MaasRegionCharm(ops.CharmBase):
 
         if target_channel == installed_channel:
             # Point upgrade, no need for base compatibility check
-            results[REPORT_INFO_KEY] = f"Point upgrade is possible from {installed_version} to {target_version}."
+            results["info"] = f"Point upgrade is possible from {installed_version} to {target_version}."
             event.set_results(results)
             return
 
@@ -382,7 +378,6 @@ class MaasRegionCharm(ops.CharmBase):
         Returns:
             str | None: a failure message if the target track needs a different base
         """
-        REPORT_INFO_KEY = "info"
         host_base = MaasHelper.get_host_base()
         target_track = target_channel.split("/")[0]
         target_bases = MAAS_TRACK_BASES.get(target_track)
@@ -390,7 +385,7 @@ class MaasRegionCharm(ops.CharmBase):
         # An unmapped track is reported as undetermined: a stale map must not block
         # an otherwise legitimate upgrade.
         if target_bases is None:
-            results[REPORT_INFO_KEY] = (
+            results["info"] = (
                 f"Track {target_track} is not known to this charm, so base compatibility "
                 "could not be determined. Check the charm's supported bases on Charmhub "
                 "to determine if the base is the same as the current host, and report "
@@ -401,7 +396,7 @@ class MaasRegionCharm(ops.CharmBase):
         results["host-base"] = host_base
         results["upgrade-target-charm-bases"] = ", ".join(target_bases)
         if host_base in target_bases:
-            results[REPORT_INFO_KEY] = f"The current host base {host_base} is compatible with the {target_channel} charm's supported bases. Performing this upgrade inplace is possible."
+            results["info"] = f"The current host base {host_base} is compatible with the {target_channel} charm's supported bases. Performing this upgrade inplace is possible."
             return None
         return (
             f"Channel {target_channel} requires an Ubuntu base of "
