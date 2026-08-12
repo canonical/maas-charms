@@ -124,9 +124,10 @@ actions:
       controller-id:
         type: string
         description: The controller id to assign to this region. See `list-backup` for a list of controller ids
-      force: 
+      force:
         type: boolean
-        description: Force restoring by skipping any pre-restore checks such as version compatibility.
+        default: false
+        description: Skip pre-restore checks, such as backup version compatibility.
     required:
       - backup-id
       - controller-id
@@ -135,9 +136,14 @@ actions:
       List available MAAS backups
   upgrade:
     description: Upgrade MAAS workload to the latest version available to the machine for the relevant track of the charm, for example if the charm is deployed with --channel=3.7/stable, this action will upgrade from the current version to the latest 3.7.x version available.
+    params:
+      force:
+        type: boolean
+        default: false
+        description: Skip pre-upgrade checks, including the check that MAAS is stopped on all units when moving a multi-region deployment between channels.
   pre-upgrade-check:
     description: Check if the workload can be upgraded to the latest version available to the machine for the relevant track of the charm, for example if the charm is deployed with --channel=3.7/stable, this action will check if the workload can be upgraded from the current version to the latest 3.7.x version available.
-    params: 
+    params:
       channel:
         type: string
         description: >-

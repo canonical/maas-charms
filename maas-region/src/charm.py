@@ -270,6 +270,27 @@ class MaasRegionCharm(ops.CharmBase):
             },
         )
 
+    def _upgrade_precondition_error(self) -> str | None:
+        """Check whether this unit is safe to upgrade.
+
+        Returns:
+            str | None: a message explaining why the upgrade must not proceed, or
+                None if it may go ahead
+        """
+        if (
+            self.app.planned_units() > 1
+            and MaasHelper.is_running()
+            and MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL
+        ):
+            return (
+                "The MAAS snap is running while attempting to upgrade this unit to a new "
+                "channel. This likely means MAAS has not been stopped on all units first, "
+                "and running different minor versions of MAAS simultaneously is not "
+                "supported. Run `juju run maas-region/<n> stop-maas` on every unit before "
+                "upgrading to a new channel, or pass force=true to skip this check."
+            )
+        return None
+
     def _upgrade(self) -> None:
         """Upgrade the MAAS snap.
 
@@ -287,6 +308,11 @@ class MaasRegionCharm(ops.CharmBase):
         Args:
             event (ops.ActionEvent): Event from the framework
         """
+        if not event.params.get("force", False) and (error := self._upgrade_precondition_error()):
+            logger.warning("Refusing to upgrade MAAS: %s", error)
+            event.fail(error)
+            return
+
         try:
             self._upgrade()
         except Exception as ex:
@@ -396,7 +422,7 @@ class MaasRegionCharm(ops.CharmBase):
         results["host-base"] = host_base
         results["upgrade-target-charm-bases"] = ", ".join(target_bases)
         if host_base in target_bases:
-            results["info"] = f"The current host base {host_base} is compatible with the {target_channel} charm's supported bases. Performing this upgrade inplace is possible."
+            results["info"] = f"The current host base {host_base} is compatible with the {target_channel} charm's supported bases. Performing an upgrade inplace is possible."
             return None
         return (
             f"Channel {target_channel} requires an Ubuntu base of "
