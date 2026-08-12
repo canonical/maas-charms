@@ -304,18 +304,23 @@ class MaasRegionCharm(ops.CharmBase):
         target_channel = event.params.get("channel")
         if not target_channel:
             target_channel = MAAS_SNAP_CHANNEL
+        REPORT_INFO_KEY = "info"
+        INSTALLED_KEY = "installed-snap"
+        UPGRADE_TARGET_KEY = "upgrade-target-snap"
+        
 
         installed_version = MaasHelper.get_installed_version()
         installed_revision = MaasHelper.get_installed_revision()
         installed_channel = MaasHelper.get_installed_channel()
         if not installed_version or not installed_revision or not installed_channel:
-            event.fail("MAAS is not installed")
+            event.fail("Could not obtain installed MAAS version, revision, or channel. Is MAAS installed?")
             return
 
-        # Populated as the check progresses so that every exit, including the failures
-        # below, reports whatever was established before the check stopped.
+        # Due to the installation with cohorts, and the fact that charm revisions are specific to an architecture,
+        # the snap revision installed will be the same across all units in the application, therefore the report
+        # for this unit is representative for all units in the cluster.
         results = {
-            "installed": f"{installed_version} (revision {installed_revision}) on channel {installed_channel}",
+            INSTALLED_KEY: f"{installed_version} (revision {installed_revision}) on channel {installed_channel}",
         }
 
         try:
@@ -334,17 +339,18 @@ class MaasRegionCharm(ops.CharmBase):
 
         target_version = target_channel_info.get("version", "")
         target_revision = target_channel_info.get("revision", "")
-        results["upgrade-target"] = (
-            f"{target_version} (revision {target_revision}) on channel {target_channel}"
-        )
 
         if target_revision == installed_revision:
-            results["info"] = (
+            results[REPORT_INFO_KEY] = (
                 f"Current installed revision ({installed_revision}) is the latest available on channel {target_channel}. No upgrade is needed."
             )
             event.set_results(results)
             return
-        elif _version_tuple(target_version) < _version_tuple(installed_version):
+
+        results[UPGRADE_TARGET_KEY] = (
+            f"{target_version} (revision {target_revision}) on channel {target_channel}"
+        )
+        if _version_tuple(target_version) < _version_tuple(installed_version):
             event.set_results(results)
             event.fail(
                 f"The latest version ({target_version}) on channel {target_channel} is a downgrade compared to the installed version ({installed_version})."
@@ -353,15 +359,9 @@ class MaasRegionCharm(ops.CharmBase):
             return
 
         if target_channel == installed_channel:
-            # Point upgrade, no need for epoch compatibility check
-            results["info"] = f"Point upgrade is possible from {installed_version} to {target_version}."
+            # Point upgrade, no need for base compatibility check
+            results[REPORT_INFO_KEY] = f"Point upgrade is possible from {installed_version} to {target_version}."
             event.set_results(results)
-            return
-        if epoch_error := self._check_epoch_compatibility(
-            target_channel, installed_channel, target_channel_info["epoch"]
-        ):
-            event.set_results(results)
-            event.fail(epoch_error)
             return
 
         # A move between tracks may also require a base change
@@ -371,40 +371,6 @@ class MaasRegionCharm(ops.CharmBase):
             return
 
         event.set_results(results)
-
-    def _check_epoch_compatibility(
-        self, target_channel: str, installed_channel: str, target_epoch: dict[str, list[int]]
-    ) -> str | None:
-        """Check that MAAS data can migrate from the installed track to the target one.
-
-        Args:
-            target_channel (str): the channel being checked, e.g. "3.9/edge"
-            installed_channel (str): the channel currently installed, for reporting
-            target_epoch (dict[str, list[int]]): the target channel's snap epoch
-
-        Returns:
-            str | None: a failure message if the move is not possible
-        """
-        try:
-            installed_channel_info = MaasHelper.get_latest_channel_info(installed_channel)
-        except Exception:
-            logger.exception("Failed to query the snap store for channel %s", installed_channel)
-            return (
-                f"Failed to query the snap store for the latest MAAS version "
-                f"on channel {installed_channel}"
-            )
-        if not installed_channel_info:
-            return f"No MAAS version found in the snap store for channel {installed_channel}"
-
-        current_epoch = installed_channel_info["epoch"]
-        if _epoch_compatible(current_epoch, target_epoch):
-            return None
-        return (
-            f"Channel {target_channel} is not epoch compatible with {installed_channel}: "
-            f"{installed_channel} has {_format_epoch(current_epoch)} and {target_channel} has "
-            f"{_format_epoch(target_epoch)}. "
-            "Upgrade to an intermediate release first."
-        )
 
     def _check_base_compatibility(self, target_channel: str, results: dict[str, Any]) -> str | None:
         """Record base compatibility for a target channel, in place, in `results`.
@@ -416,25 +382,26 @@ class MaasRegionCharm(ops.CharmBase):
         Returns:
             str | None: a failure message if the target track needs a different base
         """
+        REPORT_INFO_KEY = "info"
         host_base = MaasHelper.get_host_base()
         target_track = target_channel.split("/")[0]
         target_bases = MAAS_TRACK_BASES.get(target_track)
-        results["host-base"] = host_base
 
         # An unmapped track is reported as undetermined: a stale map must not block
         # an otherwise legitimate upgrade.
         if target_bases is None:
-            results["upgrade-target-charm-bases"] = "unknown"
-            results["base-compatible"] = "unknown"
-            results["base-info"] = (
+            results[REPORT_INFO_KEY] = (
                 f"Track {target_track} is not known to this charm, so base compatibility "
-                "could not be determined. Check the charm's supported bases on Charmhub."
+                "could not be determined. Check the charm's supported bases on Charmhub "
+                "to determine if the base is the same as the current host, and report "
+                "this message to the charm maintainers."
             )
             return None
 
+        results["host-base"] = host_base
         results["upgrade-target-charm-bases"] = ", ".join(target_bases)
-        results["base-compatible"] = str(host_base in target_bases)
         if host_base in target_bases:
+            results[REPORT_INFO_KEY] = f"The current host base {host_base} is compatible with the {target_channel} charm's supported bases. Performing this upgrade inplace is possible."
             return None
         return (
             f"Channel {target_channel} requires an Ubuntu base of "
@@ -970,7 +937,7 @@ class MaasRegionCharm(ops.CharmBase):
         if self.connection_string:
             self.unit.status = ops.MaintenanceStatus("Initializing the MAAS database")
             self.rolling_ops_manager.request_async_lock(
-                callback_id="initialise", max_retry=1
+                callback_id="initialize", max_retry=1
             )
 
     def _on_maasdb_endpoints_changed(self, event: db.DatabaseEndpointsChangedEvent) -> None:
