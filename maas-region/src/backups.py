@@ -749,8 +749,9 @@ Juju Version: {self.charm.model.juju_version!s}
         self, event: ActionEvent, s3_parameters: dict[str, str], backup_id: str, controller_id: str
     ) -> None:
         s3_path = os.path.join(s3_parameters["path"], f"backup/{backup_id}").lstrip("/")
+        force_restore = event.params.get("force", False)
 
-        if not self._check_backup_maas_version(
+        if not force_restore and not self._check_backup_maas_version(
             event=event, s3_path=s3_path, s3_parameters=s3_parameters
         ):
             event.fail(
