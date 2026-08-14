@@ -32,6 +32,7 @@ from charm import (
     MAAS_PEER_NAME,
     MAAS_PROXY_PORT,
     MAAS_REGION_METRICS_PORT,
+    MAAS_ROLLING_OPS_RELATION,
     MAAS_SNAP_CHANNEL,
     MAAS_TEMPORAL_PORT,
     MAAS_TLS_PROXY_PORT,
@@ -73,7 +74,7 @@ class TestDBRelation(unittest.TestCase):
         self.harness = ops.testing.Harness(MaasRegionCharm)
         self.harness.add_network("10.0.0.10")
         self.addCleanup(self.harness.cleanup)
-        self.harness.add_relation("initialize", "maas-region")
+        self.harness.add_relation(MAAS_ROLLING_OPS_RELATION, "maas-region")
 
     @patch("charm.MaasHelper", autospec=True)
     def test_database_connected(self, mock_helper):
@@ -195,7 +196,7 @@ class TestClusterUpdates(unittest.TestCase):
 
     def setUp(self):
         self.harness = self._make_harness()
-        self.harness.add_relation("initialize", "maas-region")
+        self.harness.add_relation(MAAS_ROLLING_OPS_RELATION, "maas-region")
 
     def test_peer_relation_data(self):
         self.harness.set_leader(True)
@@ -535,7 +536,7 @@ class TestClusterUpdates(unittest.TestCase):
         for maas_tls, relations, expected_msg in cases:
             with self.subTest(maas_tls=maas_tls, relations=relations):
                 harness = self._make_harness()
-                harness.add_relation("initialize", "maas-region")
+                harness.add_relation(MAAS_ROLLING_OPS_RELATION, "maas-region")
                 harness.set_leader(True)
                 if maas_tls:
                     harness.update_config(

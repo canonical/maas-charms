@@ -35,14 +35,14 @@ from backups import (
     UploadProgressPercentage,
     as_size,
 )
-from charm import MAAS_DB_NAME, MAAS_SNAP_CHANNEL, MaasRegionCharm
+from charm import MAAS_DB_NAME, MAAS_ROLLING_OPS_RELATION, MAAS_SNAP_CHANNEL, MaasRegionCharm
 
 
 class TestMAASBackups(unittest.TestCase):
     def setUp(self):
         self.harness = ops.testing.Harness(MaasRegionCharm)
         self.addCleanup(self.harness.cleanup)
-        self.harness.add_relation("initialize", "maas-region")
+        self.harness.add_relation(MAAS_ROLLING_OPS_RELATION, "maas-region")
 
     def _satisfy_status_ladder(self, mock_helper) -> None:
         """Set up everything the collect-status ladder needs to reach ActiveStatus.
