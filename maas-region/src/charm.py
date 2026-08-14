@@ -314,7 +314,7 @@ class MaasRegionCharm(ops.CharmBase):
             return
 
         try:
-            self._upgrade()
+            self.rolling_ops_manager.request_async_lock(callback_id="upgrade", max_retry=3)
         except Exception as ex:
             logger.exception("Failed to upgrade MAAS")
             event.fail(f"Upgrade failed: {ex}")
