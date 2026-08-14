@@ -1873,6 +1873,7 @@ backup-id            | action      | status   | maas     | size       | controll
 
         self.harness.begin()
         event = MagicMock(spec=ops.ActionEvent)
+        event.params = {}  # no force param
 
         self.harness.charm.backup._run_restore(
             event=event,
@@ -1913,6 +1914,7 @@ backup-id            | action      | status   | maas     | size       | controll
 
         self.harness.begin()
         event = MagicMock(spec=ops.ActionEvent)
+        event.params = {}  # no force param
 
         self.harness.charm.backup._run_restore(
             event=event,
@@ -2217,6 +2219,7 @@ backup-id            | action      | status   | maas     | size       | controll
 
         self.harness.begin()
         event = MagicMock(spec=ops.ActionEvent)
+        event.params = {}  # no force param
 
         self.harness.charm.backup._run_restore(
             event=event,
@@ -2461,6 +2464,7 @@ backup-id            | action      | status   | maas     | size       | controll
 
         self.harness.begin()
         event = MagicMock(spec=ops.ActionEvent)
+        event.params = {}  # no force param
 
         self.harness.charm.backup._run_restore(
             event=event,
@@ -2494,6 +2498,7 @@ backup-id            | action      | status   | maas     | size       | controll
 
         self.harness.begin()
         event = MagicMock(spec=ops.ActionEvent)
+        event.params = {}  # no force param
 
         self.harness.charm.backup._run_restore(
             event=event,
