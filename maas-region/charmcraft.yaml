@@ -46,6 +46,9 @@ requires:
     optional: true
 
 peers:
+  initialize:
+    interface: rolling_ops
+    optional: false
   maas-cluster:
     interface: maas_peers
     optional: false
