@@ -91,6 +91,9 @@ class TestDBRelation(unittest.TestCase):
                 "password": "my_secret",
             },
         )
+        # This is needed to trigger initialize as this normally happens as a separate
+        # charm event after the rolling ops data is written to the databag.
+        self.harness.charm.on.rollingops_lock_granted.emit()
         mock_helper.setup_region.assert_called_once_with(
             f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS",
             "postgres://test_maas_db:my_secret@30.0.0.1:5432/maas_region_db",
@@ -114,6 +117,7 @@ class TestDBRelation(unittest.TestCase):
                 "password": "my_secret",
             },
         )
+        self.harness.charm.on.rollingops_lock_granted.emit()
         credentials = self.harness.model.get_secret(label="maas-admin").get_content()
         self.assertEqual(credentials["username"], "maas-admin-internal")
 
