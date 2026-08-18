@@ -26,7 +26,7 @@ class TestHelperSnapCache(unittest.TestCase):
     def test_install(self, mock_snap):
         mock_maas = self._setup_snap(mock_snap)
         MaasHelper.install("test/channel")
-        mock_maas.ensure.assert_called_once_with(SnapState.Latest, channel="test/channel")
+        mock_maas.ensure.assert_called_once_with(SnapState.Latest, channel="test/channel", cohort="+")
         mock_maas.hold.assert_called_once()
 
     @patch("helper.SnapCache", autospec=True)

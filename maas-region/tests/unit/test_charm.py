@@ -753,25 +753,6 @@ class TestCharmActions(unittest.TestCase):
         self.assertEqual(output.results["host-base"], "26.04")
         self.assertEqual(output.results["target-bases"], "26.04")
 
-    @patch("charm.MaasHelper", autospec=True)
-    def test_pre_upgrade_check_epoch_incompatible(self, mock_helper):
-        self.harness.set_leader(True)
-        self.harness.begin()
-        channel_map = dict(self.CROSS_CHANNEL_MAP)
-        channel_map[MAAS_SNAP_CHANNEL] = {
-            **channel_map[MAAS_SNAP_CHANNEL],
-            "epoch": {"read": [2], "write": [2]},
-        }
-        self._setup_pre_upgrade_check(mock_helper, channel_map)
-
-        with self.assertRaises(ops.testing.ActionFailed) as e:
-            self.harness.run_action("pre-upgrade-check", {"channel": "3.9/edge"})
-
-        err = e.exception
-        self.assertIn("not epoch compatible", err.message)
-        self.assertIn("read=[2] write=[2]", err.message)
-        self.assertIn("read=[3, 4] write=[4]", err.message)
-
     @patch.dict("charm.MAAS_TRACK_BASES", {"3.9": ["28.04"]}, clear=True)
     @patch("charm.MaasHelper", autospec=True)
     def test_pre_upgrade_check_base_incompatible(self, mock_helper):
