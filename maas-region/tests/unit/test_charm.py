@@ -560,6 +560,7 @@ class TestClusterUpdates(unittest.TestCase):
                         "password": "my_secret",
                     },
                 )
+                harness.charm.on.rollingops_lock_granted.emit()
                 for rel_name in relations:
                     rel_id = harness.add_relation(rel_name, "haproxy")
                     harness.add_relation_unit(rel_id, "haproxy/0")
@@ -583,6 +584,7 @@ class TestClusterUpdates(unittest.TestCase):
                 "password": "my_secret",
             },
         )
+        self.harness.charm.on.rollingops_lock_granted.emit()
         # No HAProxy relations and no TLS config, valid topology
         self.harness.evaluate_status()
         self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
