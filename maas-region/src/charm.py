@@ -876,14 +876,14 @@ class MaasRegionCharm(ops.CharmBase):
             logger.error(str(ex))
 
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
-        if not MaasHelper.get_present():
-            e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
-        elif (
+        if (
             # If the S3 configuration is marked as blocked in the application data bag,
             # mark the leader as blocked.
             blocked_msg := self.get_peer_data(self.app, S3_CONFIGURATION_BLOCKED_KEY)
         ) and self.unit.is_leader():
             e.add_status(ops.BlockedStatus(blocked_msg))
+        elif not MaasHelper.get_present():
+            e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
         elif MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
             e.add_status(ops.BlockedStatus("MAAS snap channel does not match the charm channel"))
         elif not self.unit.opened_ports().issuperset(MAAS_REGION_PORTS):
