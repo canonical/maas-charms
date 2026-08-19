@@ -122,21 +122,6 @@ def _version_tuple(version: str) -> tuple[int, ...]:
     """
     return tuple(int(part) for part in version.split("~")[0].split(".") if part.isdigit())
 
-
-def _epoch_compatible(current: dict[str, list[int]], target: dict[str, list[int]]) -> bool:
-    """Whether a refresh from `current` to `target` is allowed by snap epoch rules.
-
-    snapd only permits a refresh when the target revision can read the data format
-    written by the current revision.
-    """
-    return bool(set(current["write"]) & set(target["read"]))
-
-
-def _format_epoch(epoch: dict[str, list[int]]) -> str:
-    """Render an epoch for display in action results."""
-    return f"read={epoch['read']} write={epoch['write']}"
-
-
 @trace_charm(
     tracing_endpoint="charm_tracing_endpoint",
     extra_types=[
