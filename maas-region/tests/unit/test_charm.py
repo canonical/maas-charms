@@ -678,6 +678,50 @@ class TestCharmActions(unittest.TestCase):
         output = self.harness.run_action("get-maas-secret")
         self.assertEqual(output.results["maas-secret"], "0123456789ab0123456789")
 
+    @patch("charm.MaasHelper", autospec=True)
+    def test_stop_maas_action(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.begin()
+
+        output = self.harness.run_action("stop-maas")
+
+        mock_helper.set_running.assert_called_once_with(False)
+        self.assertEqual(output.results["status"], "stopped")
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_stop_maas_action_fail(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        mock_helper.set_running.side_effect = SnapError("snap stop failed")
+
+        with self.assertRaises(ops.testing.ActionFailed) as e:
+            self.harness.run_action("stop-maas")
+
+        mock_helper.set_running.assert_called_once_with(False)
+        self.assertEqual(e.exception.message, "Failed to stop MAAS: snap stop failed")
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_start_maas_action(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.begin()
+
+        output = self.harness.run_action("start-maas")
+
+        mock_helper.set_running.assert_called_once_with(True)
+        self.assertEqual(output.results["status"], "started")
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_start_maas_action_fail(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        mock_helper.set_running.side_effect = SnapError("snap start failed")
+
+        with self.assertRaises(ops.testing.ActionFailed) as e:
+            self.harness.run_action("start-maas")
+
+        mock_helper.set_running.assert_called_once_with(True)
+        self.assertEqual(e.exception.message, "Failed to start MAAS: snap start failed")
+
     def test_get_maas_secret_action_fail(self):
         self.harness.set_leader(True)
         self.harness.begin()
