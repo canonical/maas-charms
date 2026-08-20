@@ -764,7 +764,6 @@ class TestCharmActions(unittest.TestCase):
         mock_helper.get_installed_version.return_value = "3.7.3"
         mock_helper.get_installed_revision.return_value = "42000"
         mock_helper.get_installed_channel.return_value = "3.7/edge"
-        mock_helper.get_host_architecture.return_value = "amd64"
         mock_helper.get_host_base.return_value = host_base
         mock_helper.get_latest_channel_info.side_effect = lambda ch: channel_map.get(ch)
         self.harness.charm.unit.status = ops.ActiveStatus()
@@ -781,6 +780,16 @@ class TestCharmActions(unittest.TestCase):
             "version": "3.9.0",
             "revision": "60000",
             "epoch": {"read": [3, 4], "write": [4]},
+        },
+    }
+
+    # Channel map for the point-upgrade path: the installed channel has a newer
+    # revision available on the same track.
+    POINT_CHANNEL_MAP: ClassVar[dict[str, dict]] = {
+        MAAS_SNAP_CHANNEL: {
+            "version": "3.7.4",
+            "revision": "42500",
+            "epoch": {"read": [2, 3], "write": [3]},
         },
     }
 
@@ -896,6 +905,53 @@ class TestCharmActions(unittest.TestCase):
         self.harness.begin()
         with self.assertRaises(subprocess.CalledProcessError):
             self.harness.charm.get_region_system_ids()
+
+    @patch(
+        "charm.MaasRegionCharm.bind_address",
+        new_callable=PropertyMock(return_value="10.0.0.10"),
+    )
+    @patch("charm.MaasHelper.get_rack_versions")
+    @patch("charm.MaasRegionCharm._create_or_get_internal_admin")
+    def test_get_rack_versions(self, admin, get_rack_versions, _mock_bind_address):
+        admin.return_value = {"username": "admin"}
+        get_rack_versions.return_value = {"rack-1": "3.7.3", "rack-2": "3.8.0~alpha1"}
+        self.harness.begin()
+        versions = self.harness.charm.get_rack_versions()
+        self.assertEqual(versions, {"rack-1": "3.7.3", "rack-2": "3.8.0~alpha1"})
+
+    @patch(
+        "charm.MaasRegionCharm.bind_address",
+        new_callable=PropertyMock(return_value="10.0.0.10"),
+    )
+    @patch("charm.MaasHelper.get_rack_versions")
+    @patch("charm.MaasRegionCharm._create_or_get_internal_admin")
+    def test_get_rack_versions_standalone_only(self, admin, get_rack_versions, _mock_bind_address):
+        admin.return_value = {"username": "admin"}
+        get_rack_versions.return_value = {"rack-1": "3.7.3"}
+        self.harness.begin()
+        versions = self.harness.charm.get_rack_versions(standalone_only=True)
+        self.assertEqual(versions, {"rack-1": "3.7.3"})
+        self.assertTrue(get_rack_versions.call_args.kwargs["standalone_only"])
+
+    @patch("charm.MaasRegionCharm._create_or_get_internal_admin")
+    def test_get_rack_versions_get_admin_fail(self, admin):
+        admin.side_effect = subprocess.CalledProcessError(1, "maas")
+        self.harness.begin()
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.harness.charm.get_rack_versions()
+
+    @patch(
+        "charm.MaasRegionCharm.bind_address",
+        new_callable=PropertyMock(return_value="10.0.0.10"),
+    )
+    @patch("charm.MaasHelper.get_rack_versions")
+    @patch("charm.MaasRegionCharm._create_or_get_internal_admin")
+    def test_get_rack_versions_read_fail(self, admin, get_rack_versions, _mock_bind_address):
+        admin.return_value = {"username": "admin"}
+        get_rack_versions.side_effect = subprocess.CalledProcessError(1, "maas")
+        self.harness.begin()
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.harness.charm.get_rack_versions()
 
 
 class TestTrackBases(unittest.TestCase):

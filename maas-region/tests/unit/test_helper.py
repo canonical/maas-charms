@@ -3,6 +3,7 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import json
 import subprocess
 import unittest
 from unittest.mock import MagicMock, PropertyMock, mock_open, patch
@@ -355,6 +356,94 @@ class TestHelperSetup(unittest.TestCase):
                 "user",
             ]
         )
+
+    @patch("helper.MaasHelper._logout")
+    @patch("helper.MaasHelper._login_as_admin")
+    @patch("helper.subprocess.check_output")
+    def test_get_rack_versions(self, mock_run, mock_login, mock_logout):
+        mock_run.return_value = json.dumps(
+            [
+                {
+                    "system_id": "pknys3",
+                    "node_type": 4,
+                    "version": "3.8.0~alpha1-18506-g.3f955fda6",
+                },
+                {"system_id": "x3ebyw", "node_type": 2, "version": "3.7.3-18030-g.9122eee68"},
+            ]
+        ).encode()
+        versions = MaasHelper.get_rack_versions("user", "http://1.1.1.1:5240/MAAS")
+        self.assertEqual(versions, {"pknys3": "3.8.0~alpha1", "x3ebyw": "3.7.3"})
+        mock_login.assert_called_once_with("user", "http://1.1.1.1:5240/MAAS", "")
+        mock_logout.assert_called_once_with("user")
+        mock_run.assert_called_once_with(
+            [
+                "/snap/bin/maas",
+                "user",
+                "rack-controllers",
+                "read",
+            ]
+        )
+
+    @patch("helper.MaasHelper._logout")
+    @patch("helper.MaasHelper._login_as_admin")
+    @patch("helper.subprocess.check_output")
+    def test_get_rack_versions_standalone_only(self, mock_run, _mock_login, _mock_logout):
+        mock_run.return_value = json.dumps(
+            [
+                {
+                    "system_id": "pknys3",
+                    "node_type": 4,  # region+rack
+                    "version": "3.8.0~alpha1-18506-g.3f955fda6",
+                },
+                {"system_id": "x3ebyw", "node_type": 2, "version": "3.7.3-18030-g.9122eee68"},
+            ]
+        ).encode()
+        versions = MaasHelper.get_rack_versions(
+            "user", "http://1.1.1.1:5240/MAAS", standalone_only=True
+        )
+        self.assertEqual(versions, {"x3ebyw": "3.7.3"})
+
+    @patch("helper.MaasHelper._logout")
+    @patch("helper.MaasHelper._login_as_admin")
+    @patch("helper.subprocess.check_output")
+    def test_get_rack_versions_standalone_only_all_combined(
+        self, mock_run, _mock_login, _mock_logout
+    ):
+        mock_run.return_value = json.dumps(
+            [{"system_id": "pknys3", "node_type": 4, "version": "3.7.3-18030-g.9122eee68"}]
+        ).encode()
+        versions = MaasHelper.get_rack_versions(
+            "user", "http://1.1.1.1:5240/MAAS", standalone_only=True
+        )
+        self.assertEqual(versions, {})
+
+    @patch("helper.MaasHelper._logout")
+    @patch("helper.MaasHelper._login_as_admin")
+    @patch("helper.subprocess.check_output")
+    def test_get_rack_versions_missing_version(self, mock_run, _mock_login, _mock_logout):
+        mock_run.return_value = json.dumps(
+            [
+                {"system_id": "pknys3", "version": None},
+                {"system_id": "x3ebyw"},
+            ]
+        ).encode()
+        versions = MaasHelper.get_rack_versions("user", "http://1.1.1.1:5240/MAAS")
+        self.assertEqual(versions, {"pknys3": "", "x3ebyw": ""})
+
+    @patch("helper.MaasHelper._logout")
+    @patch("helper.MaasHelper._login_as_admin")
+    @patch("helper.subprocess.check_output")
+    def test_get_rack_versions_no_racks(self, mock_run, _mock_login, _mock_logout):
+        mock_run.return_value = b"[]"
+        self.assertEqual(MaasHelper.get_rack_versions("user", "http://1.1.1.1:5240/MAAS"), {})
+
+    @patch("helper.MaasHelper._logout")
+    @patch("helper.MaasHelper._login_as_admin")
+    @patch("helper.subprocess.check_output", side_effect=subprocess.CalledProcessError(1, "maas"))
+    def test_get_rack_versions_command_failed(self, _mock_run, _mock_login, mock_logout):
+        with self.assertRaises(subprocess.CalledProcessError):
+            MaasHelper.get_rack_versions("user", "http://1.1.1.1:5240/MAAS")
+        mock_logout.assert_called_once_with("user")
 
     @patch("helper.subprocess.check_call")
     def test_msm_enroll(self, mock_run):

@@ -31,6 +31,8 @@ MAAS_CACERT_FILEPATH = Path("/var/snap/maas/common/cacert.pem")
 MAAS_TMP = Path("/tmp/snap-private-tmp/snap.maas/tmp")
 NGINX_CFG_FILEPATH = Path("/var/snap/maas/current/http/regiond.nginx.conf")
 MAAS_HTTPS_PORT = 5443
+# MAAS node type of type rack, from maasserver.enum.NODE_TYPE
+NODE_TYPE_RACK_CONTROLLER = 2
 
 logger = logging.getLogger(__name__)
 
@@ -534,6 +536,56 @@ class MaasHelper:
         regions_output = MaasHelper._call_read_regions(admin_username, maas_url, cacert)
         region_data = json.loads(regions_output)
         return {region["system_id"] for region in region_data}
+
+    @staticmethod
+    def _call_read_racks(admin_username: str, maas_url: str, cacert: str = "") -> str:
+        try:
+            MaasHelper._login_as_admin(admin_username, maas_url, cacert)
+            return subprocess.check_output(
+                [
+                    "/snap/bin/maas",
+                    admin_username,
+                    "rack-controllers",
+                    "read",
+                ]
+            ).decode()
+        finally:
+            MaasHelper._logout(admin_username)
+
+    @staticmethod
+    def get_rack_versions(
+        admin_username: str,
+        maas_url: str,
+        cacert: str = "",
+        standalone_only: bool = False,
+    ) -> dict[str, str]:
+        """Get the MAAS version reported by every rack controller.
+
+        Versions are truncated to the release portion, so the API's
+        "3.8.0~alpha1-18696-g.4ba2498c1" becomes "3.8.0~alpha1". This matches the
+        format of `get_installed_version`, making the two comparable.
+
+        Args:
+            admin_username (str): The admin username for MAAS
+            maas_url (str): URL of the MAAS API
+            cacert (str): optionally, contents of cacert for a self-signed ssl_certificate
+            standalone_only (bool): exclude controllers running in "region+rack" mode,
+                keeping only standalone racks.
+
+        Returns:
+            dict[str, str]: mapping of rack controller system ID to version. A rack
+                that has not yet reported a version maps to an empty string.
+
+        Raises:
+            CalledProcessError: failed to read rack controllers from MAAS
+        """
+        racks_output = MaasHelper._call_read_racks(admin_username, maas_url, cacert)
+        rack_data = json.loads(racks_output)
+        return {
+            rack["system_id"]: str(rack.get("version") or "").split("-")[0]
+            for rack in rack_data
+            if not standalone_only or rack.get("node_type") == NODE_TYPE_RACK_CONTROLLER
+        }
 
     @staticmethod
     def is_maas_initialized() -> bool:

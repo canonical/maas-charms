@@ -42,6 +42,10 @@ HAPROXY_INTERNAL_HTTP_API = "ingress-tcp-internal-http-api"
 
 MAAS_SNAP_CHANNEL = "3.8/edge"
 
+# TODO: remove, dev only
+DEV_LATEST_CHANNEL = "latest/edge"
+DEV_LATEST_TRACK = "latest"
+
 # Ubuntu bases each MAAS track's charm is published for. Must be updated when a new
 # track ships; used for upgrade compatibility checks. Tracks are listed in ascending
 # MAAS version, and this order dictates the only supported (sequential) upgrade
@@ -49,6 +53,8 @@ MAAS_SNAP_CHANNEL = "3.8/edge"
 MAAS_TRACK_BASES: dict[str, list[str]] = {
     "3.7": ["24.04"],
     "3.8": ["26.04"],
+    # TODO: remove, dev only
+    DEV_LATEST_TRACK: ["26.04"],
 }
 
 MAAS_PROXY_PORT = 80
@@ -146,6 +152,28 @@ def _next_track(track: str) -> str | None:
     if idx + 1 < len(tracks):
         return tracks[idx + 1]
     return None
+
+
+def _resolve_target_channel(track: Any) -> tuple[str, str]:
+    """Resolve the track requested by pre-upgrade-check into a track and snap channel.
+    
+    Assumes every charm track installs the stable snap channel.
+
+    Args:
+        track (Any): the action's `track` parameter, if given
+
+    Returns:
+        tuple[str, str]: the target track, and the snap channel it maps to
+    """
+    if not track:
+        return MAAS_SNAP_CHANNEL.split("/")[0], MAAS_SNAP_CHANNEL
+    # juju YAML-parses unquoted action params, so track=3.7 arrives as a float.
+    track = str(track)
+    # TODO: remove, dev only
+    if track == DEV_LATEST_CHANNEL:
+        return DEV_LATEST_TRACK, DEV_LATEST_CHANNEL
+
+    return track, f"{track}/stable"
 
 
 def _sequential_upgrade_error(installed_track: str, target_track: str) -> str | None:
@@ -311,7 +339,7 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
     def _upgrade_precondition_error(self) -> str | None:
-        """Check whether this unit is safe to upgrade.
+        """Check whether this unit is 'safe' to upgrade.
 
         Returns:
             str | None: a message explaining why the upgrade must not proceed, or
@@ -367,15 +395,7 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
     def _on_pre_upgrade_check_action(self, event: ops.ActionEvent) -> None:
-        target_track = event.params.get("track")
-        if not target_track:
-            target_track = MAAS_SNAP_CHANNEL.split("/")[0]
-            target_snap_channel = MAAS_SNAP_CHANNEL
-        else:
-            # juju YAML-parses unquoted action params, so track=3.7 arrives as a float.
-            target_track = str(target_track)
-            # Assumes every charm track
-            target_snap_channel = f"{target_track}/stable"
+        target_track, target_snap_channel = _resolve_target_channel(event.params.get("track"))
 
         installed_snap_version = MaasHelper.get_installed_version()
         installed_snap_revision = MaasHelper.get_installed_revision()
@@ -412,47 +432,161 @@ class MaasRegionCharm(ops.CharmBase):
         target_version = target_channel_info.get("version", "")
         target_revision = target_channel_info.get("revision", "")
 
+        # Allows the user to see all the reasons why an upgrade may not be possible before proceeding.
+        errors: list[str] = []
+
+        if rack_error := self._check_rack_versions(target_version, results):
+            errors.append(rack_error)
+
         if target_revision == installed_snap_revision:
             results["info"] = (
                 f"Current installed revision ({installed_snap_revision}) is the latest available on channel {target_snap_channel}. No upgrade is needed."
             )
-            event.set_results(results)
-            return
+        else:
+            errors.extend(
+                self._check_upgrade_path(
+                    installed_snap_version,
+                    installed_snap_channel,
+                    target_version,
+                    target_revision,
+                    target_snap_channel,
+                    target_track,
+                    results,
+                )
+            )
 
+        event.set_results(results)
+        if errors:
+            event.fail("\n".join(errors))
+
+    def _check_upgrade_path(
+        self,
+        installed_snap_version: str,
+        installed_snap_channel: str,
+        target_version: str,
+        target_revision: str,
+        target_snap_channel: str,
+        target_track: str,
+        results: dict[str, Any],
+    ) -> list[str]:
+        """Run the checks that only apply when there is an upgrade to perform.
+
+        Args:
+            installed_snap_version (str): the version currently installed, e.g. "3.7.3"
+            installed_snap_channel (str): the channel currently installed, e.g. "3.7/stable"
+            target_version (str): the version being upgraded to, e.g. "3.8.0"
+            target_revision (str): the snap revision being upgraded to
+            target_snap_channel (str): the channel being checked, e.g. "3.8/stable"
+            target_track (str): the track being checked, e.g. "3.8"
+            results (dict[str, Any]): action results to annotate
+
+        Returns:
+            list[str]: a message for each check that failed, empty if all passed
+        """
         results["upgrade-target-snap"] = (
             f"{target_version} (revision {target_revision}) on channel {target_snap_channel}"
         )
+
+        errors = []
         if _version_tuple(target_version) < _version_tuple(installed_snap_version):
-            event.set_results(results)
-            event.fail(
+            errors.append(
                 f"The latest version ({target_version}) on channel {target_snap_channel} is a downgrade compared to the installed version ({installed_snap_version})."
                 f" MAAS does not support downgrades. Please use a channel with a newer version.\n"
             )
-            return
 
         if target_snap_channel == installed_snap_channel:
-            # Point upgrade, no need for base compatibility check
+            # Point upgrade, no need for base compatibility or sequential checks
             results["info"] = (
                 f"Point upgrade is possible from {installed_snap_version} to {target_version}."
             )
-            event.set_results(results)
-            return
+            return errors
 
         # A move between tracks may also require a base change
         if base_error := self._check_base_compatibility(target_snap_channel, results):
-            event.set_results(results)
-            event.fail(base_error)
-            return
+            errors.append(base_error)
 
-        # Check sequential upgrades last incase a user wishes to force a non-sequential
-        # upgrade, so all other checks are still performed.
         installed_track = installed_snap_channel.split("/")[0]
         if seq_error := _sequential_upgrade_error(installed_track, target_track):
-            event.set_results(results)
-            event.fail(seq_error)
-            return
+            errors.append(seq_error)
+        return errors
 
-        event.set_results(results)
+    def _check_rack_versions(self, target_version: str, results: dict[str, Any]) -> str | None:
+        """Record standalone rack controller versions, in place, in `results`.
+
+        Rack controllers should be upgraded ahead of the region, so every standalone rack must
+        already be at the target version before this region may upgrade to it. Units
+        running in "region+rack" mode are excluded from these checks.
+
+        Only a rack that is behind blocks the upgrade. States that are undetermined
+        are recorded but are not blocking.
+
+        Args:
+            target_version (str): the MAAS version being upgraded to, e.g. "3.8.0"
+            results (dict[str, Any]): action results to annotate
+
+        Returns:
+            str | None: a failure message if any standalone rack is behind the target
+        """
+        try:
+            rack_versions = self.get_rack_versions(standalone_only=True)
+        except (subprocess.CalledProcessError, json.JSONDecodeError, OSError):
+            logger.exception("Failed to read rack controller versions from MAAS")
+            results["rack-controllers"] = "unknown"
+            results["rack-info"] = (
+                "Could not read the rack controller versions from MAAS, so it could not "
+                "be determined whether they have been upgraded first. Verify manually "
+                "that every rack controller is upgraded before upgrading the region"
+            )
+            return None
+
+        if not rack_versions:
+            results["rack-controllers"] = "none"
+            results["rack-info"] = (
+                "No standalone rack controllers present that need to be upgraded first."
+            )
+            return None
+
+        results["rack-controllers"] = ", ".join(
+            f"{system_id}: {version or 'unknown'}"
+            for system_id, version in sorted(rack_versions.items())
+        )
+
+        target = _version_tuple(target_version)
+        behind = sorted(
+            f"{system_id} ({version})"
+            for system_id, version in rack_versions.items()
+            if version and _version_tuple(version) < target
+        )
+        unreported = sorted(
+            system_id for system_id, version in rack_versions.items() if not version
+        )
+        ahead = sorted(
+            f"{system_id} ({version})"
+            for system_id, version in rack_versions.items()
+            if version and _version_tuple(version) > target
+        )
+
+        info = []
+        if unreported:
+            info.append(
+                f"{', '.join(unreported)} has not reported a version to MAAS, so it "
+                "could not be checked. This usually means the rack has registered but "
+                "never connected."
+            )
+        if ahead:
+            info.append(f"{', '.join(ahead)} is newer than the target version {target_version}.")
+        if not behind and not unreported and not ahead:
+            info.append(f"All standalone rack controllers are running {target_version}.")
+        if info:
+            results["rack-info"] = " ".join(info)
+
+        if behind:
+            return (
+                f"Rack controllers must not be older than the region, but "
+                f"{', '.join(behind)} is older than {target_version}. Upgrade every rack "
+                f"controller to {target_version} first, then run this check again."
+            )
+        return None
 
     def _check_base_compatibility(
         self, target_channel: str, results: dict[str, Any]
@@ -470,8 +604,6 @@ class MaasRegionCharm(ops.CharmBase):
         target_track = target_channel.split("/")[0]
         target_bases = MAAS_TRACK_BASES.get(target_track)
 
-        # An unmapped track is reported as undetermined: a stale map must not block
-        # an otherwise legitimate upgrade.
         if target_bases is None:
             return (
                 f"Track {target_track} is not known to this charm, so base compatibility "
@@ -805,6 +937,26 @@ class MaasRegionCharm(ops.CharmBase):
             admin_username=credentials["username"],
             maas_url=self.maas_cli_url,
             cacert=str(self.config["ssl_cacert_content"]),
+        )
+
+    def get_rack_versions(self, standalone_only: bool = False) -> dict[str, str]:
+        """Get the MAAS version of every rack controller in the cluster.
+
+        Args:
+            standalone_only (bool): exclude units running in "region+rack" mode.
+
+        Returns:
+            dict[str, str]: mapping of rack controller system ID to version
+
+        Raises:
+            CalledProcessError: failed to get the rack versions
+        """
+        credentials = self._create_or_get_internal_admin()
+        return MaasHelper.get_rack_versions(
+            admin_username=credentials["username"],
+            maas_url=self.maas_cli_url,
+            cacert=str(self.config["ssl_cacert_content"]),
+            standalone_only=standalone_only,
         )
 
     def _reconcile_ha_proxy(self, event: ops.EventBase) -> None:
