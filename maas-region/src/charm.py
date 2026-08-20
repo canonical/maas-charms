@@ -372,6 +372,8 @@ class MaasRegionCharm(ops.CharmBase):
             target_track = MAAS_SNAP_CHANNEL.split("/")[0]
             target_snap_channel = MAAS_SNAP_CHANNEL
         else:
+            # juju YAML-parses unquoted action params, so track=3.7 arrives as a float.
+            target_track = str(target_track)
             # Assumes every charm track
             target_snap_channel = f"{target_track}/stable"
 
