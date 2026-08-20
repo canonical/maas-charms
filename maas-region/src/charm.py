@@ -23,6 +23,7 @@ from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
+from debian.debian_support import Version
 from ops.model import SecretNotFoundError
 from pydantic import IPvAnyAddress
 
@@ -121,14 +122,6 @@ COMMON_DEFAULT_HAPROXY_ARGS = {
     "check_interval": 2,
     "server_timeout": 900,
 }
-
-
-def _version_tuple(version: str) -> tuple[int, ...]:
-    """Parse a MAAS version like "3.7.2" into a comparable tuple.
-
-    Pre-release suffixes such as "~alpha1" are dropped.
-    """
-    return tuple(int(part) for part in version.split("~")[0].split(".") if part.isdigit())
 
 
 def _next_track(track: str) -> str | None:
@@ -431,6 +424,12 @@ class MaasRegionCharm(ops.CharmBase):
 
         target_version = target_channel_info.get("version", "")
         target_revision = target_channel_info.get("revision", "")
+        if not target_version or not target_revision:
+            event.set_results(results)
+            event.fail(
+                f"The snap store did not report a version and revision for channel {target_snap_channel}, cannot determine if an upgrade is possible."
+            )
+            return
 
         # Allows the user to see all the reasons why an upgrade may not be possible before proceeding.
         errors: list[str] = []
@@ -488,7 +487,7 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
         errors = []
-        if _version_tuple(target_version) < _version_tuple(installed_snap_version):
+        if Version(target_version) < Version(installed_snap_version):
             errors.append(
                 f"The latest version ({target_version}) on channel {target_snap_channel} is a downgrade compared to the installed version ({installed_snap_version})."
                 f" MAAS does not support downgrades. Please use a channel with a newer version.\n"
@@ -551,11 +550,11 @@ class MaasRegionCharm(ops.CharmBase):
             for system_id, version in sorted(rack_versions.items())
         )
 
-        target = _version_tuple(target_version)
+        target = Version(target_version)
         behind = sorted(
             f"{system_id} ({version})"
             for system_id, version in rack_versions.items()
-            if version and _version_tuple(version) < target
+            if version and Version(version) < target
         )
         unreported = sorted(
             system_id for system_id, version in rack_versions.items() if not version
@@ -563,7 +562,7 @@ class MaasRegionCharm(ops.CharmBase):
         ahead = sorted(
             f"{system_id} ({version})"
             for system_id, version in rack_versions.items()
-            if version and _version_tuple(version) > target
+            if version and Version(version) > target
         )
 
         info = []
