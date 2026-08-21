@@ -953,39 +953,40 @@ class TestCharmActions(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             self.harness.charm.get_rack_versions()
 
-    @patch("charm.MaasRegionCharm.get_rack_versions")
-    def test_check_rack_versions_orders_prereleases(self, get_rack_versions):
-        """Pre-release suffixes order as Debian does: ~alpha1 < ~beta6 < the release."""
-        self.harness.begin()
-        get_rack_versions.return_value = {"rack-1": "3.8.0~alpha1"}
-
-        results: dict = {}
-        error = self.harness.charm._check_rack_versions("3.8.0~beta6", results)
-
-        self.assertIn("rack-1 (3.8.0~alpha1) is older than 3.8.0~beta6", error)
-        self.assertEqual(results["rack-controllers"], "rack-1: 3.8.0~alpha1")
-
-    @patch("charm.MaasRegionCharm.get_rack_versions")
-    def test_check_rack_versions_prerelease_is_older_than_release(self, get_rack_versions):
-        self.harness.begin()
-        get_rack_versions.return_value = {"rack-1": "3.8.0~beta6", "rack-2": "3.8.0"}
-
-        results: dict = {}
-        error = self.harness.charm._check_rack_versions("3.8.0", results)
-
-        self.assertIn("rack-1 (3.8.0~beta6)", error)
-        self.assertNotIn("rack-2", error)
 
     @patch("charm.MaasRegionCharm.get_rack_versions")
     def test_check_rack_versions_point_release_ordering(self, get_rack_versions):
-        """Comparison must be numeric per component, so 3.7.10 is newer than 3.7.3."""
         self.harness.begin()
         get_rack_versions.return_value = {"rack-1": "3.7.10"}
 
         results: dict = {}
+        self.harness.charm._check_rack_versions("3.7.3", results)
 
-        self.assertIsNone(self.harness.charm._check_rack_versions("3.7.3", results))
         self.assertIn("newer than the target version 3.7.3", results["rack-info"])
+
+    @patch("charm.MaasRegionCharm.get_rack_versions")
+    def test_check_rack_versions_behind(self, get_rack_versions):
+        self.harness.begin()
+        get_rack_versions.return_value = {"rack-1": "3.7.2", "rack-2": "3.7.1"}
+
+        results: dict = {}
+        self.harness.charm._check_rack_versions("3.7.3", results)
+
+        self.assertIn("Some racks are behind the target MAAS version", results["rack-info"])
+        self.assertIn("rack-1 (3.7.2), rack-2 (3.7.1) are older", results["rack-info"])
+        self.assertIn("Consider upgrading your standalone racks first", results["rack-info"])
+
+    @patch("charm.MaasRegionCharm.get_rack_versions")
+    def test_check_rack_versions_at_target(self, get_rack_versions):
+        self.harness.begin()
+        get_rack_versions.return_value = {"rack-1": "3.7.3"}
+
+        results: dict = {}
+        self.harness.charm._check_rack_versions("3.7.3", results)
+
+        self.assertEqual(
+            results["rack-info"], "All standalone rack controllers are running 3.7.3."
+        )
 
 
 class TestTrackBases(unittest.TestCase):

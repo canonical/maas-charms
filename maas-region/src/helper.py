@@ -214,7 +214,6 @@ class MaasHelper:
             Union[dict, None]: {"version": ..., "revision": ..., "epoch": ...} if the
                 channel exists in the store
         """
-        # Get snap information from the snap store for a specific channel.
         info = SnapClient().get_snap_information(MAAS_SNAP_NAME)
         channels = info.get("channels")
         if not isinstance(channels, dict):

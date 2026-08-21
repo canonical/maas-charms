@@ -128,8 +128,7 @@ def _next_track(track: str) -> str | None:
     """Find the MAAS track immediately following a given track.
 
     The successor is derived from the declaration order of MAAS_TRACK_BASES, which
-    lists tracks in ascending supported version, and so encodes the sequential upgrade
-    path.
+    lists tracks in ascending supported version.
 
     Args:
         track (str): the track to find the successor of, e.g. "3.7"
@@ -149,7 +148,7 @@ def _next_track(track: str) -> str | None:
 
 def _resolve_target_channel(track: Any) -> tuple[str, str]:
     """Resolve the track requested by pre-upgrade-check into a track and snap channel.
-    
+
     Assumes every charm track installs the stable snap channel.
 
     Args:
@@ -434,8 +433,7 @@ class MaasRegionCharm(ops.CharmBase):
         # Allows the user to see all the reasons why an upgrade may not be possible before proceeding.
         errors: list[str] = []
 
-        if rack_error := self._check_rack_versions(target_version, results):
-            errors.append(rack_error)
+        self._check_rack_versions(target_version, results)
 
         if target_revision == installed_snap_revision:
             results["info"] = (
@@ -471,12 +469,12 @@ class MaasRegionCharm(ops.CharmBase):
         """Run the checks that only apply when there is an upgrade to perform.
 
         Args:
-            installed_snap_version (str): the version currently installed, e.g. "3.7.3"
-            installed_snap_channel (str): the channel currently installed, e.g. "3.7/stable"
+            installed_snap_version (str): the version currently installed, e.g. "3.8.3"
+            installed_snap_channel (str): the channel currently installed, e.g. "3.8/stable"
             target_version (str): the version being upgraded to, e.g. "3.8.0"
             target_revision (str): the snap revision being upgraded to
-            target_snap_channel (str): the channel being checked, e.g. "3.8/stable"
-            target_track (str): the track being checked, e.g. "3.8"
+            target_snap_channel (str): the channel being checked, e.g. "3.9/stable"
+            target_track (str): the track being checked, e.g. "3.9"
             results (dict[str, Any]): action results to annotate
 
         Returns:
@@ -509,22 +507,16 @@ class MaasRegionCharm(ops.CharmBase):
             errors.append(seq_error)
         return errors
 
-    def _check_rack_versions(self, target_version: str, results: dict[str, Any]) -> str | None:
+    def _check_rack_versions(self, target_version: str, results: dict[str, Any]) -> None:
         """Record standalone rack controller versions, in place, in `results`.
 
-        Rack controllers should be upgraded ahead of the region, so every standalone rack must
-        already be at the target version before this region may upgrade to it. Units
-        running in "region+rack" mode are excluded from these checks.
-
-        Only a rack that is behind blocks the upgrade. States that are undetermined
-        are recorded but are not blocking.
+        Rack controllers should be upgraded ahead of the region. All info is reported 
+        through `results` and none of them block the upgrade. Units running in 
+        region+rack mode are excluded, since they upgrade with their region.
 
         Args:
             target_version (str): the MAAS version being upgraded to, e.g. "3.8.0"
             results (dict[str, Any]): action results to annotate
-
-        Returns:
-            str | None: a failure message if any standalone rack is behind the target
         """
         try:
             rack_versions = self.get_rack_versions(standalone_only=True)
@@ -536,14 +528,14 @@ class MaasRegionCharm(ops.CharmBase):
                 "be determined whether they have been upgraded first. Verify manually "
                 "that every rack controller is upgraded before upgrading the region"
             )
-            return None
+            return
 
         if not rack_versions:
             results["rack-controllers"] = "none"
             results["rack-info"] = (
                 "No standalone rack controllers present that need to be upgraded first."
             )
-            return None
+            return
 
         results["rack-controllers"] = ", ".join(
             f"{system_id}: {version or 'unknown'}"
@@ -566,26 +558,22 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
         info = []
+        if behind:
+            info.append(
+                f"Some racks are behind the target MAAS version: {', '.join(behind)} "
+                f"{'are' if len(behind) > 1 else 'is'} older than {target_version}. "
+                "Consider upgrading your standalone racks first."
+            )
         if unreported:
             info.append(
                 f"{', '.join(unreported)} has not reported a version to MAAS, so it "
-                "could not be checked. This usually means the rack has registered but "
-                "never connected."
+                "could not be checked."
             )
         if ahead:
             info.append(f"{', '.join(ahead)} is newer than the target version {target_version}.")
         if not behind and not unreported and not ahead:
-            info.append(f"All standalone rack controllers are running {target_version}.")
-        if info:
-            results["rack-info"] = " ".join(info)
-
-        if behind:
-            return (
-                f"Rack controllers must not be older than the region, but "
-                f"{', '.join(behind)} is older than {target_version}. Upgrade every rack "
-                f"controller to {target_version} first, then run this check again."
-            )
-        return None
+            info.append(f"All standalone rack controllers are running target version {target_version}.")
+        results["rack-info"] = " ".join(info)
 
     def _check_base_compatibility(
         self, target_channel: str, results: dict[str, Any]
