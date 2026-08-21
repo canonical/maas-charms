@@ -35,7 +35,6 @@ logger = logging.getLogger(__name__)
 MAAS_PEER_NAME = "maas-cluster"
 MAAS_DB_NAME = "maas-db"
 MAAS_ROLLING_OPS_RELATION = "rollingops-peers"
-MAAS_UPGRADE_RELATION = "upgrade"
 HAPROXY_NON_TLS = "ingress-tcp"
 HAPROXY_TLS = "ingress-tcp-tls"
 HAPROXY_TEMPORAL = "ingress-tcp-temporal"
@@ -368,7 +367,7 @@ class MaasRegionCharm(ops.CharmBase):
         try:
             self.rolling_ops_manager.request_async_lock(callback_id="upgrade", max_retry=3)
         except Exception as ex:
-            logger.exception("Failed to upgrade MAAS")
+            logger.error(str(ex))
             event.fail(f"Upgrade failed: {ex}")
             return
         event.set_results(
@@ -512,8 +511,8 @@ class MaasRegionCharm(ops.CharmBase):
         """
         try:
             rack_versions = self.get_rack_versions(standalone_only=True)
-        except (subprocess.CalledProcessError, json.JSONDecodeError, OSError):
-            logger.exception("Failed to read rack controller versions from MAAS")
+        except Exception as ex:
+            logger.error(str(ex))
             results["rack-controllers"] = "unknown"
             results["rack-info"] = (
                 "Could not read the rack controller versions from MAAS, so it could not "
