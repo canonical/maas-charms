@@ -43,9 +43,6 @@ HAPROXY_INTERNAL_HTTP_API = "ingress-tcp-internal-http-api"
 
 MAAS_SNAP_CHANNEL = "3.8/edge"
 
-# TODO: remove, dev only
-DEV_LATEST_CHANNEL = "latest/edge"
-DEV_LATEST_TRACK = "latest"
 
 # Ubuntu bases each MAAS track's charm is published for. Must be updated when a new
 # track ships; used for upgrade compatibility checks. Tracks are listed in ascending
@@ -54,8 +51,6 @@ DEV_LATEST_TRACK = "latest"
 MAAS_TRACK_BASES: dict[str, list[str]] = {
     "3.7": ["24.04"],
     "3.8": ["26.04"],
-    # TODO: remove, dev only
-    DEV_LATEST_TRACK: ["26.04"],
 }
 
 MAAS_PROXY_PORT = 80
@@ -161,9 +156,6 @@ def _resolve_target_channel(track: Any) -> tuple[str, str]:
         return MAAS_SNAP_CHANNEL.split("/")[0], MAAS_SNAP_CHANNEL
     # juju YAML-parses unquoted action params, so track=3.7 arrives as a float.
     track = str(track)
-    # TODO: remove, dev only
-    if track == DEV_LATEST_CHANNEL:
-        return DEV_LATEST_TRACK, DEV_LATEST_CHANNEL
 
     return track, f"{track}/stable"
 
