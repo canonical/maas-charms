@@ -14,7 +14,6 @@ from unittest.mock import PropertyMock, call, patch
 import ops
 import ops.testing
 import yaml
-from charmlibs.rollingops import RollingOpsNoRelationError
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
 
@@ -1082,13 +1081,13 @@ class TestCharmActions(unittest.TestCase):
         mock_helper.get_installed_version.return_value = "3.8.0"
         mock_helper.get_installed_revision.return_value = "12345"
 
-        with patch.object(
-            self.harness.charm.rolling_ops_manager, "request_async_lock"
-        ) as request_lock:
-            output = self.harness.run_action("upgrade")
+        output = self.harness.run_action("upgrade")
 
-        request_lock.assert_called_once_with(callback_id="upgrade", max_retry=3)
         mock_helper.upgrade.assert_not_called()
+        self.harness.charm.on.rollingops_lock_granted.emit()
+
+        mock_helper.upgrade.assert_called_once_with(MAAS_SNAP_CHANNEL)
+        self.assertEqual(self.harness.get_workload_version(), "3.8.0")
         self.assertEqual(output.results["version"], "3.8.0")
         self.assertEqual(output.results["revision"], "12345")
 
@@ -1096,18 +1095,17 @@ class TestCharmActions(unittest.TestCase):
     def test_upgrade_action_fail(self, mock_helper):
         self.harness.set_leader(True)
         self.harness.begin()
+        mock_helper.upgrade.side_effect = SnapError("snap refresh failed")
 
-        with patch.object(
-            self.harness.charm.rolling_ops_manager,
-            "request_async_lock",
-            side_effect=RollingOpsNoRelationError("No %s peer relation yet.", "rollingops-peers"),
-        ):
-            with self.assertRaises(ops.testing.ActionFailed) as e:
-                self.harness.run_action("upgrade")
+        self.harness.run_action("upgrade")
+        self.harness.charm.on.rollingops_lock_granted.emit()
 
-        self.assertIn("Upgrade failed:", e.exception.message)
-        self.assertIn("No %s peer relation yet.", e.exception.message)
-        mock_helper.upgrade.assert_not_called()
+        # The first attempt plus max_retry=3 exhausts the operation.
+        for _ in range(3):
+            self.harness.charm.on.rollingops_lock_granted.emit()
+
+        self.assertEqual(mock_helper.upgrade.call_count, 4)
+        self.assertFalse(self.harness.charm.rolling_ops_manager.is_waiting_callback("upgrade"))
 
     @patch(
         "charm.MaasRegionCharm.bind_address",
