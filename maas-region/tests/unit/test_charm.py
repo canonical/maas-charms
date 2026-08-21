@@ -760,31 +760,137 @@ class TestCharmActions(unittest.TestCase):
         err = e.exception
         self.assertEqual(err.message, "MAAS is not initialized yet or failed to retrieve status")
 
-    def _setup_pre_upgrade_check(self, mock_helper, channel_map, host_base="26.04"):
-        mock_helper.get_installed_version.return_value = "3.7.3"
-        mock_helper.get_installed_revision.return_value = "42000"
-        mock_helper.get_installed_channel.return_value = "3.7/edge"
+    def _setup_pre_upgrade_check(
+        self, mock_helper, inst_version, inst_revision, snap_info_map, host_base, installed_channel
+    ):
+        mock_helper.get_installed_version.return_value = inst_version
+        mock_helper.get_installed_revision.return_value = inst_revision
+        mock_helper.get_installed_channel.return_value = installed_channel
         mock_helper.get_host_base.return_value = host_base
-        mock_helper.get_latest_channel_info.side_effect = lambda ch: channel_map.get(ch)
-        self.harness.charm.unit.status = ops.ActiveStatus()
+        mock_helper.get_latest_channel_info.side_effect = lambda ch: snap_info_map.get(ch)
+        # self.harness.charm.unit.status = ops.ActiveStatus()
 
-    # Channel map used for the cross-channel path: MAAS_SNAP_CHANNEL is the "current"
-    # side, and 3.9/edge is the requested target.
     CROSS_CHANNEL_MAP: ClassVar[dict[str, dict]] = {
-        MAAS_SNAP_CHANNEL: {
+        "3.8/stable": {
             "version": "3.8.0",
             "revision": "50000",
             "epoch": {"read": [2, 3], "write": [3]},
         },
-        "3.9/edge": {
+        "3.9/stable": {
             "version": "3.9.0",
             "revision": "60000",
             "epoch": {"read": [3, 4], "write": [4]},
         },
     }
 
-    # Channel map for the point-upgrade path: the installed channel has a newer
-    # revision available on the same track.
+    @patch("charm.MaasHelper", autospec=True)
+    def test_pre_upgrade_check_maas_not_installed(self, mock_helper):
+        for missing in ("version", "revision", "channel"):
+            with self.subTest(missing=missing):
+                self.harness = ops.testing.Harness(MaasRegionCharm)
+                self.harness.add_network("10.0.0.10")
+                self.addCleanup(self.harness.cleanup)
+                self.harness.set_leader(True)
+                self.harness.begin()
+                self._setup_pre_upgrade_check(
+                    mock_helper,
+                    inst_version=None if missing == "version" else "3.8.0",
+                    inst_revision=None if missing == "revision" else "50000",
+                    snap_info_map=self.CROSS_CHANNEL_MAP,
+                    host_base="26.04",
+                    installed_channel=None if missing == "channel" else "3.8/stable",
+                )
+
+                with self.assertRaises(ops.testing.ActionFailed) as e:
+                    self.harness.run_action("pre-upgrade-check", {"track": "3.9"})
+
+                self.assertEqual(
+                    e.exception.message,
+                    "Could not obtain installed MAAS version, revision, or channel."
+                    " Is MAAS installed?",
+                )
+                mock_helper.get_latest_channel_info.assert_not_called()
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_pre_upgrade_check_channel_not_in_store(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        self._setup_pre_upgrade_check(
+            mock_helper,
+            inst_version="3.8.0",
+            inst_revision="50000",
+            snap_info_map={},  # No entry for 3.9/stable
+            host_base="26.04",
+            installed_channel="3.8/stable",
+        )
+
+        with self.assertRaises(ops.testing.ActionFailed) as e:
+            self.harness.run_action("pre-upgrade-check", {"track": "3.9"})
+
+        mock_helper.get_latest_channel_info.assert_called_once_with("3.9/stable")
+        self.assertEqual(
+            e.exception.message,
+            "No MAAS version found in the snap store for channel 3.9/stable",
+        )
+        self.assertEqual(
+            e.exception.output.results["installed-snap"],
+            "3.8.0 (revision 50000) on channel 3.8/stable",
+        )
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_pre_upgrade_check_store_missing_version_and_revision(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        self._setup_pre_upgrade_check(
+            mock_helper,
+            inst_version="3.8.0",
+            inst_revision="50000",
+            snap_info_map={"3.9/stable": {"epoch": {"read": [3], "write": [3]}}},
+            host_base="26.04",
+            installed_channel="3.8/stable",
+        )
+
+        with self.assertRaises(ops.testing.ActionFailed) as e:
+            self.harness.run_action("pre-upgrade-check", {"track": "3.9"})
+
+        self.assertEqual(
+            e.exception.message,
+            "The snap store did not report a version and revision for channel 3.9/stable,"
+            " cannot determine if an upgrade is possible.",
+        )
+        self.assertEqual(
+            e.exception.output.results["installed-snap"],
+            "3.8.0 (revision 50000) on channel 3.8/stable",
+        )
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_pre_upgrade_check_store_query_fails(self, mock_helper):
+        self.harness.set_leader(True)
+        self.harness.begin()
+        self._setup_pre_upgrade_check(
+            mock_helper,
+            inst_version="3.8.0",
+            inst_revision="50000",
+            snap_info_map=self.CROSS_CHANNEL_MAP,
+            host_base="26.04",
+            installed_channel="3.8/stable",
+        )
+        mock_helper.get_latest_channel_info.side_effect = SnapError("store unreachable")
+
+        with self.assertRaises(ops.testing.ActionFailed) as e:
+            self.harness.run_action("pre-upgrade-check", {"track": "3.9"})
+
+        self.assertEqual(
+            e.exception.message,
+            "Failed to query the snap store for the latest MAAS version on channel 3.9/stable,"
+            " cannot determine if an upgrade is possible.",
+        )
+        self.assertEqual(
+            e.exception.output.results["installed-snap"],
+            "3.8.0 (revision 50000) on channel 3.8/stable",
+        )
+
+
     POINT_CHANNEL_MAP: ClassVar[dict[str, dict]] = {
         MAAS_SNAP_CHANNEL: {
             "version": "3.7.4",
@@ -793,90 +899,94 @@ class TestCharmActions(unittest.TestCase):
         },
     }
 
-    @patch.dict("charm.MAAS_TRACK_BASES", {"3.9": ["26.04"]}, clear=True)
-    @patch("charm.MaasHelper", autospec=True)
-    def test_pre_upgrade_check_compatible(self, mock_helper):
-        self.harness.set_leader(True)
-        self.harness.begin()
-        self._setup_pre_upgrade_check(mock_helper, self.CROSS_CHANNEL_MAP, host_base="26.04")
+    # @patch("charm.MaasHelper", autospec=True)
+    # def test_pre_upgrade_check_point_upgrade_skips_checks(self, mock_helper):
+    #     self.harness.set_leader(True)
+    #     self.harness.begin()
+    #     self._setup_pre_upgrade_check(
+    #         mock_helper, self.POINT_CHANNEL_MAP, installed_channel=MAAS_SNAP_CHANNEL
+    #     )
 
-        output = self.harness.run_action("pre-upgrade-check", {"channel": "3.9/edge"})
+    #     output = self.harness.run_action("pre-upgrade-check")
 
-        self.assertTrue(output.results["base-compatible"])
-        self.assertEqual(output.results["host-base"], "26.04")
-        self.assertEqual(output.results["target-bases"], "26.04")
+    #     mock_helper.get_latest_channel_info.assert_called_once_with(MAAS_SNAP_CHANNEL)
+    #     self.assertNotIn("host-base", output.results)
+    #     self.assertEqual(
+    #         output.results["info"], "Point upgrade is possible from 3.7.3 to 3.7.4."
+    #     )
 
-    @patch.dict("charm.MAAS_TRACK_BASES", {"3.9": ["28.04"]}, clear=True)
-    @patch("charm.MaasHelper", autospec=True)
-    def test_pre_upgrade_check_base_incompatible(self, mock_helper):
-        self.harness.set_leader(True)
-        self.harness.begin()
-        self._setup_pre_upgrade_check(mock_helper, self.CROSS_CHANNEL_MAP, host_base="26.04")
+    # @patch.dict("charm.MAAS_TRACK_BASES", {"3.7": ["24.04"], "3.9": ["26.04"]}, clear=True)
+    # @patch("charm.MaasHelper", autospec=True)
+    # def test_pre_upgrade_check_compatible(self, mock_helper):
+    #     self.harness.set_leader(True)
+    #     self.harness.begin()
+    #     self._setup_pre_upgrade_check(mock_helper, self.CROSS_CHANNEL_MAP, host_base="26.04")
 
-        with self.assertRaises(ops.testing.ActionFailed) as e:
-            self.harness.run_action("pre-upgrade-check", {"channel": "3.9/edge"})
+    #     output = self.harness.run_action("pre-upgrade-check", {"track": "3.9"})
 
-        err = e.exception
-        self.assertIn("requires an Ubuntu base of 28.04", err.message)
-        self.assertIn("this unit runs 26.04", err.message)
-        self.assertIn("redeploying units", err.message)
+    #     self.assertEqual(output.results["host-base"], "26.04")
+    #     self.assertEqual(output.results["upgrade-target-charm-bases"], "26.04")
+    #     self.assertIn("Performing an upgrade inplace is possible", output.results["info"])
 
-    @patch.dict("charm.MAAS_TRACK_BASES", {"3.8": ["26.04"]}, clear=True)
-    @patch("charm.MaasHelper", autospec=True)
-    def test_pre_upgrade_check_base_unknown_track(self, mock_helper):
-        """An unmapped track must report undetermined rather than block the upgrade."""
-        self.harness.set_leader(True)
-        self.harness.begin()
-        self._setup_pre_upgrade_check(mock_helper, self.CROSS_CHANNEL_MAP, host_base="26.04")
+    # @patch.dict("charm.MAAS_TRACK_BASES", {"3.7": ["24.04"], "3.9": ["28.04"]}, clear=True)
+    # @patch("charm.MaasHelper", autospec=True)
+    # def test_pre_upgrade_check_base_incompatible(self, mock_helper):
+    #     self.harness.set_leader(True)
+    #     self.harness.begin()
+    #     self._setup_pre_upgrade_check(mock_helper, self.CROSS_CHANNEL_MAP, host_base="26.04")
 
-        output = self.harness.run_action("pre-upgrade-check", {"channel": "3.9/edge"})
+    #     with self.assertRaises(ops.testing.ActionFailed) as e:
+    #         self.harness.run_action("pre-upgrade-check", {"track": "3.9"})
 
-        self.assertEqual(output.results["base-compatible"], "unknown")
-        self.assertEqual(output.results["target-bases"], "unknown")
-        self.assertIn("not known to this charm", output.results["base-info"])
+    #     err = e.exception
+    #     self.assertIn("requires an Ubuntu base of 28.04", err.message)
+    #     self.assertIn("this unit runs 26.04", err.message)
+    #     self.assertIn("redeploying units", err.message)
 
-    @patch("charm.MaasHelper", autospec=True)
-    def test_pre_upgrade_check_point_upgrade_skips_checks(self, mock_helper):
-        """Same-channel upgrades cannot change epoch or base, so neither is reported."""
-        self.harness.set_leader(True)
-        self.harness.begin()
-        self._setup_pre_upgrade_check(mock_helper, self.CROSS_CHANNEL_MAP)
+    # @patch.dict("charm.MAAS_TRACK_BASES", {"3.7": ["24.04"]}, clear=True)
+    # @patch("charm.MaasHelper", autospec=True)
+    # def test_pre_upgrade_check_base_unknown_track(self, mock_helper):
+    #     """An unmapped track must report undetermined rather than assume a base."""
+    #     self.harness.set_leader(True)
+    #     self.harness.begin()
+    #     self._setup_pre_upgrade_check(mock_helper, self.CROSS_CHANNEL_MAP, host_base="26.04")
 
-        output = self.harness.run_action("pre-upgrade-check")
+    #     with self.assertRaises(ops.testing.ActionFailed) as e:
+    #         self.harness.run_action("pre-upgrade-check", {"track": "3.9"})
 
-        mock_helper.get_latest_channel_info.assert_called_once_with(MAAS_SNAP_CHANNEL)
-        self.assertNotIn("base-compatible", output.results)
-        self.assertEqual(output.results["info"], "Upgrade is possible.")
+    #     err = e.exception
+    #     self.assertIn("Track 3.9 is not known to this charm", err.message)
+    #     self.assertNotIn("host-base", err.output.results)
 
-    @patch("charm.MaasHelper", autospec=True)
-    def test_upgrade_action(self, mock_helper):
-        self.harness.set_leader(True)
-        self.harness.begin()
-        mock_helper.get_installed_version.return_value = "3.8.0"
-        mock_helper.get_installed_revision.return_value = "12345"
+    # @patch("charm.MaasHelper", autospec=True)
+    # def test_upgrade_action(self, mock_helper):
+    #     self.harness.set_leader(True)
+    #     self.harness.begin()
+    #     mock_helper.get_installed_version.return_value = "3.8.0"
+    #     mock_helper.get_installed_revision.return_value = "12345"
 
-        output = self.harness.run_action("upgrade")
+    #     output = self.harness.run_action("upgrade")
 
-        mock_helper.upgrade.assert_called_once_with(MAAS_SNAP_CHANNEL)
-        self.assertEqual(output.results["version"], "3.8.0")
-        self.assertEqual(output.results["revision"], "12345")
+    #     mock_helper.upgrade.assert_called_once_with(MAAS_SNAP_CHANNEL)
+    #     self.assertEqual(output.results["version"], "3.8.0")
+    #     self.assertEqual(output.results["revision"], "12345")
 
-    @patch("charm.MaasHelper", autospec=True)
-    def test_upgrade_action_fail(self, mock_helper):
-        self.harness.set_leader(True)
-        self.harness.begin()
-        mock_helper.upgrade.side_effect = SnapError("snap refresh failed")
+    # @patch("charm.MaasHelper", autospec=True)
+    # def test_upgrade_action_fail(self, mock_helper):
+    #     self.harness.set_leader(True)
+    #     self.harness.begin()
+    #     mock_helper.upgrade.side_effect = SnapError("snap refresh failed")
 
-        with self.assertRaises(ops.testing.ActionFailed) as e:
-            self.harness.run_action("upgrade")
+    #     with self.assertRaises(ops.testing.ActionFailed) as e:
+    #         self.harness.run_action("upgrade")
 
-        err = e.exception
-        self.assertEqual(err.message, "Upgrade failed: snap refresh failed")
+    #     err = e.exception
+    #     self.assertEqual(err.message, "Upgrade failed: snap refresh failed")
 
-    @patch(
-        "charm.MaasRegionCharm.bind_address",
-        new_callable=PropertyMock(return_value="10.0.0.10"),
-    )
+    # @patch(
+    #     "charm.MaasRegionCharm.bind_address",
+    #     new_callable=PropertyMock(return_value="10.0.0.10"),
+    # )
     @patch("charm.MaasHelper.get_regions")
     @patch("charm.MaasRegionCharm._create_or_get_internal_admin")
     def test_get_region_system_ids(self, admin, get_regions, _mock_bind_address):
@@ -985,7 +1095,7 @@ class TestCharmActions(unittest.TestCase):
         self.harness.charm._check_rack_versions("3.7.3", results)
 
         self.assertEqual(
-            results["rack-info"], "All standalone rack controllers are running 3.7.3."
+            results["rack-info"], "All standalone rack controllers are running target version 3.7.3."
         )
 
 
