@@ -1,22 +1,16 @@
 name: Integration tests
 
 on:
-  workflow_dispatch:
-  push:
+  pull_request:
     branches:
       - main
       - track/*
-    paths:
-      - maas-region/**
-      - .github/workflows/integration_test.yaml
-      - .github/workflows/release.yaml
 
 jobs:
   integration-tests:
     uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f # main as of 2026-07-01
     permissions:
       contents: read
-      packages: write
     secrets: inherit
     with:
       working-directory: maas-region
