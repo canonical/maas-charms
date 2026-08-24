@@ -1,23 +1,19 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-import functools
 from unittest.mock import patch
 
 import pytest
-from charmlibs import pathops
-
-import charm
+from charmlibs.rollingops._peer._worker import PeerRollingOpsAsyncWorker
 
 
 @pytest.fixture(autouse=True)
-def rolling_ops_base_dir(tmp_path):
-    """Point rollingops at a writable directory.
+def no_rolling_ops_worker():
+    """Prevent rollingops from spawning a real worker subprocess.
 
-    It defaults to /var/lib/rollingops, which is not writeable in test environments.
+    The worker requires the charm's deployed virtualenv, which does not exist in
+    test environments. Tests drive the lock lifecycle by emitting the
+    rollingops_lock_granted event themselves.
     """
-    manager = functools.partial(
-        charm.RollingOpsManager, base_dir=pathops.LocalPath(tmp_path / "rollingops")
-    )
-    with patch.object(charm, "RollingOpsManager", manager):
+    with patch.object(PeerRollingOpsAsyncWorker, "start", autospec=True):
         yield
