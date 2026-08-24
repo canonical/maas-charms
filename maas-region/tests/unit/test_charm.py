@@ -1139,6 +1139,34 @@ class TestCharmActions(unittest.TestCase):
         self.harness.charm.on.rollingops_lock_granted.emit()
         mock_helper.upgrade.assert_not_called()
 
+    @patch("charm.MaasHelper", autospec=True)
+    def test_upgrade_precondition_error(self, mock_helper):
+        self.harness.set_planned_units(2)
+        self.harness.begin()
+        mock_helper.is_running.return_value = True
+        mock_helper.get_installed_channel.return_value = "3.7/stable"
+
+        error = self.harness.charm._upgrade_precondition_error()
+
+        assert error is not None
+        self.assertIn("The MAAS snap is running", error)
+
+    @patch("charm.MaasHelper", autospec=True)
+    def test_upgrade_precondition_error_allowed(self, mock_helper):
+        cases = {
+            "single unit": (1, True, "3.7/stable"),
+            "maas stopped": (2, False, "3.7/stable"),
+            "same channel": (2, True, MAAS_SNAP_CHANNEL),
+        }
+        self.harness.begin()
+
+        for name, (planned_units, is_running, channel) in cases.items():
+            with self.subTest(name):
+                self.harness.set_planned_units(planned_units)
+                mock_helper.is_running.return_value = is_running
+                mock_helper.get_installed_channel.return_value = channel
+
+                self.assertIsNone(self.harness.charm._upgrade_precondition_error())
 
     @patch(
         "charm.MaasRegionCharm.bind_address",
