@@ -128,6 +128,8 @@ class MaasHelper:
 
         Args:
             channel (str): snapstore channel
+        Raises:
+            SnapError: if the snap upgrade fails
         """
         maas = SnapCache()[MAAS_SNAP_NAME]
         maas.ensure(SnapState.Latest, channel=channel, cohort="+")

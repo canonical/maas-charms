@@ -342,16 +342,23 @@ class MaasRegionCharm(ops.CharmBase):
             )
         return None
 
-    def _upgrade(self) -> None:
+    def _upgrade(self) -> OperationResult:
         """Upgrade the MAAS snap.
 
         Raises:
             Exception: if the snap upgrade fails
         """
         self.unit.status = ops.MaintenanceStatus("upgrading...")
-        MaasHelper.upgrade(MAAS_SNAP_CHANNEL)
-        if workload_version := self.version:
-            self.unit.set_workload_version(workload_version)
+        # time.sleep(3)
+        # raise ValueError("Bad upgrade or something")
+        try:
+            MaasHelper.upgrade(MAAS_SNAP_CHANNEL)
+            if workload_version := self.version:
+                self.unit.set_workload_version(workload_version)
+            return OperationResult.RELEASE
+        except SnapError as e:
+            logger.error("Snap upgrade failed: %s", e)
+            return OperationResult.RETRY_RELEASE
 
     def _on_upgrade_action(self, event: ops.ActionEvent) -> None:
         """Handle the upgrade action.
@@ -366,16 +373,13 @@ class MaasRegionCharm(ops.CharmBase):
 
         try:
             self.rolling_ops_manager.request_async_lock(callback_id="upgrade", max_retry=3)
+            event.set_results(
+                {
+                    "info": f"Upgrade started for snap on channel {MAAS_SNAP_CHANNEL}"
+                }
+            )
         except Exception as ex:
             logger.error(str(ex))
-            event.fail(f"Upgrade failed: {ex}")
-            return
-        event.set_results(
-            {
-                "version": MaasHelper.get_installed_version(),
-                "revision": MaasHelper.get_installed_revision(),
-            }
-        )
 
     def _on_pre_upgrade_check_action(self, event: ops.ActionEvent) -> None:
         target_track, target_snap_channel = _resolve_target_channel(event.params.get("track"))
