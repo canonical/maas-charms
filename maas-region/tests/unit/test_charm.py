@@ -1088,7 +1088,9 @@ class TestCharmActions(unittest.TestCase):
 
         mock_helper.upgrade.assert_called_once_with(MAAS_SNAP_CHANNEL)
         self.assertEqual(self.harness.get_workload_version(), "3.8.0")
-        self.assertEqual(output.results["info"], f"Upgrade started for snap on channel {MAAS_SNAP_CHANNEL}")
+        self.assertEqual(
+            output.results["info"], f"Upgrade started for snap on channel {MAAS_SNAP_CHANNEL}"
+        )
 
     @patch("charm.MaasHelper", autospec=True)
     def test_upgrade_action_fail(self, mock_helper):
@@ -1125,7 +1127,9 @@ class TestCharmActions(unittest.TestCase):
 
     @patch("charm.MaasRegionCharm._upgrade_precondition_error")
     @patch("charm.MaasHelper", autospec=True)
-    def test_upgrade_action_without_force_checks_precondition(self, mock_helper, precondition_error):
+    def test_upgrade_action_without_force_checks_precondition(
+        self, mock_helper, precondition_error
+    ):
         precondition_error.return_value = "MAAS is still running"
         self.harness.set_leader(True)
         self.harness.begin()

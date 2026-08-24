@@ -470,7 +470,7 @@ class MAASBackups(Object):
 
         try:
             self._create_bucket_if_not_exists(s3_parameters)
-        except (ClientError, ValueError, ParamValidationError, SSLError):
+        except ClientError, ValueError, ParamValidationError, SSLError:
             self.charm.set_peer_data(
                 self.charm.app,
                 S3_CONFIGURATION_BLOCKED_KEY,

@@ -27,7 +27,9 @@ class TestHelperSnapCache(unittest.TestCase):
     def test_install(self, mock_snap):
         mock_maas = self._setup_snap(mock_snap)
         MaasHelper.install("test/channel")
-        mock_maas.ensure.assert_called_once_with(SnapState.Latest, channel="test/channel", cohort="+")
+        mock_maas.ensure.assert_called_once_with(
+            SnapState.Latest, channel="test/channel", cohort="+"
+        )
         mock_maas.hold.assert_called_once()
 
     @patch("helper.SnapCache", autospec=True)
@@ -133,9 +135,7 @@ class TestHelperSnapStore(unittest.TestCase):
 
     @patch("helper.SnapClient", autospec=True)
     def test_get_latest_channel_info_defaults_epoch(self, mock_client):
-        self._setup_client(
-            mock_client, {"3.7/edge": {"version": "3.7.3", "revision": "42358"}}
-        )
+        self._setup_client(mock_client, {"3.7/edge": {"version": "3.7.3", "revision": "42358"}})
         info = MaasHelper.get_latest_channel_info("3.7/edge")
         self.assertEqual(info["epoch"], {"read": [0], "write": [0]})
 

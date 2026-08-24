@@ -373,11 +373,7 @@ class MaasRegionCharm(ops.CharmBase):
 
         try:
             self.rolling_ops_manager.request_async_lock(callback_id="upgrade", max_retry=3)
-            event.set_results(
-                {
-                    "info": f"Upgrade started for snap on channel {MAAS_SNAP_CHANNEL}"
-                }
-            )
+            event.set_results({"info": f"Upgrade started for snap on channel {MAAS_SNAP_CHANNEL}"})
         except Exception as ex:
             logger.error(str(ex))
 
@@ -505,8 +501,8 @@ class MaasRegionCharm(ops.CharmBase):
     def _check_rack_versions(self, target_version: str, results: dict[str, Any]) -> None:
         """Record standalone rack controller versions, in place, in `results`.
 
-        Rack controllers should be upgraded ahead of the region. All info is reported 
-        through `results` and none of them block the upgrade. Units running in 
+        Rack controllers should be upgraded ahead of the region. All info is reported
+        through `results` and none of them block the upgrade. Units running in
         region+rack mode are excluded, since they upgrade with their region.
 
         Args:
@@ -567,7 +563,9 @@ class MaasRegionCharm(ops.CharmBase):
         if ahead:
             info.append(f"{', '.join(ahead)} is newer than the target version {target_version}.")
         if not behind and not unreported and not ahead:
-            info.append(f"All standalone rack controllers are running target version {target_version}.")
+            info.append(
+                f"All standalone rack controllers are running target version {target_version}."
+            )
         results["rack-info"] = " ".join(info)
 
     def _check_base_compatibility(
@@ -1092,58 +1090,52 @@ class MaasRegionCharm(ops.CharmBase):
         elif not MaasHelper.is_running():
             e.add_status(ops.BlockedStatus("The MAAS snap service is not active"))
         else:
-            # Check HAProxy configuration validity
-            haproxy_non_tls = self.model.get_relation(HAPROXY_NON_TLS) is not None
-            haproxy_tls = self.model.get_relation(HAPROXY_TLS) is not None
-            haproxy_temporal = self.model.get_relation(HAPROXY_TEMPORAL) is not None
-            haproxy_internal_http_api = (
-                self.model.get_relation(HAPROXY_INTERNAL_HTTP_API) is not None
-            )
+            e.add_status(self._haproxy_config_status())
 
-            has_required_relations = (
-                haproxy_non_tls and haproxy_temporal and haproxy_internal_http_api
-            )
-            has_any_haproxy_relation = (
-                haproxy_non_tls or haproxy_tls or haproxy_temporal or haproxy_internal_http_api
-            )
+    def _haproxy_config_status(self) -> ops.StatusBase:
+        """Validate the combination of HAProxy relations.
 
-            # Invalid: HAProxy TLS relation present but MAAS TLS not enabled
-            if not self.is_tls_config_enabled and haproxy_tls:
-                e.add_status(
-                    ops.BlockedStatus(
-                        "Invalid HAProxy configuration: "
-                        f"Cannot have `{HAPROXY_TLS}` relation when MAAS TLS is not enabled; "
-                        "Set the `ssl_cert_content` and `ssl_key_content` configuration options."
-                    )
-                )
-            # Invalid: MAAS TLS enabled with required relations but missing HAProxy TLS
-            elif self.is_tls_config_enabled and has_required_relations and not haproxy_tls:
-                e.add_status(
-                    ops.BlockedStatus(
-                        f"Invalid HAProxy configuration: Missing `{HAPROXY_TLS}` relation "
-                        "when MAAS TLS is enabled."
-                    )
-                )
-            # Invalid: HAProxy TLS relation present without all required base relations
-            elif haproxy_tls and not has_required_relations:
-                e.add_status(
-                    ops.BlockedStatus(
-                        "Invalid HAProxy configuration: "
-                        f"`{HAPROXY_TLS}` relation requires all base relations: "
-                        f"`{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}`."
-                    )
-                )
-            # Invalid: Partial HAProxy relations (not all required together)
-            elif has_any_haproxy_relation and not has_required_relations:
-                e.add_status(
-                    ops.BlockedStatus(
-                        "Invalid HAProxy configuration: "
-                        f"All of `{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}` "
-                        "relations must be present together if any are provided."
-                    )
-                )
-            else:
-                e.add_status(ops.ActiveStatus())
+        Returns:
+            ops.StatusBase: BlockedStatus describing the invalid combination, or ActiveStatus.
+        """
+        haproxy_non_tls = self.model.get_relation(HAPROXY_NON_TLS) is not None
+        haproxy_tls = self.model.get_relation(HAPROXY_TLS) is not None
+        haproxy_temporal = self.model.get_relation(HAPROXY_TEMPORAL) is not None
+        haproxy_internal_http_api = self.model.get_relation(HAPROXY_INTERNAL_HTTP_API) is not None
+
+        has_required_relations = haproxy_non_tls and haproxy_temporal and haproxy_internal_http_api
+        has_any_haproxy_relation = (
+            haproxy_non_tls or haproxy_tls or haproxy_temporal or haproxy_internal_http_api
+        )
+
+        # Invalid: HAProxy TLS relation present but MAAS TLS not enabled
+        if not self.is_tls_config_enabled and haproxy_tls:
+            return ops.BlockedStatus(
+                "Invalid HAProxy configuration: "
+                f"Cannot have `{HAPROXY_TLS}` relation when MAAS TLS is not enabled; "
+                "Set the `ssl_cert_content` and `ssl_key_content` configuration options."
+            )
+        # Invalid: MAAS TLS enabled with required relations but missing HAProxy TLS
+        if self.is_tls_config_enabled and has_required_relations and not haproxy_tls:
+            return ops.BlockedStatus(
+                f"Invalid HAProxy configuration: Missing `{HAPROXY_TLS}` relation "
+                "when MAAS TLS is enabled."
+            )
+        # Invalid: HAProxy TLS relation present without all required base relations
+        if haproxy_tls and not has_required_relations:
+            return ops.BlockedStatus(
+                "Invalid HAProxy configuration: "
+                f"`{HAPROXY_TLS}` relation requires all base relations: "
+                f"`{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}`."
+            )
+        # Invalid: Partial HAProxy relations (not all required together)
+        if has_any_haproxy_relation and not has_required_relations:
+            return ops.BlockedStatus(
+                "Invalid HAProxy configuration: "
+                f"All of `{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}` "
+                "relations must be present together if any are provided."
+            )
+        return ops.ActiveStatus()
 
     def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
         """Database is ready.

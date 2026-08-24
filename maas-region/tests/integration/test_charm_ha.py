@@ -51,9 +51,9 @@ async def test_maas_peer_relations(ops_test: OpsTest):
         f"'maas-cluster' peer relation not found. Relations: {relation_names}"
     )
 
-    assert (
-        "rollingops-peers" in relation_names
-    ), f"'initialize' peer relation not found. Relations: {relation_names}"
+    assert "rollingops-peers" in relation_names, (
+        f"'initialize' peer relation not found. Relations: {relation_names}"
+    )
 
 
 @pytest.mark.abort_on_fail
