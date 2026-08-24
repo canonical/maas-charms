@@ -1,3 +1,6 @@
+# Copyright 2025 Canonical Ltd.
+# See LICENSE file for licensing details.
+
 name: maas-region
 type: charm
 title: MAAS Region Controller
@@ -24,8 +27,6 @@ links:
     - https://github.com/canonical/maas-charms/issues
 
 platforms:
-  ubuntu@24.04:amd64:
-  ubuntu@24.04:arm64:
   ubuntu@26.04:amd64:
   ubuntu@26.04:arm64:
 
@@ -128,10 +129,10 @@ actions:
 
 parts:
   charm:
-    plugin: python
+    plugin: uv
     source: .
-    python-requirements:
-      - requirements.txt
+    build-snaps:
+      - astral-uv
 
   prometheus-alerts:
     plugin: dump

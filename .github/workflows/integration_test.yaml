@@ -1,0 +1,21 @@
+name: Integration tests
+
+on:
+  pull_request:
+    branches:
+      - main
+      - track/*
+
+jobs:
+  integration-tests:
+    uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f # main as of 2026-07-01
+    permissions:
+      contents: read
+    secrets: inherit
+    with:
+      working-directory: maas-region
+      provider: lxd
+      juju-channel: 3.6/stable
+      with-uv: true
+      charmcraft-channel: latest/stable
+      python-version: "3.14"

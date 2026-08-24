@@ -1,4 +1,4 @@
-# Copyright 2024 Canonical
+# Copyright 2024-2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
@@ -66,8 +66,8 @@ class TestHelperSnapCache(unittest.TestCase):
 
     @patch("helper.SnapCache", autospec=True)
     def test_get_installed_channel(self, mock_snap):
-        self._setup_snap(mock_snap, present=True, channel="latest/edge")
-        self.assertEqual(MaasHelper.get_installed_channel(), "latest/edge")
+        self._setup_snap(mock_snap, present=True, channel="3.8/edge")
+        self.assertEqual(MaasHelper.get_installed_channel(), "3.8/edge")
 
     @patch("helper.SnapCache", autospec=True)
     def test_is_running(self, mock_snap):

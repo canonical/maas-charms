@@ -3,15 +3,15 @@
   "extends": [
     "config:recommended"
   ],
+  "schedule": ["* 0-4 * * 1"],
   "ignoreDeps": [
-    "canonical/observability",
+    "canonical/operator-workflows",
     "tj-actions/changed-files"
   ],
   "packageRules": [
     {
-      "description": "Update botocore and boto3 together",
-      "matchPackageNames": ["botocore", "boto3"],
-      "groupName": "botocore"
+      "groupName": "weekly dependencies",
+      "matchPackageNames": ["*"]
     }
   ]
 }

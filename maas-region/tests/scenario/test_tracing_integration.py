@@ -1,3 +1,6 @@
+# Copyright 2025-2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+
 from unittest.mock import patch
 
 import opentelemetry

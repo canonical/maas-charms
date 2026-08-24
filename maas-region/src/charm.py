@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2024 Canonical
+# Copyright 2024-2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
 """Charm the application."""
@@ -26,7 +26,7 @@ from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, cha
 from ops.model import SecretNotFoundError
 from pydantic import IPvAnyAddress
 
-from backups import MAASBackups
+from backups import S3_CONFIGURATION_BLOCKED_KEY, MAASBackups
 from helper import MaasHelper
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ HAPROXY_TLS = "ingress-tcp-tls"
 HAPROXY_TEMPORAL = "ingress-tcp-temporal"
 HAPROXY_INTERNAL_HTTP_API = "ingress-tcp-internal-http-api"
 
-MAAS_SNAP_CHANNEL = "latest/edge"
+MAAS_SNAP_CHANNEL = "3.8/edge"
 
 MAAS_PROXY_PORT = 80
 MAAS_TLS_PROXY_PORT = 443
@@ -203,21 +203,12 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
         # COS
-        endpoints: list[cos_agent._MetricsEndpointDict] = [
-            {"path": "/metrics", "port": MAAS_REGION_METRICS_PORT},
-            {"path": "/MAAS/metrics", "port": MAAS_CLUSTER_METRICS_PORT},
-            {"path": "/metrics/temporal", "port": MAAS_HTTP_PORT},
-        ]
-        if self.config["enable_rack_mode"]:
-            endpoints.append(
-                {"path": MAAS_AGENT_METRICS_ENDPOINT, "port": MAAS_AGENT_METRICS_PORT}
-            )
         self._grafana_agent = cos_agent.COSAgentProvider(
             self,
-            metrics_endpoints=endpoints,
             metrics_rules_dir="./src/prometheus",
             logs_rules_dir="./src/loki",
             dashboard_dirs=["./src/grafana_dashboards"],
+            scrape_configs=self._generate_scrape_configs,
         )
         self.tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
         self.charm_tracing_endpoint, _ = charm_tracing_config(self.tracing, None)
@@ -398,6 +389,74 @@ class MaasRegionCharm(ops.CharmBase):
         data = self.peers.data[app_or_unit].get(key, "")
         return json.loads(data) if data else {}
 
+    def _generate_scrape_configs(self) -> list[dict]:
+        """Build Prometheus scrape_configs for the cos-agent relation.
+
+        The scheme/port of some MAAS metrics endpoints depend on whether TLS is
+        enabled, so they are generated dynamically. The COSAgentProvider invokes
+        this callable on each of its refresh events, which by default include this
+        (maas-region) charm's ``config_changed`` plus cos-agent relation changes.
+        So toggling the ``ssl_*`` config options regenerates the scrape jobs.
+
+        Returns:
+            list[dict]: standard Prometheus scrape_config dicts
+        """
+        # The region metrics endpoint is plain http and identical in both modes.
+        scrape_configs: list[dict] = [
+            {
+                "metrics_path": "/metrics",
+                "static_configs": [{"targets": [f"localhost:{MAAS_REGION_METRICS_PORT}"]}],
+            },
+        ]
+
+        # /MAAS/metrics and /metrics/temporal move from http:5240 to https:5443
+        # when TLS is enabled.
+        if self.is_tls_config_enabled:
+            # We include insecure_skip_verify because we are always scraping localhost.
+            # Even if we have the certs for the scrape targets, we'd rather specify the scrape
+            # jobs with localhost rather than the SAN (region/HAProxy IP) the cert was issued for.
+            tls_config = {"insecure_skip_verify": True}
+            scrape_configs.append(
+                {
+                    "scheme": "https",
+                    "metrics_path": "/MAAS/metrics",
+                    "static_configs": [{"targets": [f"localhost:{MAAS_HTTPS_PORT}"]}],
+                    "tls_config": tls_config,
+                }
+            )
+            scrape_configs.append(
+                {
+                    "scheme": "https",
+                    "metrics_path": "/metrics/temporal",
+                    "static_configs": [{"targets": [f"localhost:{MAAS_HTTPS_PORT}"]}],
+                    "tls_config": tls_config,
+                }
+            )
+        else:
+            scrape_configs.append(
+                {
+                    "metrics_path": "/MAAS/metrics",
+                    "static_configs": [{"targets": [f"localhost:{MAAS_CLUSTER_METRICS_PORT}"]}],
+                }
+            )
+            scrape_configs.append(
+                {
+                    "metrics_path": "/metrics/temporal",
+                    "static_configs": [{"targets": [f"localhost:{MAAS_HTTP_PORT}"]}],
+                }
+            )
+
+        # Agent metrics are plain http and only present in rack mode.
+        if self.config["enable_rack_mode"]:
+            scrape_configs.append(
+                {
+                    "metrics_path": MAAS_AGENT_METRICS_ENDPOINT,
+                    "static_configs": [{"targets": [f"localhost:{MAAS_AGENT_METRICS_PORT}"]}],
+                }
+            )
+
+        return scrape_configs
+
     def _setup_network(self) -> bool:
         """Open the network ports.
 
@@ -457,7 +516,6 @@ class MaasRegionCharm(ops.CharmBase):
                     self.config["enable_prometheus_metrics"],  # type: ignore
                     str(self.config["ssl_cacert_content"]),
                 )
-            self.unit.status = ops.ActiveStatus()
             return True
         except subprocess.CalledProcessError:
             return False
@@ -493,7 +551,8 @@ class MaasRegionCharm(ops.CharmBase):
         """Configure the two HAProxy relations.
 
         Provides the MAAS Region IP addresses to each HAProxy relation.
-        Sets the unit to an active status if we have a valid relation/configuration topology.
+        Status setting is left to `_on_collect_status`, which evaluates the
+        relation/configuration topology.
 
         Returns:
             None
@@ -533,8 +592,6 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
         if not self.unit.is_leader():
-            if unit_valid:
-                self.unit.status = ops.ActiveStatus()
             return
 
         haproxy_relations = [
@@ -550,9 +607,6 @@ class MaasRegionCharm(ops.CharmBase):
                 else:
                     rel.configure_hosts()
                 rel.update_relation_data()
-
-        if unit_valid:
-            self.unit.status = ops.ActiveStatus()
 
     def _reconcile_ha_proxy_and_initialise(self, event: ops.EventBase) -> None:
         self._reconcile_ha_proxy(event)
@@ -627,6 +681,12 @@ class MaasRegionCharm(ops.CharmBase):
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
         if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
             e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
+        elif (
+            # If the S3 configuration is marked as blocked in the application data bag,
+            # mark the leader as blocked.
+            blocked_msg := self.get_peer_data(self.app, S3_CONFIGURATION_BLOCKED_KEY)
+        ) and self.unit.is_leader():
+            e.add_status(ops.BlockedStatus(blocked_msg))
         elif not self.unit.opened_ports().issuperset(MAAS_REGION_PORTS):
             e.add_status(ops.WaitingStatus("Waiting for service ports"))
         elif not self.connection_string:
@@ -685,7 +745,7 @@ class MaasRegionCharm(ops.CharmBase):
                     )
                 )
             else:
-                logger.debug("no status change based on prerequisites")
+                e.add_status(ops.ActiveStatus())
 
     def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
         """Database is ready.
