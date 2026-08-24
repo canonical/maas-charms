@@ -479,7 +479,7 @@ class MaasRegionCharm(ops.CharmBase):
         if Version(target_version) < Version(installed_snap_version):
             errors.append(
                 f"The latest version ({target_version}) on channel {target_snap_channel} is a downgrade compared to the installed version ({installed_snap_version})."
-                f" MAAS does not support downgrades. Please use a channel with a newer version.\n"
+                f" MAAS does not support downgrades. Please use a channel with a newer version."
             )
 
         if target_snap_channel == installed_snap_channel:

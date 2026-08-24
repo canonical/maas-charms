@@ -52,7 +52,7 @@ async def test_maas_peer_relations(ops_test: OpsTest):
     )
 
     assert "rollingops-peers" in relation_names, (
-        f"'initialize' peer relation not found. Relations: {relation_names}"
+        f"'rollingops-peers' peer relation not found. Relations: {relation_names}"
     )
 
 

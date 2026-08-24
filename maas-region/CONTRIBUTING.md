@@ -62,7 +62,7 @@ Despite having jhack sync, you may still need to publish your charm on a dev bra
 to test changes. Run the following sequentially to build, upload, and release the charm to a dev branch:
 ```shell
 charmcraft pack
-charmcraft upload maas-region_ubuntu@24.04-amd64.charm  # this produces a revision to use in the next command
+charmcraft upload maas-region_ubuntu@26.04-amd64.charm  # this produces a revision to use in the next command
 charmcraft release maas-region --revision=$REVISION --channel latest/edge/$DEV_BRANCH_NAME
 ```
 Note that this will be deleted after 30 days, see [the docs](https://canonical.com/juju/docs/juju-cli/3.6/reference/charm/#branch).
