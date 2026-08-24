@@ -372,6 +372,8 @@ class MaasRegionCharm(ops.CharmBase):
             return
 
         try:
+            # Rolling ops queues the upgrade callback which is run asynchronously, the
+            # action returns immediately.
             self.rolling_ops_manager.request_async_lock(callback_id="upgrade", max_retry=3)
             event.set_results({"info": f"Upgrade started for snap on channel {MAAS_SNAP_CHANNEL}"})
         except Exception as ex:
