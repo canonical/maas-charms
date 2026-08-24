@@ -1106,6 +1106,40 @@ class TestCharmActions(unittest.TestCase):
         self.assertEqual(mock_helper.upgrade.call_count, 4)
         self.assertFalse(self.harness.charm.rolling_ops_manager.is_waiting_callback("upgrade"))
 
+    @patch("charm.MaasRegionCharm._upgrade_precondition_error")
+    @patch("charm.MaasHelper", autospec=True)
+    def test_upgrade_action_force_skips_precondition(self, mock_helper, precondition_error):
+        precondition_error.return_value = "MAAS is still running"
+        self.harness.set_leader(True)
+        self.harness.begin()
+
+        output = self.harness.run_action("upgrade", {"force": True})
+
+        precondition_error.assert_not_called()
+        self.assertEqual(
+            output.results["info"], f"Upgrade started for snap on channel {MAAS_SNAP_CHANNEL}"
+        )
+
+        self.harness.charm.on.rollingops_lock_granted.emit()
+        mock_helper.upgrade.assert_called_once_with(MAAS_SNAP_CHANNEL)
+
+    @patch("charm.MaasRegionCharm._upgrade_precondition_error")
+    @patch("charm.MaasHelper", autospec=True)
+    def test_upgrade_action_without_force_checks_precondition(self, mock_helper, precondition_error):
+        precondition_error.return_value = "MAAS is still running"
+        self.harness.set_leader(True)
+        self.harness.begin()
+
+        with self.assertRaises(ops.testing.ActionFailed) as e:
+            self.harness.run_action("upgrade")
+
+        precondition_error.assert_called_once()
+        self.assertEqual(e.exception.message, "MAAS is still running")
+
+        self.harness.charm.on.rollingops_lock_granted.emit()
+        mock_helper.upgrade.assert_not_called()
+
+
     @patch(
         "charm.MaasRegionCharm.bind_address",
         new_callable=PropertyMock(return_value="10.0.0.10"),
