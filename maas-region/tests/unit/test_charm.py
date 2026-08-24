@@ -1088,8 +1088,7 @@ class TestCharmActions(unittest.TestCase):
 
         mock_helper.upgrade.assert_called_once_with(MAAS_SNAP_CHANNEL)
         self.assertEqual(self.harness.get_workload_version(), "3.8.0")
-        self.assertEqual(output.results["version"], "3.8.0")
-        self.assertEqual(output.results["revision"], "12345")
+        self.assertEqual(output.results["info"], f"Upgrade started for snap on channel {MAAS_SNAP_CHANNEL}")
 
     @patch("charm.MaasHelper", autospec=True)
     def test_upgrade_action_fail(self, mock_helper):
