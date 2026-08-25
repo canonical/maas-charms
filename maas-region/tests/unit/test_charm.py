@@ -786,17 +786,19 @@ class TestMAASURLs(unittest.TestCase):
         ]
         for name, endpoints_value in cases:
             with self.subTest(case=name):
-                self.harness.begin()
-                rel_id = self.harness.add_relation(HAPROXY_NON_TLS, "haproxy")
-                self.harness.update_relation_data(
-                    rel_id, "haproxy", {"endpoints": endpoints_value}
-                )
-                self.assertEqual(
-                    self.harness.charm.maas_cli_url, f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS"
-                )
-                self.harness.cleanup()
-                self.harness = ops.testing.Harness(MaasRegionCharm)
-                self.harness.add_network("10.0.0.10")
+                harness = ops.testing.Harness(MaasRegionCharm)
+                harness.add_network("10.0.0.10")
+                try:
+                    harness.begin()
+                    rel_id = harness.add_relation(HAPROXY_NON_TLS, "haproxy")
+                    harness.update_relation_data(
+                        rel_id, "haproxy", {"endpoints": endpoints_value}
+                    )
+                    self.assertEqual(
+                        harness.charm.maas_cli_url, f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS"
+                    )
+                finally:
+                    harness.cleanup()
 
     def test_maas_api_url_with_config(self):
         """Test maas_api_url converts https to http from configured URL."""
@@ -833,14 +835,16 @@ class TestMAASURLs(unittest.TestCase):
         ]
         for name, endpoints_value in cases:
             with self.subTest(case=name):
-                self.harness.begin()
-                rel_id = self.harness.add_relation(HAPROXY_NON_TLS, "haproxy")
-                self.harness.update_relation_data(
-                    rel_id, "haproxy", {"endpoints": endpoints_value}
-                )
-                self.assertEqual(
-                    self.harness.charm.maas_api_url, f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS"
-                )
-                self.harness.cleanup()
-                self.harness = ops.testing.Harness(MaasRegionCharm)
-                self.harness.add_network("10.0.0.10")
+                harness = ops.testing.Harness(MaasRegionCharm)
+                harness.add_network("10.0.0.10")
+                try:
+                    harness.begin()
+                    rel_id = harness.add_relation(HAPROXY_NON_TLS, "haproxy")
+                    harness.update_relation_data(
+                        rel_id, "haproxy", {"endpoints": endpoints_value}
+                    )
+                    self.assertEqual(
+                        harness.charm.maas_api_url, f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS"
+                    )
+                finally:
+                    harness.cleanup()
