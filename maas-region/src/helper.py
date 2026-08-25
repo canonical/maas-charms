@@ -202,7 +202,7 @@ class MaasHelper:
             return ""
 
     @staticmethod
-    @retry(reraise=True, stop=stop_after_delay(30), wait=wait_fixed(3))
+    @retry(reraise=True, stop=stop_after_delay(20), wait=wait_fixed(3))
     def get_latest_channel_info(channel: str) -> dict[str, Any] | None:
         """Get the latest version, revision and epoch available in the snap store for a channel.
 

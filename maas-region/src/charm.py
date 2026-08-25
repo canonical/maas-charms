@@ -524,10 +524,6 @@ class MaasRegionCharm(ops.CharmBase):
             return
 
         if not rack_versions:
-            results["rack-controllers"] = "none"
-            results["rack-info"] = (
-                "No standalone rack controllers present that need to be upgraded first."
-            )
             return
 
         results["rack-controllers"] = ", ".join(
