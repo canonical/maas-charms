@@ -349,8 +349,6 @@ class MaasRegionCharm(ops.CharmBase):
             Exception: if the snap upgrade fails
         """
         self.unit.status = ops.MaintenanceStatus("upgrading...")
-        # time.sleep(3)
-        # raise ValueError("Bad upgrade or something")
         try:
             MaasHelper.upgrade(MAAS_SNAP_CHANNEL)
             if workload_version := self.version:

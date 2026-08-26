@@ -769,7 +769,6 @@ class TestCharmActions(unittest.TestCase):
         mock_helper.get_installed_channel.return_value = installed_channel
         mock_helper.get_host_base.return_value = host_base
         mock_helper.get_latest_channel_info.side_effect = lambda ch: snap_info_map.get(ch)
-        # self.harness.charm.unit.status = ops.ActiveStatus()
 
     CROSS_CHANNEL_MAP: ClassVar[dict[str, dict]] = {
         "3.8/stable": {
