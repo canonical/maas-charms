@@ -131,13 +131,11 @@ def _next_track(track: str) -> str | None:
         str | None: the next track in the upgrade path, or None if `track` is
             unmapped or is the latest mapped track
     """
-    tracks = list(MAAS_TRACK_BASES)
-    if track not in tracks:
+    tracks = sorted(MAAS_TRACK_BASES)
+    try:
+        return tracks[tracks.index(track) + 1]
+    except (ValueError, IndexError):
         return None
-    idx = tracks.index(track)
-    if idx + 1 < len(tracks):
-        return tracks[idx + 1]
-    return None
 
 
 def _resolve_target_channel(track: Any) -> tuple[str, str]:

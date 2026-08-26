@@ -38,6 +38,7 @@ from charm import (
     MAAS_TLS_PROXY_PORT,
     MAAS_TRACK_BASES,
     MaasRegionCharm,
+    _next_track,
 )
 
 
@@ -1312,6 +1313,54 @@ class TestTrackBases(unittest.TestCase):
             declared,
             f"MAAS_TRACK_BASES[{track}] disagrees with `platforms` in charmcraft.yaml.",
         )
+
+
+class TestNextTrack(unittest.TestCase):
+    """Test _next_track, which drives the sequential upgrade path."""
+
+    TRACKS: ClassVar[dict[str, list[str]]] = {
+        "3.7": ["24.04"],
+        "3.8": ["26.04"],
+        "4.0": ["26.04"],
+    }
+
+    @patch.dict("charm.MAAS_TRACK_BASES", TRACKS, clear=True)
+    def test_first_track_returns_successor(self):
+        self.assertEqual(_next_track("3.7"), "3.8")
+
+    @patch.dict("charm.MAAS_TRACK_BASES", TRACKS, clear=True)
+    def test_middle_track_returns_successor(self):
+        self.assertEqual(_next_track("3.8"), "4.0")
+
+    @patch.dict("charm.MAAS_TRACK_BASES", TRACKS, clear=True)
+    def test_latest_track_returns_none(self):
+        self.assertIsNone(_next_track("4.0"))
+
+    @patch.dict("charm.MAAS_TRACK_BASES", TRACKS, clear=True)
+    def test_unmapped_track_returns_none(self):
+        self.assertIsNone(_next_track("2.9"))
+        self.assertIsNone(_next_track("7.0"))
+
+    @patch.dict("charm.MAAS_TRACK_BASES", TRACKS, clear=True)
+    def test_non_track_input_returns_none(self):
+        self.assertIsNone(_next_track(""))
+        self.assertIsNone(_next_track("3.8/stable"))
+        self.assertIsNone(_next_track("3.80"))
+
+    @patch.dict("charm.MAAS_TRACK_BASES", {}, clear=True)
+    def test_empty_mapping_returns_none(self):
+        # Shouldn't ever be the case in a real charm but it's here anyway
+        self.assertIsNone(_next_track("3.8"))
+
+    @patch.dict(
+        "charm.MAAS_TRACK_BASES",
+        {"3.8": ["26.04"], "4.0": ["26.04"], "3.7": ["24.04"]},
+        clear=True,
+    )
+    def test_any_order_track(self):
+        self.assertEqual(_next_track("3.8"), "4.0")
+        self.assertEqual(_next_track("3.7"), "3.8")
+        self.assertIsNone(_next_track("4.0"))
 
 
 class TestMAASURLs(unittest.TestCase):
