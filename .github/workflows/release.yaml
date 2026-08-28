@@ -18,5 +18,4 @@ jobs:
     secrets: inherit
     with:
       working-directory: maas-region
-      channel: latest/edge
       tag-prefix: maas-region
