@@ -1,0 +1,22 @@
+name: Release Charms to Edge and Publish Libraries arm64
+
+on:
+  push:
+    branches:
+      - main
+      - track/*
+    paths:
+      - maas-region/**
+
+jobs:
+  release-region-arm64:
+    name: Release MAAS Region charm to edge arm64
+    uses: canonical/operator-workflows/.github/workflows/publish_charm.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f # main as of 2026-07-01
+    permissions:
+      contents: write
+      actions: read
+    secrets: inherit
+    with:
+      working-directory: maas-region
+      tag-prefix: maas-region
+      integration-test-workflow-file: "integration_test_arm64.yaml"
