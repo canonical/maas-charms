@@ -4,6 +4,7 @@
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 import yaml
 from _pytest.config.argparsing import Parser
 from pytest_operator.plugin import OpsTest
@@ -27,7 +28,7 @@ def pytest_addoption(parser: Parser):
     )
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest_asyncio.fixture(scope="module", autouse=True)
 async def model_arch(ops_test: OpsTest, pytestconfig: pytest.Config):
     """Constrain the test model to the requested architecture, if provided."""
     arch = pytestconfig.getoption("--model-arch")
