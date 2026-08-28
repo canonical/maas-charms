@@ -26,10 +26,34 @@ NUM_UNITS = 3
 UNITS = [f"{APP_NAME}/{n}" for n in range(NUM_UNITS)]
 SNAP_REFRESH_TIMEOUT = 180
 
-# Update when creating a new track.
-OLD_SNAP_REVISION = "42437"  # 3.8.0~beta5, amd64
+# Update when creating a new track. The architecture comes from --model-arch, which
+# is required to run the integration tests on different architectures.
+DEFAULT_ARCH = "amd64"
+OLD_SNAP_REVISIONS = {
+    "amd64": "42437",
+    "arm64": "42438",
+}
 OLD_SNAP_VERSION = "3.8.0~beta5"
 MAAS_SNAP_CHANNEL = "3.8/edge"
+
+
+@pytest.fixture(scope="module")
+def old_snap_revision(pytestconfig: pytest.Config) -> str:
+    """Get the MAAS OLD_SNAP_VERSION revision built for the architecture under test.
+
+    Args:
+        pytestconfig (pytest.Config): the test session's configuration
+
+    Returns:
+        str: the snap revision to roll back to
+    """
+    arch = pytestconfig.getoption("--model-arch") or DEFAULT_ARCH
+    if revision := OLD_SNAP_REVISIONS.get(arch):
+        return revision
+    pytest.fail(
+        f"No MAAS {OLD_SNAP_VERSION} revision recorded for {arch}. Add one to"
+        " OLD_SNAP_REVISIONS."
+    )
 
 
 @pytest.mark.abort_on_fail
@@ -53,22 +77,22 @@ async def test_build_and_deploy(ops_test: OpsTest):
 
 
 @pytest.mark.abort_on_fail
-async def test_rollback_to_old_revision(ops_test: OpsTest):
+async def test_rollback_to_old_revision(ops_test: OpsTest, old_snap_revision: str):
     """Roll the workload back to an older point release of the deployed track."""
     if ops_test.model is None:
         raise ValueError("Model is not set")
 
     for unit in UNITS:
         await juju_exec(
-            ops_test, unit, "snap", "refresh", "maas", f"--revision={OLD_SNAP_REVISION}"
+            ops_test, unit, "snap", "refresh", "maas", f"--revision={old_snap_revision}"
         )
 
     for unit in UNITS:
         installed = await get_installed_snap_info(ops_test, unit)
-        assert installed["revision"] == OLD_SNAP_REVISION
+        assert installed["revision"] == old_snap_revision
         assert installed["version"] == OLD_SNAP_VERSION, (
-            f"Revision {OLD_SNAP_REVISION} is MAAS {installed['version']}, not"
-            f" {OLD_SNAP_VERSION}. Update OLD_SNAP_REVISION and OLD_SNAP_VERSION."
+            f"Revision {old_snap_revision} is MAAS {installed['version']}, not"
+            f" {OLD_SNAP_VERSION}. Update OLD_SNAP_REVISIONS and OLD_SNAP_VERSION."
         )
         # `set_workload_version` equivalent
         await juju_exec(ops_test, unit, "application-version-set", installed["version"])
@@ -91,7 +115,7 @@ async def test_rollback_to_old_revision(ops_test: OpsTest):
 
 
 @pytest.mark.abort_on_fail
-async def test_database_integration(ops_test: OpsTest):
+async def test_database_integration(ops_test: OpsTest, old_snap_revision: str):
     """Initialize MAAS on the old revision by integrating with the database."""
     if ops_test.model is None:
         raise ValueError("Model is not set")
@@ -117,17 +141,17 @@ async def test_database_integration(ops_test: OpsTest):
     )
 
     for unit in UNITS:
-        assert (await get_installed_snap_info(ops_test, unit))["revision"] == OLD_SNAP_REVISION
+        assert (await get_installed_snap_info(ops_test, unit))["revision"] == old_snap_revision
 
 
 @pytest.mark.abort_on_fail
-async def test_pre_upgrade_check_reports_point_upgrade(ops_test: OpsTest):
+async def test_pre_upgrade_check_reports_point_upgrade(ops_test: OpsTest, old_snap_revision: str):
     """The leader reports the target revision available for a point upgrade."""
     target = await latest_in_store(ops_test, UNITS[0], MAAS_SNAP_CHANNEL)
     installed = await get_installed_snap_info(ops_test, UNITS[0])
-    assert target["revision"] != OLD_SNAP_REVISION, (
-        f"Revision {OLD_SNAP_REVISION} is the newest on channel {MAAS_SNAP_CHANNEL}, so there"
-        " is no point upgrade to test. Set OLD_SNAP_REVISION to an older revision."
+    assert target["revision"] != old_snap_revision, (
+        f"Revision {old_snap_revision} is the newest on channel {MAAS_SNAP_CHANNEL}, so there"
+        " is no point upgrade to test. Set OLD_SNAP_REVISIONS to an older revision."
     )
 
     results = await run_action(ops_test, f"{APP_NAME}/leader", action="pre-upgrade-check")
@@ -135,7 +159,7 @@ async def test_pre_upgrade_check_reports_point_upgrade(ops_test: OpsTest):
 
 
     assert leader_results["installed-snap"] == (
-        f"{installed['version']} (revision {OLD_SNAP_REVISION}) on channel {MAAS_SNAP_CHANNEL}"
+        f"{installed['version']} (revision {old_snap_revision}) on channel {MAAS_SNAP_CHANNEL}"
     )
     assert leader_results["upgrade-target-snap"] == (
         f"{target['version']} (revision {target['revision']}) on channel {MAAS_SNAP_CHANNEL}"
@@ -152,7 +176,7 @@ async def test_pre_upgrade_check_reports_point_upgrade(ops_test: OpsTest):
 
 
 @pytest.mark.abort_on_fail
-async def test_upgrade_single_unit(ops_test: OpsTest):
+async def test_upgrade_single_unit(ops_test: OpsTest, old_snap_revision: str):
     """A single unit upgrades, and the others are left on the old revision."""
     if ops_test.model is None:
         raise ValueError("Model is not set")
@@ -163,7 +187,7 @@ async def test_upgrade_single_unit(ops_test: OpsTest):
     (upgrade_results,) = results.values()
     assert upgrade_results["info"] == f"Upgrade started for snap on channel {MAAS_SNAP_CHANNEL}"
 
-    # The upgrade action returns before the lock is granted, so wait for the upgrade to 
+    # The upgrade action returns before the lock is granted, so wait for the upgrade to
     # be complete
     await wait_for_revision(ops_test, UNITS[0], target["revision"])
     await ops_test.model.wait_for_idle(
@@ -177,7 +201,7 @@ async def test_upgrade_single_unit(ops_test: OpsTest):
     assert "cohort" in upgraded["notes"]
 
     for unit in UNITS[1:]:
-        assert (await get_installed_snap_info(ops_test, unit))["revision"] == OLD_SNAP_REVISION
+        assert (await get_installed_snap_info(ops_test, unit))["revision"] == old_snap_revision
 
     status = await ops_test.model.get_status()
     assert status.applications[APP_NAME].units[UNITS[0]].workload_version == target["version"]
