@@ -1431,9 +1431,7 @@ class TestMAASURLs(unittest.TestCase):
                 try:
                     harness.begin()
                     rel_id = harness.add_relation(HAPROXY_NON_TLS, "haproxy")
-                    harness.update_relation_data(
-                        rel_id, "haproxy", {"endpoints": endpoints_value}
-                    )
+                    harness.update_relation_data(rel_id, "haproxy", {"endpoints": endpoints_value})
                     self.assertEqual(
                         harness.charm.maas_cli_url, f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS"
                     )
@@ -1480,9 +1478,7 @@ class TestMAASURLs(unittest.TestCase):
                 try:
                     harness.begin()
                     rel_id = harness.add_relation(HAPROXY_NON_TLS, "haproxy")
-                    harness.update_relation_data(
-                        rel_id, "haproxy", {"endpoints": endpoints_value}
-                    )
+                    harness.update_relation_data(rel_id, "haproxy", {"endpoints": endpoints_value})
                     self.assertEqual(
                         harness.charm.maas_api_url, f"http://10.0.0.10:{MAAS_HTTP_PORT}/MAAS"
                     )
