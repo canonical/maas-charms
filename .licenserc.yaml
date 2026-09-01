@@ -34,6 +34,7 @@ header:
     - '**/.pytest_cache/**'
     - '**/.ruff_cache/**'
     - 'maas-region/lib/charms/**'
+    - 'maas-region/tox.ini'
     - '**/.licenserc.yaml'
 
   comment: on-failure
