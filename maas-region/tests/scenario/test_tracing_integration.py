@@ -26,7 +26,10 @@ def tracing_relation():
     return tracing
 
 
-def test_charm_tracing_config(tracing_relation):
+def test_charm_tracing_config(tracing_relation, tmp_path, monkeypatch):
+    # charm_tracing writes its span buffer to `.charm_tracing_buffer.raw` in the cwd.
+    # Isolate it in a tmp dir so a stale buffer can't trigger a real network flush.
+    monkeypatch.chdir(tmp_path)
     ctx = Context(MaasRegionCharm)
     state_in = State(relations=[tracing_relation])
     with patch(
