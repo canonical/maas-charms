@@ -5,6 +5,7 @@
 
 import json
 import logging
+import platform
 import subprocess
 import tempfile
 from os import remove
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
+from charms.operator_libs_linux.v2.snap import SnapCache, SnapClient, SnapState
 from tenacity import retry, stop_after_delay, wait_fixed
 
 MAAS_SNAP_NAME = "maas"
@@ -46,7 +47,7 @@ class MaasHelper:
         """
         maas = SnapCache()[MAAS_SNAP_NAME]
         if not maas.present:
-            maas.ensure(SnapState.Latest, channel=channel)
+            maas.ensure(SnapState.Latest, channel=channel, cohort="+")
             maas.hold()
 
     @staticmethod
