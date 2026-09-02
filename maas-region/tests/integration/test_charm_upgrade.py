@@ -26,6 +26,8 @@ NUM_UNITS = 3
 UNITS = [f"{APP_NAME}/{n}" for n in range(NUM_UNITS)]
 SNAP_REFRESH_TIMEOUT = 180
 
+ACTION_WAIT = "3m"
+
 # Update when creating a new track. The architecture comes from --model-arch, which
 # is required to run the integration tests on different architectures.
 DEFAULT_ARCH = "amd64"
@@ -272,18 +274,23 @@ async def juju_exec(ops_test: OpsTest, unit: str, *command: str) -> str:
     return stdout
 
 
-async def run_action(ops_test: OpsTest, *units: str, action: str) -> dict[str, dict]:
+async def run_action(
+    ops_test: OpsTest, *units: str, action: str, wait: str = ACTION_WAIT
+) -> dict[str, dict]:
     """Run an action on one or more units, and assert that it succeeded.
 
     Args:
         ops_test (OpsTest): the test harness
         units (str): the units to run on, e.g. "maas-region/leader"
         action (str): the name of the action
+        wait (str): how long to wait for the results, e.g. "3m"
 
     Returns:
         dict[str, dict]: the action results, keyed by the unit that produced them
     """
-    return_code, stdout, stderr = await ops_test.juju("run", "--format", "json", *units, action)
+    return_code, stdout, stderr = await ops_test.juju(
+        "run", "--format", "json", "--wait", wait, *units, action
+    )
     assert return_code == 0, f"action {action} failed on {', '.join(units)}: {stdout}{stderr}"
     return {unit: data.get("results", {}) for unit, data in json.loads(stdout).items()}
 
