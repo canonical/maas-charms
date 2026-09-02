@@ -5,13 +5,15 @@
 
 import json
 import logging
+import platform
 import subprocess
 import tempfile
 from os import remove
 from pathlib import Path
+from typing import Any
 
 import yaml
-from charms.operator_libs_linux.v2.snap import SnapCache, SnapState
+from charms.operator_libs_linux.v2.snap import SnapCache, SnapClient, SnapState
 from tenacity import retry, stop_after_delay, wait_fixed
 
 MAAS_SNAP_NAME = "maas"
@@ -27,6 +29,8 @@ MAAS_CACERT_FILEPATH = Path("/var/snap/maas/common/cacert.pem")
 MAAS_TMP = Path("/tmp/snap-private-tmp/snap.maas/tmp")
 NGINX_CFG_FILEPATH = Path("/var/snap/maas/current/http/regiond.nginx.conf")
 MAAS_HTTPS_PORT = 5443
+# MAAS node type of type rack, from maasserver.enum.NODE_TYPE
+NODE_TYPE_RACK_CONTROLLER = 2
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +47,21 @@ class MaasHelper:
         """
         maas = SnapCache()[MAAS_SNAP_NAME]
         if not maas.present:
-            maas.ensure(SnapState.Latest, channel=channel)
+            maas.ensure(SnapState.Latest, channel=channel, cohort="+")
             maas.hold()
+
+    @staticmethod
+    def upgrade(channel: str) -> None:
+        """Upgrade the snap to the latest version available on the specified channel.
+
+        Args:
+            channel (str): snapstore channel
+        Raises:
+            SnapError: if the snap upgrade fails
+        """
+        maas = SnapCache()[MAAS_SNAP_NAME]
+        maas.ensure(SnapState.Latest, channel=channel, cohort="+")
+        maas.hold()
 
     @staticmethod
     def uninstall() -> None:
@@ -71,6 +88,16 @@ class MaasHelper:
         return maas.version.split("-")[0] if maas.version is not None and maas.present else None
 
     @staticmethod
+    def get_present() -> bool:
+        """Check if snap is present.
+
+        Returns:
+            bool: True if snap is present, False otherwise
+        """
+        maas = SnapCache()[MAAS_SNAP_NAME]
+        return maas.present
+
+    @staticmethod
     def get_installed_channel() -> str | None:
         """Get installed channel.
 
@@ -79,6 +106,81 @@ class MaasHelper:
         """
         maas = SnapCache()[MAAS_SNAP_NAME]
         return maas.channel if maas.present else None
+
+    @staticmethod
+    def get_installed_revision() -> str | None:
+        """Get installed snap revision.
+
+        Returns:
+            Union[str, None]: revision if installed
+        """
+        maas = SnapCache()[MAAS_SNAP_NAME]
+        return maas.revision if maas.present else None
+
+    @staticmethod
+    def get_host_base() -> str:
+        """Get the Ubuntu base of this machine, e.g. "24.04".
+
+        Returns:
+            str: the VERSION_ID from os-release, or "" if unavailable
+        """
+        try:
+            return platform.freedesktop_os_release().get("VERSION_ID", "")
+        except OSError:
+            return ""
+
+    @staticmethod
+    @retry(reraise=True, stop=stop_after_delay(20), wait=wait_fixed(3))
+    def get_latest_channel_info(channel: str) -> dict[str, Any] | None:
+        """Get the latest version, revision and epoch available in the snap store for a channel.
+
+        The epoch is normalised to its expanded form, defaulting to the snap
+        default (epoch 0) when the store does not report one.
+
+        Args:
+            channel (str): snapstore channel, e.g. "3.7/stable"
+
+        Returns:
+            Union[dict, None]: {"version": ..., "revision": ..., "epoch": ...} if the
+                channel exists in the store
+        """
+        info = SnapClient().get_snap_information(MAAS_SNAP_NAME)
+        channels = info.get("channels")
+        if not isinstance(channels, dict):
+            return None
+        channel_info = channels.get(channel)
+        if not isinstance(channel_info, dict):
+            return None
+        version = channel_info.get("version")
+        revision = channel_info.get("revision")
+        if version is None or revision is None:
+            return None
+        return {
+            "version": str(version).split("-")[0],
+            "revision": str(revision),
+            "epoch": MaasHelper._normalise_epoch(channel_info.get("epoch")),
+        }
+
+    @staticmethod
+    def _normalise_epoch(epoch: Any) -> dict[str, list[int]]:
+        """Normalise a snap store epoch into its expanded form.
+
+        Falls back to the snap default (epoch 0) when the store reports no epoch,
+        or reports one in an unexpected shape.
+
+        Args:
+            epoch (Any): the raw `epoch` value from the store channel map
+
+        Returns:
+            dict[str, list[int]]: {"read": [...], "write": [...]}
+        """
+        if not isinstance(epoch, dict):
+            return {"read": [0], "write": [0]}
+        normalised: dict[str, list[int]] = {}
+        for key in ("read", "write"):
+            values = epoch.get(key)
+            normalised[key] = [int(v) for v in values] if isinstance(values, list) else [0]
+        return normalised
 
     @staticmethod
     def get_maas_id() -> str | None:
@@ -141,7 +243,7 @@ class MaasHelper:
         """
         maas = SnapCache()[MAAS_SNAP_NAME]
         service = maas.services.get(MAAS_SERVICE, {})
-        return service.get("activate", False)
+        return service.get("active", False)
 
     @staticmethod
     def set_running(enable: bool) -> None:
@@ -363,6 +465,56 @@ class MaasHelper:
         regions_output = MaasHelper._call_read_regions(admin_username, maas_url, cacert)
         region_data = json.loads(regions_output)
         return {region["system_id"] for region in region_data}
+
+    @staticmethod
+    def _call_read_racks(admin_username: str, maas_url: str, cacert: str = "") -> str:
+        try:
+            MaasHelper._login_as_admin(admin_username, maas_url, cacert)
+            return subprocess.check_output(
+                [
+                    "/snap/bin/maas",
+                    admin_username,
+                    "rack-controllers",
+                    "read",
+                ]
+            ).decode()
+        finally:
+            MaasHelper._logout(admin_username)
+
+    @staticmethod
+    def get_rack_versions(
+        admin_username: str,
+        maas_url: str,
+        cacert: str = "",
+        standalone_only: bool = False,
+    ) -> dict[str, str]:
+        """Get the MAAS version reported by every rack controller.
+
+        Versions are truncated to the release portion, so the API's
+        "3.8.0~alpha1-18696-g.4ba2498c1" becomes "3.8.0~alpha1". This matches the
+        format of `get_installed_version`, making the two comparable.
+
+        Args:
+            admin_username (str): The admin username for MAAS
+            maas_url (str): URL of the MAAS API
+            cacert (str): optionally, contents of cacert for a self-signed ssl_certificate
+            standalone_only (bool): exclude controllers running in "region+rack" mode,
+                keeping only standalone racks.
+
+        Returns:
+            dict[str, str]: mapping of rack controller system ID to version. A rack
+                that has not yet reported a version maps to an empty string.
+
+        Raises:
+            CalledProcessError: failed to read rack controllers from MAAS
+        """
+        racks_output = MaasHelper._call_read_racks(admin_username, maas_url, cacert)
+        rack_data = json.loads(racks_output)
+        return {
+            rack["system_id"]: str(rack.get("version") or "").split("-")[0]
+            for rack in rack_data
+            if not standalone_only or rack.get("node_type") == NODE_TYPE_RACK_CONTROLLER
+        }
 
     @staticmethod
     def is_maas_initialized() -> bool:

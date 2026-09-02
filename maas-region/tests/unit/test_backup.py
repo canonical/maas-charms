@@ -35,14 +35,14 @@ from backups import (
     UploadProgressPercentage,
     as_size,
 )
-from charm import MAAS_DB_NAME, MAAS_SNAP_CHANNEL, MaasRegionCharm
+from charm import MAAS_DB_NAME, MAAS_ROLLING_OPS_RELATION, MAAS_SNAP_CHANNEL, MaasRegionCharm
 
 
 class TestMAASBackups(unittest.TestCase):
     def setUp(self):
         self.harness = ops.testing.Harness(MaasRegionCharm)
         self.addCleanup(self.harness.cleanup)
-        self.harness.add_relation("initialize", "maas-region")
+        self.harness.add_relation(MAAS_ROLLING_OPS_RELATION, "maas-region")
 
     def _satisfy_status_ladder(self, mock_helper) -> None:
         """Set up everything the collect-status ladder needs to reach ActiveStatus.
@@ -1873,6 +1873,7 @@ backup-id            | action      | status   | maas     | size       | controll
 
         self.harness.begin()
         event = MagicMock(spec=ops.ActionEvent)
+        event.params = {}  # no force param
 
         self.harness.charm.backup._run_restore(
             event=event,
@@ -1897,6 +1898,55 @@ backup-id            | action      | status   | maas     | size       | controll
         )
         event.fail.assert_not_called()
 
+    @patch("backups.MAASBackups._download_and_unarchive_from_s3")
+    @patch("backups.MAASBackups._update_controller_id")
+    @patch("backups.MAASBackups._check_backup_maas_version")
+    def test_run_restore__force_skips_version_check(
+        self, check_version, update_controller, unarchive
+    ):
+        backup_id = "2025-08-23T06:26:00Z"
+        controller_id = "abc123"
+        s3_parameters = {
+            "bucket": "test-bucket",
+            "access-key": " test-access-key ",
+            "secret-key": " test-secret-key ",
+            "endpoint": "https://s3.amazonaws.com",
+            "path": "/test-path",
+            "region": "us-east-1",
+        }
+        check_version.return_value = False
+
+        self.harness.begin()
+
+        for force in (True, False):
+            with self.subTest(force=force):
+                check_version.reset_mock()
+                update_controller.reset_mock()
+                unarchive.reset_mock()
+                event = MagicMock(spec=ops.ActionEvent)
+                event.params = {"force": force}
+
+                self.harness.charm.backup._run_restore(
+                    event=event,
+                    s3_parameters=s3_parameters,
+                    backup_id=backup_id,
+                    controller_id=controller_id,
+                )
+
+                if force:
+                    check_version.assert_not_called()
+                    update_controller.assert_called_once()
+                    self.assertEqual(unarchive.call_count, 2)
+                    event.fail.assert_not_called()
+                else:
+                    check_version.assert_called_once()
+                    update_controller.assert_not_called()
+                    unarchive.assert_not_called()
+                    event.fail.assert_called_once_with(
+                        "Failed to validate MAAS version from S3 backup. "
+                        "Check the juju debug-log for more detail."
+                    )
+
     @patch("backups.MAASBackups._check_backup_maas_version")
     def test_run_restore__fail_check_backup(self, check_version):
         backup_id = "2025-08-23T06:26:00Z"
@@ -1913,6 +1963,7 @@ backup-id            | action      | status   | maas     | size       | controll
 
         self.harness.begin()
         event = MagicMock(spec=ops.ActionEvent)
+        event.params = {}  # no force param
 
         self.harness.charm.backup._run_restore(
             event=event,
@@ -2217,6 +2268,7 @@ backup-id            | action      | status   | maas     | size       | controll
 
         self.harness.begin()
         event = MagicMock(spec=ops.ActionEvent)
+        event.params = {}  # no force param
 
         self.harness.charm.backup._run_restore(
             event=event,
@@ -2461,6 +2513,7 @@ backup-id            | action      | status   | maas     | size       | controll
 
         self.harness.begin()
         event = MagicMock(spec=ops.ActionEvent)
+        event.params = {}  # no force param
 
         self.harness.charm.backup._run_restore(
             event=event,
@@ -2494,6 +2547,7 @@ backup-id            | action      | status   | maas     | size       | controll
 
         self.harness.begin()
         event = MagicMock(spec=ops.ActionEvent)
+        event.params = {}  # no force param
 
         self.harness.charm.backup._run_restore(
             event=event,

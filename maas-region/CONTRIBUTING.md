@@ -36,4 +36,35 @@ Build the charm in this git repository using:
 charmcraft pack
 ```
 
+## Development
+
+### Jhack
+
+During development, [jhack](https://github.com/canonical/jhack) is a useful tool that provides scripts to help with development and debugging. Some useful commands are: 
+
+- Sync your local charm code to all deployed units of the maas-region charm:
+```shell 
+cd maas-region
+jhack sync maas-region
+```
+- Show the contents of a specific relation:
+```shell
+jhack show-relation maas-region:maas-cluster
+```
+- Show the events obtained by the charm:
+```shell
+jhack tail maas-region
+```
+
+### Testing changes on a dev branch
+
+Despite having jhack sync, you may still need to publish your charm on a dev branch 
+to test changes. Run the following sequentially to build, upload, and release the charm to a dev branch:
+```shell
+charmcraft pack
+charmcraft upload maas-region_ubuntu@26.04-amd64.charm  # this produces a revision to use in the next command
+charmcraft release maas-region --revision=$REVISION --channel latest/edge/$DEV_BRANCH_NAME
+```
+Note that this will be deleted after 30 days, see [the docs](https://canonical.com/juju/docs/juju-cli/3.6/reference/charm/#branch).
+
 <!-- You may want to include any contribution/style guidelines in this document>
