@@ -3,6 +3,7 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import json
 import subprocess
 import unittest
 from unittest.mock import MagicMock, PropertyMock, mock_open, patch
@@ -26,7 +27,9 @@ class TestHelperSnapCache(unittest.TestCase):
     def test_install(self, mock_snap):
         mock_maas = self._setup_snap(mock_snap)
         MaasHelper.install("test/channel")
-        mock_maas.ensure.assert_called_once_with(SnapState.Latest, channel="test/channel")
+        mock_maas.ensure.assert_called_once_with(
+            SnapState.Latest, channel="test/channel", cohort="+"
+        )
         mock_maas.hold.assert_called_once()
 
     @patch("helper.SnapCache", autospec=True)
@@ -72,7 +75,7 @@ class TestHelperSnapCache(unittest.TestCase):
     @patch("helper.SnapCache", autospec=True)
     def test_is_running(self, mock_snap):
         maas = self._setup_snap(mock_snap, present=True)
-        maas.services.return_value = {MAAS_SERVICE: {"activate": True}}
+        maas.services.return_value = {MAAS_SERVICE: {"active": True}}
         self.assertTrue(MaasHelper.is_running())
 
     @patch("helper.SnapCache", autospec=True)
@@ -88,6 +91,58 @@ class TestHelperSnapCache(unittest.TestCase):
         maas.stop.return_value = None
         MaasHelper.set_running(False)
         maas.stop.assert_called_once()
+
+
+class TestHelperHostBase(unittest.TestCase):
+    @patch("helper.platform.freedesktop_os_release")
+    def test_get_host_base(self, mock_os_release):
+        mock_os_release.return_value = {"ID": "ubuntu", "VERSION_ID": "24.04"}
+        self.assertEqual(MaasHelper.get_host_base(), "24.04")
+
+    @patch("helper.platform.freedesktop_os_release")
+    def test_get_host_base_unavailable(self, mock_os_release):
+        mock_os_release.side_effect = OSError
+        self.assertEqual(MaasHelper.get_host_base(), "")
+
+
+class TestHelperSnapStore(unittest.TestCase):
+    def _setup_client(self, mock_client, channels):
+        instance = mock_client.return_value
+        instance.get_snap_information.return_value = {"channels": channels}
+        return instance
+
+    @patch("helper.SnapClient", autospec=True)
+    def test_get_latest_channel_info(self, mock_client):
+        self._setup_client(
+            mock_client,
+            {
+                "3.7/edge": {
+                    "version": "3.7.3-18027-g.fb1c391db",
+                    "revision": "42358",
+                    "epoch": {"read": [3, 4], "write": [4]},
+                }
+            },
+        )
+        info = MaasHelper.get_latest_channel_info("3.7/edge")
+        self.assertEqual(
+            info,
+            {
+                "version": "3.7.3",
+                "revision": "42358",
+                "epoch": {"read": [3, 4], "write": [4]},
+            },
+        )
+
+    @patch("helper.SnapClient", autospec=True)
+    def test_get_latest_channel_info_defaults_epoch(self, mock_client):
+        self._setup_client(mock_client, {"3.7/edge": {"version": "3.7.3", "revision": "42358"}})
+        info = MaasHelper.get_latest_channel_info("3.7/edge")
+        self.assertEqual(info["epoch"], {"read": [0], "write": [0]})
+
+    @patch("helper.SnapClient", autospec=True)
+    def test_get_latest_channel_info_unknown_channel(self, mock_client):
+        self._setup_client(mock_client, {"3.7/edge": {"version": "3.7.3", "revision": "42358"}})
+        self.assertIsNone(MaasHelper.get_latest_channel_info("3.9/edge"))
 
 
 class TestHelperFiles(unittest.TestCase):
@@ -301,6 +356,94 @@ class TestHelperSetup(unittest.TestCase):
                 "user",
             ]
         )
+
+    @patch("helper.MaasHelper._logout")
+    @patch("helper.MaasHelper._login_as_admin")
+    @patch("helper.subprocess.check_output")
+    def test_get_rack_versions(self, mock_run, mock_login, mock_logout):
+        mock_run.return_value = json.dumps(
+            [
+                {
+                    "system_id": "pknys3",
+                    "node_type": 4,
+                    "version": "3.8.0~alpha1-18506-g.3f955fda6",
+                },
+                {"system_id": "x3ebyw", "node_type": 2, "version": "3.7.3-18030-g.9122eee68"},
+            ]
+        ).encode()
+        versions = MaasHelper.get_rack_versions("user", "http://1.1.1.1:5240/MAAS")
+        self.assertEqual(versions, {"pknys3": "3.8.0~alpha1", "x3ebyw": "3.7.3"})
+        mock_login.assert_called_once_with("user", "http://1.1.1.1:5240/MAAS", "")
+        mock_logout.assert_called_once_with("user")
+        mock_run.assert_called_once_with(
+            [
+                "/snap/bin/maas",
+                "user",
+                "rack-controllers",
+                "read",
+            ]
+        )
+
+    @patch("helper.MaasHelper._logout")
+    @patch("helper.MaasHelper._login_as_admin")
+    @patch("helper.subprocess.check_output")
+    def test_get_rack_versions_standalone_only(self, mock_run, _mock_login, _mock_logout):
+        mock_run.return_value = json.dumps(
+            [
+                {
+                    "system_id": "pknys3",
+                    "node_type": 4,  # region+rack
+                    "version": "3.8.0~alpha1-18506-g.3f955fda6",
+                },
+                {"system_id": "x3ebyw", "node_type": 2, "version": "3.7.3-18030-g.9122eee68"},
+            ]
+        ).encode()
+        versions = MaasHelper.get_rack_versions(
+            "user", "http://1.1.1.1:5240/MAAS", standalone_only=True
+        )
+        self.assertEqual(versions, {"x3ebyw": "3.7.3"})
+
+    @patch("helper.MaasHelper._logout")
+    @patch("helper.MaasHelper._login_as_admin")
+    @patch("helper.subprocess.check_output")
+    def test_get_rack_versions_standalone_only_all_combined(
+        self, mock_run, _mock_login, _mock_logout
+    ):
+        mock_run.return_value = json.dumps(
+            [{"system_id": "pknys3", "node_type": 4, "version": "3.7.3-18030-g.9122eee68"}]
+        ).encode()
+        versions = MaasHelper.get_rack_versions(
+            "user", "http://1.1.1.1:5240/MAAS", standalone_only=True
+        )
+        self.assertEqual(versions, {})
+
+    @patch("helper.MaasHelper._logout")
+    @patch("helper.MaasHelper._login_as_admin")
+    @patch("helper.subprocess.check_output")
+    def test_get_rack_versions_missing_version(self, mock_run, _mock_login, _mock_logout):
+        mock_run.return_value = json.dumps(
+            [
+                {"system_id": "pknys3", "version": None},
+                {"system_id": "x3ebyw"},
+            ]
+        ).encode()
+        versions = MaasHelper.get_rack_versions("user", "http://1.1.1.1:5240/MAAS")
+        self.assertEqual(versions, {"pknys3": "", "x3ebyw": ""})
+
+    @patch("helper.MaasHelper._logout")
+    @patch("helper.MaasHelper._login_as_admin")
+    @patch("helper.subprocess.check_output")
+    def test_get_rack_versions_no_racks(self, mock_run, _mock_login, _mock_logout):
+        mock_run.return_value = b"[]"
+        self.assertEqual(MaasHelper.get_rack_versions("user", "http://1.1.1.1:5240/MAAS"), {})
+
+    @patch("helper.MaasHelper._logout")
+    @patch("helper.MaasHelper._login_as_admin")
+    @patch("helper.subprocess.check_output", side_effect=subprocess.CalledProcessError(1, "maas"))
+    def test_get_rack_versions_command_failed(self, _mock_run, _mock_login, mock_logout):
+        with self.assertRaises(subprocess.CalledProcessError):
+            MaasHelper.get_rack_versions("user", "http://1.1.1.1:5240/MAAS")
+        mock_logout.assert_called_once_with("user")
 
     @patch("helper.subprocess.check_call")
     def test_msm_enroll(self, mock_run):

@@ -15,14 +15,15 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 import ops
+from charmlibs.rollingops import OperationResult, RollingOpsManager
 from charms.data_platform_libs.v0 import data_interfaces as db
 from charms.grafana_agent.v0 import cos_agent
 from charms.haproxy.v1.haproxy_route_tcp import HaproxyRouteTcpRequirer, LoadBalancingAlgorithm
 from charms.maas_site_manager_k8s.v0 import enroll
 from charms.operator_libs_linux.v2.snap import SnapError
-from charms.rolling_ops.v0.rollingops import RollingOpsManager, RunWithLock
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
+from debian.debian_support import Version
 from ops.model import SecretNotFoundError
 from pydantic import IPvAnyAddress
 
@@ -33,13 +34,23 @@ logger = logging.getLogger(__name__)
 
 MAAS_PEER_NAME = "maas-cluster"
 MAAS_DB_NAME = "maas-db"
-MAAS_INIT_RELATION = "initialize"
+MAAS_ROLLING_OPS_RELATION = "rollingops-peers"
 HAPROXY_NON_TLS = "ingress-tcp"
 HAPROXY_TLS = "ingress-tcp-tls"
 HAPROXY_TEMPORAL = "ingress-tcp-temporal"
 HAPROXY_INTERNAL_HTTP_API = "ingress-tcp-internal-http-api"
 
 MAAS_SNAP_CHANNEL = "3.8/edge"
+
+
+# Ubuntu bases each MAAS track's charm is published for. Must be updated when a new
+# track ships; used for upgrade compatibility checks. Tracks are listed in ascending
+# MAAS version, and this order dictates the only supported (sequential) upgrade
+# path e.g. 3.7 -> 3.8 or 3.8 -> 4.0.
+MAAS_TRACK_BASES: dict[str, list[str]] = {
+    "3.7": ["24.04"],
+    "3.8": ["26.04"],
+}
 
 MAAS_PROXY_PORT = 80
 MAAS_TLS_PROXY_PORT = 443
@@ -105,6 +116,74 @@ COMMON_DEFAULT_HAPROXY_ARGS = {
     "check_interval": 2,
     "server_timeout": 900,
 }
+
+
+def _next_track(track: str) -> str | None:
+    """Find the MAAS track immediately following a given track.
+
+    The successor is derived from the declaration order of MAAS_TRACK_BASES, which
+    lists tracks in ascending supported version.
+
+    Args:
+        track (str): the track to find the successor of, e.g. "3.7"
+
+    Returns:
+        str | None: the next track in the upgrade path, or None if `track` is
+            unmapped or is the latest mapped track
+    """
+    tracks = sorted(MAAS_TRACK_BASES)
+    try:
+        return tracks[tracks.index(track) + 1]
+    except (ValueError, IndexError):
+        return None
+
+
+def _resolve_target_channel(track: Any) -> tuple[str, str]:
+    """Resolve the track requested by pre-upgrade-check into a track and snap channel.
+
+    Assumes every charm track installs the stable snap channel.
+
+    Args:
+        track (Any): the action's `track` parameter, if given
+
+    Returns:
+        tuple[str, str]: the target track, and the snap channel it maps to
+    """
+    if not track:
+        return MAAS_SNAP_CHANNEL.split("/")[0], MAAS_SNAP_CHANNEL
+    # juju YAML-parses unquoted action params, so track=3.7 arrives as a float.
+    track = str(track)
+
+    return track, f"{track}/stable"
+
+
+def _sequential_upgrade_error(installed_track: str, target_track: str) -> str | None:
+    """Check whether an upgrade between two tracks skips a sequential version.
+
+    Args:
+        installed_track (str): the track currently installed, e.g. "3.7"
+        target_track (str): the track being upgraded to, e.g. "3.9"
+
+    Returns:
+        str | None: a message explaining why the upgrade must not proceed, or None
+            if it is sequential and may go ahead
+    """
+    if installed_track not in MAAS_TRACK_BASES or target_track not in MAAS_TRACK_BASES:
+        return (
+            "Upgrade between tracks cannot be verified because one or both tracks are "
+            "not known to this charm. Check the charm's supported tracks on Charmhub to"
+            " determine if the upgrade is sequential, and if it is, report this "
+            "message to the charm maintainers."
+        )
+    if _next_track(installed_track) == target_track:
+        return None
+    return (
+        f"Upgrading from MAAS {installed_track} to {target_track} is a non-sequential "
+        "upgrade that skips one or more minor versions. Non-sequential upgrades are not "
+        "tested by the MAAS charm and may leave the database in an unsupported state. "
+        "Upgrade through each minor version in turn, or run the upgrade action with "
+        "force=true to proceed at your own risk."
+    )
 
 
 @trace_charm(
@@ -222,13 +301,302 @@ class MaasRegionCharm(ops.CharmBase):
         self.framework.observe(self.on.get_api_endpoint_action, self._on_get_api_endpoint_action)
         self.framework.observe(self.on.get_maas_secret_action, self._on_get_maas_secret_action)
         self.framework.observe(self.on.get_maas_status_action, self._on_get_maas_status_action)
+        self.framework.observe(self.on.stop_maas_action, self._on_stop_maas_action)
+        self.framework.observe(self.on.start_maas_action, self._on_start_maas_action)
+        self.framework.observe(self.on.pre_upgrade_check_action, self._on_pre_upgrade_check_action)
+        self.framework.observe(self.on.upgrade_action, self._on_upgrade_action)
 
         # Charm configuration
         self.framework.observe(self.on.config_changed, self._on_config_changed)
 
-        # MAAS initialize manager, used to coordinate sequential inits
-        self.maas_init_manager = RollingOpsManager(
-            charm=self, relation=MAAS_INIT_RELATION, callback=self._on_rolling_maas_init
+        # Rolling ops manager
+        self.rolling_ops_manager = RollingOpsManager(
+            charm=self,
+            peer_relation_name=MAAS_ROLLING_OPS_RELATION,
+            callback_targets={
+                "initialize": self._on_rolling_maas_init,
+                "upgrade": self._upgrade,
+            },
+        )
+
+    def _upgrade_precondition_error(self) -> str | None:
+        """Check whether this unit is 'safe' to upgrade.
+
+        Returns:
+            str | None: a message explaining why the upgrade must not proceed, or
+                None if it may go ahead
+        """
+        if (
+            self.app.planned_units() > 1
+            and MaasHelper.is_running()
+            and MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL
+        ):
+            return (
+                "The MAAS snap is running while attempting to upgrade this unit to a new "
+                "channel. This likely means MAAS has not been stopped on all units first, "
+                "and running different minor versions of MAAS simultaneously is not "
+                "supported. Run `juju run maas-region/<n> stop-maas` on every unit before "
+                "upgrading to a new channel, or pass force=true to skip this check."
+            )
+        return None
+
+    def _upgrade(self) -> OperationResult:
+        """Upgrade the MAAS snap.
+
+        Raises:
+            Exception: if the snap upgrade fails
+        """
+        self.unit.status = ops.MaintenanceStatus("upgrading...")
+        try:
+            MaasHelper.upgrade(MAAS_SNAP_CHANNEL)
+            if workload_version := self.version:
+                self.unit.set_workload_version(workload_version)
+            return OperationResult.RELEASE
+        except SnapError as e:
+            logger.error("Snap upgrade failed: %s", e)
+            return OperationResult.RETRY_RELEASE
+
+    def _on_upgrade_action(self, event: ops.ActionEvent) -> None:
+        """Handle the upgrade action.
+
+        Args:
+            event (ops.ActionEvent): Event from the framework
+        """
+        if not event.params.get("force", False) and (error := self._upgrade_precondition_error()):
+            logger.warning("Refusing to upgrade MAAS: %s", error)
+            event.fail(error)
+            return
+
+        try:
+            # Rolling ops queues the upgrade callback which is run asynchronously, the
+            # action returns immediately.
+            self.rolling_ops_manager.request_async_lock(callback_id="upgrade", max_retry=3)
+            event.set_results({"info": f"Upgrade started for snap on channel {MAAS_SNAP_CHANNEL}"})
+        except Exception as ex:
+            logger.error(str(ex))
+
+    def _on_pre_upgrade_check_action(self, event: ops.ActionEvent) -> None:
+        target_track, target_snap_channel = _resolve_target_channel(event.params.get("track"))
+
+        installed_snap_version = MaasHelper.get_installed_version()
+        installed_snap_revision = MaasHelper.get_installed_revision()
+        installed_snap_channel = MaasHelper.get_installed_channel()
+        if not installed_snap_version or not installed_snap_revision or not installed_snap_channel:
+            event.fail(
+                "Could not obtain installed MAAS version, revision, or channel. Is MAAS installed?"
+            )
+            return
+
+        # Due to the installation with cohorts, and the fact that charm revisions are specific to an architecture,
+        # the snap revision installed will be the same across all units in the application, therefore the report
+        # for this unit is representative for all units in the cluster.
+        results = {
+            "installed-snap": f"{installed_snap_version} (revision {installed_snap_revision}) on channel {installed_snap_channel}",
+        }
+
+        try:
+            target_channel_info = MaasHelper.get_latest_channel_info(target_snap_channel)
+        except Exception:
+            logger.exception("Failed to query the snap store for the latest MAAS version")
+            event.set_results(results)
+            event.fail(
+                f"Failed to query the snap store for the latest MAAS version on channel {target_snap_channel}, cannot determine if an upgrade is possible."
+            )
+            return
+        if not target_channel_info:
+            event.set_results(results)
+            event.fail(
+                f"No MAAS version found in the snap store for channel {target_snap_channel}"
+            )
+            return
+
+        target_version = target_channel_info.get("version", "")
+        target_revision = target_channel_info.get("revision", "")
+        if not target_version or not target_revision:
+            event.set_results(results)
+            event.fail(
+                f"The snap store did not report a version and revision for channel {target_snap_channel}, cannot determine if an upgrade is possible."
+            )
+            return
+
+        # Allows the user to see all the reasons why an upgrade may not be possible before proceeding.
+        errors: list[str] = []
+
+        self._check_rack_versions(target_version, results)
+
+        if target_revision == installed_snap_revision:
+            results["info"] = (
+                f"Current installed revision ({installed_snap_revision}) is the latest available on channel {target_snap_channel}. No upgrade is needed."
+            )
+        else:
+            errors.extend(
+                self._check_upgrade_path(
+                    installed_snap_version,
+                    installed_snap_channel,
+                    target_version,
+                    target_revision,
+                    target_snap_channel,
+                    target_track,
+                    results,
+                )
+            )
+
+        event.set_results(results)
+        if errors:
+            event.fail("\n".join(errors))
+
+    def _check_upgrade_path(
+        self,
+        installed_snap_version: str,
+        installed_snap_channel: str,
+        target_version: str,
+        target_revision: str,
+        target_snap_channel: str,
+        target_track: str,
+        results: dict[str, Any],
+    ) -> list[str]:
+        """Run the checks that only apply when there is an upgrade to perform.
+
+        Args:
+            installed_snap_version (str): the version currently installed, e.g. "3.8.3"
+            installed_snap_channel (str): the channel currently installed, e.g. "3.8/stable"
+            target_version (str): the version being upgraded to, e.g. "3.8.0"
+            target_revision (str): the snap revision being upgraded to
+            target_snap_channel (str): the channel being checked, e.g. "3.9/stable"
+            target_track (str): the track being checked, e.g. "3.9"
+            results (dict[str, Any]): action results to annotate
+
+        Returns:
+            list[str]: a message for each check that failed, empty if all passed
+        """
+        results["upgrade-target-snap"] = (
+            f"{target_version} (revision {target_revision}) on channel {target_snap_channel}"
+        )
+
+        errors = []
+        if Version(target_version) < Version(installed_snap_version):
+            errors.append(
+                f"The latest version ({target_version}) on channel {target_snap_channel} is a downgrade compared to the installed version ({installed_snap_version})."
+                f" MAAS does not support downgrades. Please use a channel with a newer version."
+            )
+
+        if target_snap_channel == installed_snap_channel:
+            # Point upgrade, no need for base compatibility or sequential checks
+            results["info"] = (
+                f"Point upgrade is possible from {installed_snap_version} to {target_version}."
+            )
+            return errors
+
+        # A move between tracks may also require a base change
+        if base_error := self._check_base_compatibility(target_snap_channel, results):
+            errors.append(base_error)
+
+        installed_track = installed_snap_channel.split("/")[0]
+        if seq_error := _sequential_upgrade_error(installed_track, target_track):
+            errors.append(seq_error)
+        return errors
+
+    def _check_rack_versions(self, target_version: str, results: dict[str, Any]) -> None:
+        """Record standalone rack controller versions, in place, in `results`.
+
+        Rack controllers should be upgraded ahead of the region. All info is reported
+        through `results` and none of them block the upgrade. Units running in
+        region+rack mode are excluded, since they upgrade with their region.
+
+        Args:
+            target_version (str): the MAAS version being upgraded to, e.g. "3.8.0"
+            results (dict[str, Any]): action results to annotate
+        """
+        try:
+            rack_versions = self.get_rack_versions(standalone_only=True)
+        except Exception as ex:
+            logger.error(str(ex))
+            results["rack-controllers"] = "unknown"
+            results["rack-info"] = (
+                "Could not read the rack controller versions from MAAS, so it could not "
+                "be determined whether they have been upgraded first. Verify manually "
+                "that every rack controller is upgraded before upgrading the region"
+            )
+            return
+
+        if not rack_versions:
+            return
+
+        results["rack-controllers"] = ", ".join(
+            f"{system_id}: {version or 'unknown'}"
+            for system_id, version in sorted(rack_versions.items())
+        )
+
+        target = Version(target_version)
+        behind = sorted(
+            f"{system_id} ({version})"
+            for system_id, version in rack_versions.items()
+            if version and Version(version) < target
+        )
+        unreported = sorted(
+            system_id for system_id, version in rack_versions.items() if not version
+        )
+        ahead = sorted(
+            f"{system_id} ({version})"
+            for system_id, version in rack_versions.items()
+            if version and Version(version) > target
+        )
+
+        info = []
+        if behind:
+            info.append(
+                f"Some racks are behind the target MAAS version: {', '.join(behind)} "
+                f"{'are' if len(behind) > 1 else 'is'} older than {target_version}. "
+                "Consider upgrading your standalone racks first."
+            )
+        if unreported:
+            info.append(
+                f"{', '.join(unreported)} has not reported a version to MAAS, so it "
+                "could not be checked."
+            )
+        if ahead:
+            info.append(f"{', '.join(ahead)} is newer than the target version {target_version}.")
+        if not behind and not unreported and not ahead:
+            info.append(
+                f"All standalone rack controllers are running target version {target_version}."
+            )
+        results["rack-info"] = " ".join(info)
+
+    def _check_base_compatibility(
+        self, target_channel: str, results: dict[str, Any]
+    ) -> str | None:
+        """Record base compatibility for a target channel, in place, in `results`.
+
+        Args:
+            target_channel (str): the channel being checked, e.g. "3.9/edge"
+            results (dict[str, Any]): action results to annotate
+
+        Returns:
+            str | None: a failure message if the target track needs a different base
+        """
+        host_base = MaasHelper.get_host_base()
+        target_track = target_channel.split("/")[0]
+        target_bases = MAAS_TRACK_BASES.get(target_track)
+
+        if target_bases is None:
+            return (
+                f"Track {target_track} is not known to this charm, so base compatibility "
+                "could not be determined. Check the charm's supported bases on Charmhub "
+                "to determine if the base is the same as the current host, and report "
+                "this message to the charm maintainers."
+            )
+
+        results["host-base"] = host_base
+        results["upgrade-target-charm-bases"] = ", ".join(target_bases)
+        if host_base in target_bases:
+            results["info"] = (
+                f"The current host base {host_base} is compatible with the {target_channel} charm's supported bases. Performing an upgrade inplace is possible."
+            )
+            return None
+        return (
+            f"Channel {target_channel} requires an Ubuntu base of "
+            f"{', '.join(target_bases)}, but this unit runs {host_base or 'unknown'}. "
+            "Changing base requires redeploying units on the new base."
         )
 
     @property
@@ -520,16 +888,14 @@ class MaasRegionCharm(ops.CharmBase):
         except subprocess.CalledProcessError:
             return False
 
-    def _on_rolling_maas_init(self, _: RunWithLock):
+    def _on_rolling_maas_init(self) -> OperationResult:
         """Run MAAS initialization.
 
         Required for RollingOpsManager, which expects a callback that
         takes a CharmBase object and EventBase object as arguments.
-
-        Args:
-            _ (RunWithLock): Event passed in by RollingOpsManager, not used.
         """
-        self._initialize_maas()
+        success = self._initialize_maas()
+        return OperationResult.RELEASE if success else OperationResult.RETRY_RELEASE
 
     def get_region_system_ids(self) -> set[str]:
         """Get the system IDs of all regions in the MAAS cluster.
@@ -545,6 +911,26 @@ class MaasRegionCharm(ops.CharmBase):
             admin_username=credentials["username"],
             maas_url=self.maas_cli_url,
             cacert=str(self.config["ssl_cacert_content"]),
+        )
+
+    def get_rack_versions(self, standalone_only: bool = False) -> dict[str, str]:
+        """Get the MAAS version of every rack controller in the cluster.
+
+        Args:
+            standalone_only (bool): exclude units running in "region+rack" mode.
+
+        Returns:
+            dict[str, str]: mapping of rack controller system ID to version
+
+        Raises:
+            CalledProcessError: failed to get the rack versions
+        """
+        credentials = self._create_or_get_internal_admin()
+        return MaasHelper.get_rack_versions(
+            admin_username=credentials["username"],
+            maas_url=self.maas_cli_url,
+            cacert=str(self.config["ssl_cacert_content"]),
+            standalone_only=standalone_only,
         )
 
     def _reconcile_ha_proxy(self, event: ops.EventBase) -> None:
@@ -679,73 +1065,71 @@ class MaasRegionCharm(ops.CharmBase):
             logger.error(str(ex))
 
     def _on_collect_status(self, e: ops.CollectStatusEvent) -> None:
-        if MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
-            e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
-        elif (
+        if (
             # If the S3 configuration is marked as blocked in the application data bag,
             # mark the leader as blocked.
             blocked_msg := self.get_peer_data(self.app, S3_CONFIGURATION_BLOCKED_KEY)
         ) and self.unit.is_leader():
             e.add_status(ops.BlockedStatus(blocked_msg))
+        elif not MaasHelper.get_present():
+            e.add_status(ops.BlockedStatus("Failed to install MAAS snap"))
+        elif MaasHelper.get_installed_channel() != MAAS_SNAP_CHANNEL:
+            e.add_status(ops.BlockedStatus("MAAS snap channel does not match the charm channel"))
         elif not self.unit.opened_ports().issuperset(MAAS_REGION_PORTS):
             e.add_status(ops.WaitingStatus("Waiting for service ports"))
         elif not self.connection_string:
             e.add_status(ops.WaitingStatus("Waiting for database DSN"))
         elif not self.maas_api_url:
             e.add_status(ops.WaitingStatus("Waiting for MAAS initialization"))
+        elif not MaasHelper.is_running():
+            e.add_status(ops.BlockedStatus("The MAAS snap service is not active"))
         else:
-            # Check HAProxy configuration validity
-            haproxy_non_tls = self.model.get_relation(HAPROXY_NON_TLS) is not None
-            haproxy_tls = self.model.get_relation(HAPROXY_TLS) is not None
-            haproxy_temporal = self.model.get_relation(HAPROXY_TEMPORAL) is not None
-            haproxy_internal_http_api = (
-                self.model.get_relation(HAPROXY_INTERNAL_HTTP_API) is not None
-            )
+            e.add_status(self._haproxy_config_status())
 
-            has_required_relations = (
-                haproxy_non_tls and haproxy_temporal and haproxy_internal_http_api
-            )
-            has_any_haproxy_relation = (
-                haproxy_non_tls or haproxy_tls or haproxy_temporal or haproxy_internal_http_api
-            )
+    def _haproxy_config_status(self) -> ops.StatusBase:
+        """Validate the combination of HAProxy relations.
 
-            # Invalid: HAProxy TLS relation present but MAAS TLS not enabled
-            if not self.is_tls_config_enabled and haproxy_tls:
-                e.add_status(
-                    ops.BlockedStatus(
-                        "Invalid HAProxy configuration: "
-                        f"Cannot have `{HAPROXY_TLS}` relation when MAAS TLS is not enabled; "
-                        "Set the `ssl_cert_content` and `ssl_key_content` configuration options."
-                    )
-                )
-            # Invalid: MAAS TLS enabled with required relations but missing HAProxy TLS
-            elif self.is_tls_config_enabled and has_required_relations and not haproxy_tls:
-                e.add_status(
-                    ops.BlockedStatus(
-                        f"Invalid HAProxy configuration: Missing `{HAPROXY_TLS}` relation "
-                        "when MAAS TLS is enabled."
-                    )
-                )
-            # Invalid: HAProxy TLS relation present without all required base relations
-            elif haproxy_tls and not has_required_relations:
-                e.add_status(
-                    ops.BlockedStatus(
-                        "Invalid HAProxy configuration: "
-                        f"`{HAPROXY_TLS}` relation requires all base relations: "
-                        f"`{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}`."
-                    )
-                )
-            # Invalid: Partial HAProxy relations (not all required together)
-            elif has_any_haproxy_relation and not has_required_relations:
-                e.add_status(
-                    ops.BlockedStatus(
-                        "Invalid HAProxy configuration: "
-                        f"All of `{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}` "
-                        "relations must be present together if any are provided."
-                    )
-                )
-            else:
-                e.add_status(ops.ActiveStatus())
+        Returns:
+            ops.StatusBase: BlockedStatus describing the invalid combination, or ActiveStatus.
+        """
+        haproxy_non_tls = self.model.get_relation(HAPROXY_NON_TLS) is not None
+        haproxy_tls = self.model.get_relation(HAPROXY_TLS) is not None
+        haproxy_temporal = self.model.get_relation(HAPROXY_TEMPORAL) is not None
+        haproxy_internal_http_api = self.model.get_relation(HAPROXY_INTERNAL_HTTP_API) is not None
+
+        has_required_relations = haproxy_non_tls and haproxy_temporal and haproxy_internal_http_api
+        has_any_haproxy_relation = (
+            haproxy_non_tls or haproxy_tls or haproxy_temporal or haproxy_internal_http_api
+        )
+
+        # Invalid: HAProxy TLS relation present but MAAS TLS not enabled
+        if not self.is_tls_config_enabled and haproxy_tls:
+            return ops.BlockedStatus(
+                "Invalid HAProxy configuration: "
+                f"Cannot have `{HAPROXY_TLS}` relation when MAAS TLS is not enabled; "
+                "Set the `ssl_cert_content` and `ssl_key_content` configuration options."
+            )
+        # Invalid: MAAS TLS enabled with required relations but missing HAProxy TLS
+        if self.is_tls_config_enabled and has_required_relations and not haproxy_tls:
+            return ops.BlockedStatus(
+                f"Invalid HAProxy configuration: Missing `{HAPROXY_TLS}` relation "
+                "when MAAS TLS is enabled."
+            )
+        # Invalid: HAProxy TLS relation present without all required base relations
+        if haproxy_tls and not has_required_relations:
+            return ops.BlockedStatus(
+                "Invalid HAProxy configuration: "
+                f"`{HAPROXY_TLS}` relation requires all base relations: "
+                f"`{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}`."
+            )
+        # Invalid: Partial HAProxy relations (not all required together)
+        if has_any_haproxy_relation and not has_required_relations:
+            return ops.BlockedStatus(
+                "Invalid HAProxy configuration: "
+                f"All of `{HAPROXY_NON_TLS}`, `{HAPROXY_TEMPORAL}`, and `{HAPROXY_INTERNAL_HTTP_API}` "
+                "relations must be present together if any are provided."
+            )
+        return ops.ActiveStatus()
 
     def _on_maasdb_created(self, event: db.DatabaseCreatedEvent) -> None:
         """Database is ready.
@@ -756,7 +1140,7 @@ class MaasRegionCharm(ops.CharmBase):
         logger.info(f"MAAS database credentials received for user '{event.username}'")
         if self.connection_string:
             self.unit.status = ops.MaintenanceStatus("Initializing the MAAS database")
-            self.on[MAAS_INIT_RELATION].acquire_lock.emit()
+            self.rolling_ops_manager.request_async_lock(callback_id="initialize", max_retry=1)
 
     def _on_maasdb_endpoints_changed(self, event: db.DatabaseEndpointsChangedEvent) -> None:
         """Update database DSN.
@@ -837,6 +1221,26 @@ class MaasRegionCharm(ops.CharmBase):
             event.set_results({"services": status})
         else:
             event.fail("MAAS is not initialized yet or failed to retrieve status")
+
+    def _on_stop_maas_action(self, event: ops.ActionEvent):
+        """Handle the stop-maas action.
+
+        This is intended to be called by the user as part of the MAAS upgrade process.
+        When the snap is stopped, other charm actions may behave unexpectedly.
+        """
+        try:
+            MaasHelper.set_running(False)
+            event.set_results({"status": "stopped"})
+        except SnapError as e:
+            event.fail(f"Failed to stop MAAS: {e}")
+
+    def _on_start_maas_action(self, event: ops.ActionEvent):
+        """Handle the start-maas action."""
+        try:
+            MaasHelper.set_running(True)
+            event.set_results({"status": "started"})
+        except SnapError as e:
+            event.fail(f"Failed to start MAAS: {e}")
 
     def _on_config_changed(self, event: ops.ConfigChangedEvent):
         # validate TLS certificate and key

@@ -65,8 +65,8 @@ requires:
     optional: true
 
 peers:
-  initialize:
-    interface: rolling_ops
+  rollingops-peers:
+    interface: rollingops-peers
     optional: false
   maas-cluster:
     interface: maas_peers
@@ -109,6 +109,10 @@ actions:
     description: Get MAAS secret
   get-maas-status:
     description: Get MAAS status. Run on each unit to get its individual status.
+  stop-maas:
+    description: Stop the MAAS snap on a unit (wraps `snap stop maas`). Note that stopping MAAS may cause other actions to fail unexpectedly. This will result in downtime. Useful prior to minor/major upgrades to prevent different MAAS versions running simultaneously.
+  start-maas:
+    description: Start the MAAS snap on a unit (wraps `snap start maas`). Only useful in the case that a unit's snap has been stopped.
   create-backup:
     description: Create a backup of MAAS data not stored in the database.
   restore-backup:
@@ -120,12 +124,30 @@ actions:
       controller-id:
         type: string
         description: The controller id to assign to this region. See `list-backup` for a list of controller ids
+      force:
+        type: boolean
+        default: false
+        description: Skip pre-restore checks, such as backup version compatibility.
     required:
       - backup-id
       - controller-id
   list-backups:
     description: |
       List available MAAS backups
+  upgrade:
+    description: Upgrade MAAS workload to the latest version available to the machine for the relevant track of the charm, for example if the charm is deployed with --channel=3.7/stable, this action will upgrade from the current version to the latest 3.7.x version available.
+    params:
+      force:
+        type: boolean
+        default: false
+        description: Skip pre-upgrade checks, including the check that MAAS is stopped on all units when moving a multi-region deployment between channels.
+  pre-upgrade-check:
+    description: Check if the workload can be upgraded to the latest version available to the machine for the relevant track of the charm, for example if the charm is deployed with --channel=3.7/stable, this action will check if the workload can be upgraded from the current version to the latest 3.7.x version available.
+    params:
+      track:
+        description: >-
+          The charm track to check for a minor or major upgrades. This is used to determine what upgrades would be available if you were to change charm tracks.  
+          This checks the MAAS version that is available on the target snap channel (<track>/stable on all charm tracks), and whether the target track's charm supports the deployed charm's Ubuntu base.
 
 parts:
   charm:
