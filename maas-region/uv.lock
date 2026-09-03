@@ -148,6 +148,50 @@ wheels = [
 ]
 
 [[package]]
+name = "charmlibs-interfaces-tls-certificates"
+version = "1.10.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "ops" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3f/ee/e44db33dd3b9d9a83eda97dca7f6c42054f093ae43f7f37032a2b1f20a93/charmlibs_interfaces_tls_certificates-1.10.0.tar.gz", hash = "sha256:df29a5dd551bba51049ea40741662a8e99afb18c16a38d287d58836caf32c744", size = 130758, upload-time = "2026-07-13T15:49:04.323Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/04/7b/9ebc21050c47fe0add7c0a7793e86c08a76c56c2b3162570c0461616a639/charmlibs_interfaces_tls_certificates-1.10.0-py3-none-any.whl", hash = "sha256:65a97f71241ff3cb8a8babaf5b6e64c239ba2f87d76fed5c3fd9d9ca1ea2b99a", size = 33168, upload-time = "2026-07-13T15:49:03.028Z" },
+]
+
+[[package]]
+name = "charmlibs-pathops"
+version = "1.3.0.post0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "ops" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/09/1f/37cd5c74fd6adbb01f4947651af55b8ff8461eed034de3f6d018988022ab/charmlibs_pathops-1.3.0.post0.tar.gz", hash = "sha256:36ac11b0c7c55b71341a549a1803f5c8d61c2279204862b8d50736041b782f59", size = 22140, upload-time = "2026-06-16T05:39:49.177Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4c/ae/04b8e77ecbc84ef605feb8a35137570facbc191cbff37ca2b024ea8be466/charmlibs_pathops-1.3.0.post0-py3-none-any.whl", hash = "sha256:c6fc3e3460ffa03a7d4273cc7784c9d74378609a098c728cd9bbb2ed90bdfa5b", size = 27246, upload-time = "2026-06-16T05:39:48.074Z" },
+]
+
+[[package]]
+name = "charmlibs-rollingops"
+version = "1.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "charmlibs-interfaces-tls-certificates" },
+    { name = "charmlibs-pathops" },
+    { name = "dpcharmlibs-interfaces" },
+    { name = "ops" },
+    { name = "pydantic" },
+    { name = "shortuuid" },
+    { name = "tenacity" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6c/b2/4959afe13622b68faab2827c493b090f3e84a786c2d4a284803f55a18a76/charmlibs_rollingops-1.1.1.tar.gz", hash = "sha256:831457d2ef12117794f89a483ee9a5c347cb209a87dafe82907e9dede7d4641c", size = 91238, upload-time = "2026-05-27T15:10:05.592Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/89/69/60dabe2d1c8f0717492145dda9fdc1eb64d84ad5b74ed9d022ca8cad234f/charmlibs_rollingops-1.1.1-py3-none-any.whl", hash = "sha256:1e61347c7792ec11afefa60d36f77a5afccf867832854d5aeef2da0b536afec4", size = 64050, upload-time = "2026-05-27T15:10:04.297Z" },
+]
+
+[[package]]
 name = "charset-normalizer"
 version = "3.4.7"
 source = { registry = "https://pypi.org/simple" }
@@ -318,6 +362,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/60/8b/32f9823da46cde7df2087faa08cd98d01b908f8dcab982cdba9c84e85355/decorator-5.3.1.tar.gz", hash = "sha256:4cbcdd55a6efadb9dbea26b858f4fb3264567b52d69ca0d25b721b553f60ea82", size = 58084, upload-time = "2026-05-18T06:03:28.057Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/05/7f/798705f5296a58ca505d600456748d1be48078eac8a7050d8a98bc9edb89/decorator-5.3.1-py3-none-any.whl", hash = "sha256:f47fe6fdbd2edd623ecfe36875d37aba411624e2670dd395dddae1358689bb3c", size = 10365, upload-time = "2026-05-18T06:03:26.517Z" },
+]
+
+[[package]]
+name = "dpcharmlibs-interfaces"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "ops" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8c/41/4cfa520d62c0aa53804599bf74506184eadc7c1e4803616383ec6bd3ab39/dpcharmlibs_interfaces-1.0.0.tar.gz", hash = "sha256:a177653019781a7a165be52cf4293134ee58912cd93686082cdd82da347a3bed", size = 203809, upload-time = "2026-03-24T17:38:47.136Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a6/88/9dbe3ceeb571dfd5e203fa4382376e686e0781a047bf2fb91f755962e4d5/dpcharmlibs_interfaces-1.0.0-py3-none-any.whl", hash = "sha256:afff80be30e3ff8c31f68557946e9d5959247f1973cbc00e96da55b095f95a21", size = 36982, upload-time = "2026-03-24T17:38:45.81Z" },
 ]
 
 [[package]]
@@ -524,11 +581,13 @@ source = { virtual = "." }
 dependencies = [
     { name = "boto3" },
     { name = "botocore" },
+    { name = "charmlibs-rollingops" },
     { name = "cosl" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "ops" },
     { name = "pydantic" },
+    { name = "python-debian" },
     { name = "tenacity" },
     { name = "validators" },
 ]
@@ -561,11 +620,13 @@ unit = [
 requires-dist = [
     { name = "boto3", specifier = ">=1.43.11,<1.44" },
     { name = "botocore", specifier = ">=1.43.11,<1.44" },
+    { name = "charmlibs-rollingops", specifier = ">=1.1.1" },
     { name = "cosl" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.21" },
     { name = "ops", specifier = "~=3.1" },
     { name = "pydantic", specifier = "==2.13.4" },
+    { name = "python-debian", specifier = ">=1.0.1" },
     { name = "tenacity", specifier = "~=9.1" },
     { name = "validators", specifier = ">=0.35" },
 ]
@@ -1161,6 +1222,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-debian"
+version = "1.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/75/36/f90e7d006dd9311a6185f1c34b403dd6d76ff583e7962c56e9374c462a48/python_debian-1.1.1.tar.gz", hash = "sha256:fe4fc3dc798dbf1f0ef5865e2b1b4f7cc0352b6a511b25ab7594906c64a73629", size = 127956, upload-time = "2026-06-07T11:06:58.282Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6e/47/e184f0004e63dbc49c4bad5e811218f66bece1b519f80b06a619b42e6ec3/python_debian-1.1.1-py3-none-any.whl", hash = "sha256:f98ae013e8e5310e49041cc3860a7105df73af73d4ff1d8afb474770d328a6ad", size = 138101, upload-time = "2026-06-07T11:06:56.632Z" },
+]
+
+[[package]]
 name = "pytz"
 version = "2026.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1258,6 +1328,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f6/94/dcdaeb1713cab9c84def276cfac7388b17c7d9855bbcfe88d77e4dbafd44/s3transfer-0.19.0.tar.gz", hash = "sha256:ce436931687addc4c1712d52d40b32f53e88315723f107ffa20ba82b05a0f685", size = 165171, upload-time = "2026-06-16T19:44:51.599Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/46/5f/4c174edad94f82de888ac00a5ddd8d07b35609b6c94f0bdf4d74af57703e/s3transfer-0.19.0-py3-none-any.whl", hash = "sha256:777cc2415536f1debadb5c2ef7779275d0fc0fe0e042411cdd6caebeb2685262", size = 90101, upload-time = "2026-06-16T19:44:50.439Z" },
+]
+
+[[package]]
+name = "shortuuid"
+version = "1.0.13"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/8c/e2/bcf761f3bff95856203f9559baf3741c416071dd200c0fc19fad7f078f86/shortuuid-1.0.13.tar.gz", hash = "sha256:3bb9cf07f606260584b1df46399c0b87dd84773e7b25912b7e391e30797c5e72", size = 9662, upload-time = "2024-03-11T20:11:06.879Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c0/44/21d6bf170bf40b41396480d8d49ad640bca3f2b02139cd52aa1e272830a5/shortuuid-1.0.13-py3-none-any.whl", hash = "sha256:a482a497300b49b4953e15108a7913244e1bb0d41f9d332f5e9925dba33a3c5a", size = 10529, upload-time = "2024-03-11T20:11:04.807Z" },
 ]
 
 [[package]]
