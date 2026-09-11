@@ -10,7 +10,13 @@ from unittest.mock import MagicMock, PropertyMock, mock_open, patch
 
 from charms.operator_libs_linux.v2.snap import SnapState
 
-from helper import MAAS_SERVICE, MaasHelper
+from helper import (
+    MAAS_CACERT_FILEPATH,
+    MAAS_SERVICE,
+    MAAS_SSL_CERT_FILEPATH,
+    MAAS_SSL_KEY_FILEPATH,
+    MaasHelper,
+)
 
 
 class TestHelperSnapCache(unittest.TestCase):
@@ -306,6 +312,36 @@ class TestHelperSetup(unittest.TestCase):
                 "--database-uri",
                 "postgresql://user:pass@2.2.2.2:5432/db",
                 "--force",
+            ]
+        )
+
+    @patch("helper.subprocess.check_call")
+    def test_enable_tls(self, mock_run):
+        MaasHelper.enable_tls()
+        mock_run.assert_called_once_with(
+            [
+                "/snap/bin/maas",
+                "config-tls",
+                "enable",
+                "--yes",
+                str(MAAS_SSL_KEY_FILEPATH),
+                str(MAAS_SSL_CERT_FILEPATH),
+            ]
+        )
+
+    @patch("helper.subprocess.check_call")
+    def test_enable_tls_with_cacert(self, mock_run):
+        MaasHelper.enable_tls(cacert=True)
+        mock_run.assert_called_once_with(
+            [
+                "/snap/bin/maas",
+                "config-tls",
+                "enable",
+                "--yes",
+                "--cacert",
+                str(MAAS_CACERT_FILEPATH),
+                str(MAAS_SSL_KEY_FILEPATH),
+                str(MAAS_SSL_CERT_FILEPATH),
             ]
         )
 
