@@ -663,7 +663,6 @@ class MaasRegionCharm(ops.CharmBase):
         Returns:
             str: The CLI URL
         """
-        # maybe comment this out, and use one of the region ips.
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
 
@@ -934,7 +933,7 @@ class MaasRegionCharm(ops.CharmBase):
             standalone_only=standalone_only,
         )
 
-    def _reconcile_ha_proxy(self, event: ops.EventBase) -> bool:
+    def _reconcile_ha_proxy(self, event: ops.EventBase) -> None:
         """Configure the two HAProxy relations.
 
         Provides the MAAS Region IP addresses to each HAProxy relation.
@@ -942,7 +941,7 @@ class MaasRegionCharm(ops.CharmBase):
         relation/configuration topology.
 
         Returns:
-            bool: whether the HAProxy configuration is valid
+            None
         """
         haproxy_non_tls_enabled = self.model.get_relation(HAPROXY_NON_TLS) is not None
         haproxy_tls_enabled = self.model.get_relation(HAPROXY_TLS) is not None
@@ -979,7 +978,7 @@ class MaasRegionCharm(ops.CharmBase):
         )
 
         if not self.unit.is_leader():
-            return unit_valid
+            return
 
         haproxy_relations = [
             (haproxy_non_tls_enabled, self.haproxy_non_tls_route),
@@ -994,7 +993,6 @@ class MaasRegionCharm(ops.CharmBase):
                 else:
                     rel.configure_hosts()
                 rel.update_relation_data()
-        return unit_valid
 
     def _reconcile_ha_proxy_and_initialise(self, event: ops.EventBase) -> None:
         self._reconcile_ha_proxy(event)
@@ -1261,7 +1259,7 @@ class MaasRegionCharm(ops.CharmBase):
                 raise ValueError(
                     f"Invalid maas_url: {maas_url}. Must be a valid URL with scheme and host."
                 )
-        unit_valid = self._reconcile_ha_proxy(event)
+        self._reconcile_ha_proxy(event)
         maas_details = MaasHelper.get_maas_details()
         # the MAAS initialization details have changed
         init_details = {
@@ -1278,8 +1276,7 @@ class MaasRegionCharm(ops.CharmBase):
 
         if self.unit.is_leader():
             self._update_tls_config()
-            if unit_valid:
-                self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
+            self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
 
     def _on_msm_created(self, event: ops.RelationCreatedEvent) -> None:
         """MAAS Site Manager relation established.
