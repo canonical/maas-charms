@@ -665,7 +665,6 @@ class MaasRegionCharm(ops.CharmBase):
         Returns:
             str: The CLI URL
         """
-        # maybe comment this out, and use one of the region ips.
         if maas_url := self.config["maas_url"]:
             return str(maas_url)
 

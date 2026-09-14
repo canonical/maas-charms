@@ -337,7 +337,7 @@ class MaasHelper:
         subprocess.check_call(cmd)
 
     @staticmethod
-    @retry(reraise=True, stop=stop_after_delay(5 * 5), wait=wait_fixed(3))
+    @retry(reraise=True, stop=stop_after_delay(5 * 5), wait=wait_fixed(5))
     def _login_as_admin(admin_username: str, maas_url: str, cacert: str = "") -> None:
         """Login to MAAS as an admin user.
 
