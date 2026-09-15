@@ -1005,12 +1005,13 @@ class MaasRegionCharm(ops.CharmBase):
         """Enable or disable TLS in MAAS."""
         if (tls_enabled := MaasHelper.is_tls_enabled()) is not None:
             if not tls_enabled and self.is_tls_config_enabled:
+                cacert = str(self.config["ssl_cacert_content"])
                 MaasHelper.create_tls_files(
                     self.config["ssl_cert_content"],  # type: ignore
                     self.config["ssl_key_content"],  # type: ignore
-                    self.config["ssl_cacert_content"],  # type: ignore
+                    cacert,
                 )
-                MaasHelper.enable_tls()
+                MaasHelper.enable_tls(cacert=bool(cacert))
                 MaasHelper.delete_tls_files()
             elif tls_enabled and not self.is_tls_config_enabled:
                 MaasHelper.disable_tls()
