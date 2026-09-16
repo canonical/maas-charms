@@ -24,7 +24,8 @@ from pytest_operator.plugin import OpsTest
 
 NUM_UNITS = 3
 UNITS = [f"{APP_NAME}/{n}" for n in range(NUM_UNITS)]
-SNAP_REFRESH_TIMEOUT = 180
+
+SNAP_REFRESH_TIMEOUT = 900
 SNAP_ROLLBACK_WAIT = "15m"
 
 ACTION_WAIT = "3m"
@@ -312,6 +313,8 @@ async def run_action(
 async def get_installed_snap_info(ops_test: OpsTest, unit: str) -> dict[str, str]:
     """Read the state of the MAAS snap installed on a unit.
 
+    Uses `juju ssh` as `juju exec` will queue behind other hooks.
+
     Args:
         ops_test (OpsTest): the test harness
         unit (str): the unit to inspect, e.g. "maas-region/0"
@@ -319,8 +322,13 @@ async def get_installed_snap_info(ops_test: OpsTest, unit: str) -> dict[str, str
     Returns:
         dict[str, str]: the snap's `version`, `revision`, `channel` and `notes`
     """
+    # Without --pty=false, a pty is allocated when the tests run from a terminal
+    return_code, stdout, stderr = await ops_test.juju(
+        "ssh", "--pty=false", unit, "--", "snap", "list", "maas"
+    )
+    assert return_code == 0, f"`snap list maas` failed on {unit}: {stderr}"
     # `snap list` prints a header, then info about the installed snap
-    row = (await juju_exec(ops_test, unit, "snap", "list", "maas")).strip().splitlines()[-1]
+    row = stdout.strip().splitlines()[-1]
     _, version, revision, channel, _, notes = row.split()
     return {
         "version": version.split("-")[0],
