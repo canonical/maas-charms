@@ -86,7 +86,6 @@ async def test_rollback_to_old_revision(ops_test: OpsTest, old_snap_revision: st
     if ops_test.model is None:
         raise ValueError("Model is not set")
 
-    # Target the application so every unit refreshes in parallel
     await juju_exec(
         ops_test,
         APP_NAME,
@@ -322,7 +321,6 @@ async def get_installed_snap_info(ops_test: OpsTest, unit: str) -> dict[str, str
     Returns:
         dict[str, str]: the snap's `version`, `revision`, `channel` and `notes`
     """
-    # Without --pty=false, a pty is allocated when the tests run from a terminal
     return_code, stdout, stderr = await ops_test.juju(
         "ssh", "--pty=false", unit, "--", "snap", "list", "maas"
     )
