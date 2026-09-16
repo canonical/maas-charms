@@ -25,6 +25,7 @@ from pytest_operator.plugin import OpsTest
 NUM_UNITS = 3
 UNITS = [f"{APP_NAME}/{n}" for n in range(NUM_UNITS)]
 SNAP_REFRESH_TIMEOUT = 180
+SNAP_ROLLBACK_WAIT = "15m"
 
 ACTION_WAIT = "3m"
 
@@ -84,10 +85,16 @@ async def test_rollback_to_old_revision(ops_test: OpsTest, old_snap_revision: st
     if ops_test.model is None:
         raise ValueError("Model is not set")
 
-    for unit in UNITS:
-        await juju_exec(
-            ops_test, unit, "snap", "refresh", "maas", f"--revision={old_snap_revision}"
-        )
+    # Target the application so every unit refreshes in parallel
+    await juju_exec(
+        ops_test,
+        APP_NAME,
+        "snap",
+        "refresh",
+        "maas",
+        f"--revision={old_snap_revision}",
+        wait=SNAP_ROLLBACK_WAIT,
+    )
 
     for unit in UNITS:
         installed = await get_installed_snap_info(ops_test, unit)
@@ -258,19 +265,26 @@ async def test_pre_upgrade_check_reports_no_upgrade_needed(ops_test: OpsTest):
     assert "rack-info" not in leader_results
 
 
-async def juju_exec(ops_test: OpsTest, unit: str, *command: str) -> str:
-    """Run a command on a unit's machine.
+async def juju_exec(ops_test: OpsTest, target: str, *command: str, wait: str | None = None) -> str:
+    """Run a command on a unit's machine, or on every unit of an application.
 
     Args:
         ops_test (OpsTest): the test harness
-        unit (str): the unit to run on, e.g. "maas-region/0"
+        target (str): the unit or application to run on, e.g. "maas-region/0" or
+            "maas-region"
         command (str): the command and its arguments
+        wait (str | None): how long to wait for the results, e.g. "15m". Defaults to
+            juju's own timeout
 
     Returns:
         str: the command's stdout
     """
-    return_code, stdout, stderr = await ops_test.juju("exec", "--unit", unit, "--", *command)
-    assert return_code == 0, f"`{' '.join(command)}` failed on {unit}: {stderr}"
+    target_flag = "--unit" if "/" in target else "--application"
+    wait_args = ("--wait", wait) if wait else ()
+    return_code, stdout, stderr = await ops_test.juju(
+        "exec", *wait_args, target_flag, target, "--", *command
+    )
+    assert return_code == 0, f"`{' '.join(command)}` failed on {target}: {stdout}{stderr}"
     return stdout
 
 
