@@ -252,8 +252,10 @@ class MaasRegionCharm(ops.CharmBase):
             backend_port=MAAS_HTTPS_PORT,
             **COMMON_DEFAULT_HAPROXY_ARGS,
         )
-        self.framework.observe(self.haproxy_tls_route.on.ready, self._reconcile_ha_proxy)
-        self.framework.observe(self.haproxy_tls_route.on.removed, self._reconcile_ha_proxy)
+        self.framework.observe(self.haproxy_tls_route.on.ready, self._on_haproxy_tls_route_changed)
+        self.framework.observe(
+            self.haproxy_tls_route.on.removed, self._on_haproxy_tls_route_changed
+        )
 
         # Temporal
         self.haproxy_temporal_route = HaproxyRouteTcpRequirer(
@@ -933,15 +935,11 @@ class MaasRegionCharm(ops.CharmBase):
             standalone_only=standalone_only,
         )
 
-    def _reconcile_ha_proxy(self, event: ops.EventBase) -> None:
-        """Configure the two HAProxy relations.
-
-        Provides the MAAS Region IP addresses to each HAProxy relation.
-        Status setting is left to `_on_collect_status`, which evaluates the
-        relation/configuration topology.
+    def _is_haproxy_topology_valid(self) -> bool:
+        """Whether the HAProxy relations match the MAAS TLS configuration.
 
         Returns:
-            None
+            bool: whether the HAProxy configuration is valid
         """
         haproxy_non_tls_enabled = self.model.get_relation(HAPROXY_NON_TLS) is not None
         haproxy_tls_enabled = self.model.get_relation(HAPROXY_TLS) is not None
@@ -976,10 +974,26 @@ class MaasRegionCharm(ops.CharmBase):
             f", maas_tls_enabled: {self.is_tls_config_enabled}"
             f", and computed validity as: {unit_valid}"
         )
+        return unit_valid
+
+    def _reconcile_ha_proxy(self, event: ops.EventBase) -> None:
+        """Configure the two HAProxy relations.
+
+        Provides the MAAS Region IP addresses to each HAProxy relation.
+        Status setting is left to `_on_collect_status`, which evaluates the
+        relation/configuration topology.
+        """
+        unit_valid = self._is_haproxy_topology_valid()
 
         if not self.unit.is_leader():
             return
 
+        haproxy_non_tls_enabled = self.model.get_relation(HAPROXY_NON_TLS) is not None
+        haproxy_tls_enabled = self.model.get_relation(HAPROXY_TLS) is not None
+        haproxy_temporal_route_enabled = self.model.get_relation(HAPROXY_TEMPORAL) is not None
+        haproxy_internal_http_api_route_enabled = (
+            self.model.get_relation(HAPROXY_INTERNAL_HTTP_API) is not None
+        )
         haproxy_relations = [
             (haproxy_non_tls_enabled, self.haproxy_non_tls_route),
             (haproxy_temporal_route_enabled, self.haproxy_temporal_route),
@@ -1242,6 +1256,16 @@ class MaasRegionCharm(ops.CharmBase):
         except SnapError as e:
             event.fail(f"Failed to start MAAS: {e}")
 
+    def _on_haproxy_tls_route_changed(self, event: ops.EventBase) -> None:
+        """Reconcile HAProxy and Prometheus when the TLS route is ready or removed.
+
+        The TLS route changes the MAAS API URL, so Prometheus skipped by
+        config-changed while the topology was invalid is applied here.
+        """
+        self._reconcile_ha_proxy(event)
+        if self.unit.is_leader() and self._is_haproxy_topology_valid():
+            self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
+
     def _on_config_changed(self, event: ops.ConfigChangedEvent):
         # validate TLS certificate and key
         if self.is_tls_config_enabled:
@@ -1260,6 +1284,7 @@ class MaasRegionCharm(ops.CharmBase):
                     f"Invalid maas_url: {maas_url}. Must be a valid URL with scheme and host."
                 )
         self._reconcile_ha_proxy(event)
+        unit_valid = self._is_haproxy_topology_valid()
         maas_details = MaasHelper.get_maas_details()
         # the MAAS initialization details have changed
         init_details = {
@@ -1274,9 +1299,20 @@ class MaasRegionCharm(ops.CharmBase):
             )
             self._initialize_maas()
 
-        if self.unit.is_leader():
-            self._update_tls_config()
-            self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
+        if not self.unit.is_leader():
+            return
+
+        self._update_tls_config()
+
+        if not unit_valid:
+            # The MAAS API is not reachable through HAProxy with the current topology.
+            # We need to abort early, otherwise later calls in this function call to
+            # the MAAS API will fail. The methods below will be called in the relevant
+            # reconciliation methods, see issue #100.
+            logger.info("HAProxy topology invalid, skipping Prometheus configuration")
+            return
+
+        self._update_prometheus_config(self.config["enable_prometheus_metrics"])  # type: ignore
 
     def _on_msm_created(self, event: ops.RelationCreatedEvent) -> None:
         """MAAS Site Manager relation established.
