@@ -11,7 +11,12 @@ from subprocess import run
 from time import sleep, time
 
 import pytest
-from conftest import APP_NAME, HAPROXY_CHANNEL, POSTGRESQL_CHANNEL
+from conftest import (
+    APP_NAME,
+    HAPROXY_CHANNEL,
+    POSTGRESQL_CHANNEL,
+    WAIT_FOR_IDLE_TIMEOUT,
+)
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
@@ -30,7 +35,7 @@ async def test_build_and_deploy(ops_test: OpsTest):
     await asyncio.gather(
         ops_test.model.deploy(charm, application_name=APP_NAME),
         ops_test.model.wait_for_idle(
-            apps=[APP_NAME], status="waiting", raise_on_blocked=True, timeout=1000
+            apps=[APP_NAME], status="waiting", raise_on_blocked=True, timeout=WAIT_FOR_IDLE_TIMEOUT
         ),
     )
 
@@ -57,14 +62,17 @@ async def test_database_integration(ops_test: OpsTest):
             config={"plugin_btree_gin_enable": True},
         ),
         ops_test.model.wait_for_idle(
-            apps=["postgresql"], status="active", raise_on_blocked=True, timeout=1000
+            apps=["postgresql"],
+            status="active",
+            raise_on_blocked=True,
+            timeout=WAIT_FOR_IDLE_TIMEOUT,
         ),
     )
 
     await asyncio.gather(
         ops_test.model.integrate(f"{APP_NAME}", "postgresql"),
         ops_test.model.wait_for_idle(
-            apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=1000
+            apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=WAIT_FOR_IDLE_TIMEOUT
         ),
     )
 
@@ -185,7 +193,10 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
         series="noble",
     )
     await ops_test.model.wait_for_idle(
-        apps=["haproxy", APP_NAME], status="active", raise_on_blocked=True, timeout=3600
+        apps=["haproxy", APP_NAME],
+        status="active",
+        raise_on_blocked=True,
+        timeout=WAIT_FOR_IDLE_TIMEOUT,
     )
 
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp", "haproxy")
@@ -193,7 +204,7 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-internal-http-api", "haproxy")
     await ops_test.model.integrate(f"{APP_NAME}:ingress-tcp-tls", "haproxy")
     await ops_test.model.wait_for_idle(
-        apps=["haproxy"], status="active", raise_on_blocked=True, timeout=3600
+        apps=["haproxy"], status="active", raise_on_blocked=True, timeout=WAIT_FOR_IDLE_TIMEOUT
     )
 
     address = await ops_test.model.applications[APP_NAME].units[0].get_public_address()
@@ -217,7 +228,10 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
     await ops_test.model.applications[APP_NAME].set_config({"ssl_cacert_content": cacert})
 
     await ops_test.model.wait_for_idle(
-        apps=["haproxy", APP_NAME], status="active", raise_on_error=False, timeout=3600
+        apps=["haproxy", APP_NAME],
+        status="active",
+        raise_on_error=False,
+        timeout=WAIT_FOR_IDLE_TIMEOUT,
     )
 
     start = time()
