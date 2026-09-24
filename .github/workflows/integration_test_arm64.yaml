@@ -21,6 +21,6 @@ jobs:
             python-version: "3.14"
             self-hosted-runner: true
             self-hosted-runner-arch: arm64
-            self-hosted-runner-label: "large"
-            builder-runner-label: arm64
+            self-hosted-runner-label: self-hosted-linux-arm64-noble-large
+            builder-runner-label: self-hosted-linux-arm64-noble-medium
             extra-arguments: -x --model-arch=arm64
