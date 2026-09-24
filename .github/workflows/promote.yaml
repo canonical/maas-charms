@@ -22,6 +22,7 @@ jobs:
     outputs:
       origin: ${{ steps.parse.outputs.origin }}
       destination: ${{ steps.parse.outputs.destination }}
+      base-channel: ${{ steps.parse.outputs.base-channel }}
     steps:
       - id: parse
         run: |
@@ -32,6 +33,18 @@ jobs:
           echo "origin=$ORIGIN" >> $GITHUB_OUTPUT
           echo "destination=$DEST" >> $GITHUB_OUTPUT
 
+          # Map MAAS track -> Ubuntu base channel. Add a line per new track.
+          declare -A BASE_CHANNELS=(
+            ["3.7"]="24.04"
+            ["3.8"]="26.04"
+          )
+          BASE_CHANNEL="${BASE_CHANNELS[$TRACK]}"
+          if [[ -z "$BASE_CHANNEL" ]]; then
+            echo "::error::No base channel mapping for track '$TRACK'"
+            exit 1
+          fi
+          echo "base-channel=$BASE_CHANNEL" >> $GITHUB_OUTPUT
+
   promote:
     name: Promote
     needs: parse-promotion
@@ -40,8 +53,15 @@ jobs:
       contents: write
     secrets:
       CHARMHUB_TOKEN: ${{ secrets.CHARMHUB_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        base-architecture: [amd64, arm64]
     with:
       working-directory: maas-region
       tag-prefix: maas-region
+      base-name: ubuntu
+      base-architecture: ${{ matrix.base-architecture }}
+      base-channel: ${{ needs.parse-promotion.outputs.base-channel }}
       origin-channel: ${{ needs.parse-promotion.outputs.origin }}
       destination-channel: ${{ needs.parse-promotion.outputs.destination }}
