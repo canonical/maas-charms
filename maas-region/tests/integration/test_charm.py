@@ -206,6 +206,9 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
     await ops_test.model.wait_for_idle(
         apps=["haproxy"], status="active", raise_on_blocked=True, timeout=WAIT_FOR_IDLE_TIMEOUT
     )
+    await ops_test.model.wait_for_idle(
+        apps=[APP_NAME], status="blocked", timeout=WAIT_FOR_IDLE_TIMEOUT
+    )
 
     address = await ops_test.model.applications[APP_NAME].units[0].get_public_address()
     _, stdout, _ = await ops_test.juju("show-unit", f"{APP_NAME}/0", "--format", "json")
@@ -223,9 +226,9 @@ async def test_haproxy_integration(ops_test: OpsTest, tmp_path):
 
     key, cacert, cert = generate_cert(ip_addresses=[address, haproxy_address], tmp_path=tmp_path)
 
-    await ops_test.model.applications[APP_NAME].set_config({"ssl_cert_content": cert})
-    await ops_test.model.applications[APP_NAME].set_config({"ssl_key_content": key})
-    await ops_test.model.applications[APP_NAME].set_config({"ssl_cacert_content": cacert})
+    await ops_test.model.applications[APP_NAME].set_config(
+        {"ssl_cert_content": cert, "ssl_key_content": key, "ssl_cacert_content": cacert}
+    )
 
     await ops_test.model.wait_for_idle(
         apps=["haproxy", APP_NAME],
