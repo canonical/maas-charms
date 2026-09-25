@@ -4,7 +4,7 @@
 import asyncio
 
 import pytest
-from conftest import APP_NAME, POSTGRESQL_CHANNEL
+from conftest import APP_NAME, POSTGRESQL_CHANNEL, WAIT_FOR_IDLE_TIMEOUT
 from pytest_operator.plugin import OpsTest
 
 
@@ -29,7 +29,7 @@ async def test_multi_node_build(ops_test: OpsTest):
             apps=[APP_NAME],
             status="waiting",
             raise_on_blocked=True,
-            timeout=1000,
+            timeout=WAIT_FOR_IDLE_TIMEOUT,
             wait_for_exact_units=3,
         ),
     )
@@ -74,13 +74,19 @@ async def test_multi_node_database_integration(ops_test: OpsTest):
             config={"plugin_btree_gin_enable": True},
         ),
         ops_test.model.wait_for_idle(
-            apps=["postgresql"], status="active", raise_on_blocked=True, timeout=1000
+            apps=["postgresql"],
+            status="active",
+            raise_on_blocked=True,
+            timeout=WAIT_FOR_IDLE_TIMEOUT,
         ),
     )
 
     await asyncio.gather(
         ops_test.model.integrate(f"{APP_NAME}", "postgresql"),
         ops_test.model.wait_for_idle(
-            apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=1000
+            apps=[APP_NAME],
+            status="active",
+            raise_on_blocked=True,
+            timeout=WAIT_FOR_IDLE_TIMEOUT,
         ),
     )

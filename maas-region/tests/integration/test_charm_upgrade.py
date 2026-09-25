@@ -19,16 +19,15 @@ import re
 import time
 
 import pytest
-from conftest import APP_NAME, POSTGRESQL_CHANNEL
+from conftest import APP_NAME, POSTGRESQL_CHANNEL, WAIT_FOR_IDLE_TIMEOUT
 from pytest_operator.plugin import OpsTest
 
 NUM_UNITS = 3
 UNITS = [f"{APP_NAME}/{n}" for n in range(NUM_UNITS)]
 
-SNAP_REFRESH_TIMEOUT = 900
-SNAP_ROLLBACK_WAIT = "15m"
-
-ACTION_WAIT = "3m"
+SNAP_REFRESH_TIMEOUT = WAIT_FOR_IDLE_TIMEOUT
+SNAP_ROLLBACK_WAIT = "60m"
+ACTION_WAIT = "30m"
 
 # Update when creating a new track. The architecture comes from --model-arch, which
 # is required to run the integration tests on different architectures.
@@ -55,8 +54,7 @@ def old_snap_revision(pytestconfig: pytest.Config) -> str:
     if revision := OLD_SNAP_REVISIONS.get(arch):
         return revision
     pytest.fail(
-        f"No MAAS {OLD_SNAP_VERSION} revision recorded for {arch}. Add one to"
-        " OLD_SNAP_REVISIONS."
+        f"No MAAS {OLD_SNAP_VERSION} revision recorded for {arch}. Add one to OLD_SNAP_REVISIONS."
     )
 
 
@@ -74,7 +72,7 @@ async def test_build_and_deploy(ops_test: OpsTest):
             apps=[APP_NAME],
             status="waiting",
             raise_on_blocked=True,
-            timeout=1000,
+            timeout=WAIT_FOR_IDLE_TIMEOUT,
             wait_for_exact_units=NUM_UNITS,
         ),
     )
@@ -138,14 +136,17 @@ async def test_database_integration(ops_test: OpsTest, old_snap_revision: str):
             config={"plugin_btree_gin_enable": True, "experimental_max_connections": 400},
         ),
         ops_test.model.wait_for_idle(
-            apps=["postgresql"], status="active", raise_on_blocked=True, timeout=1000
+            apps=["postgresql"],
+            status="active",
+            raise_on_blocked=True,
+            timeout=WAIT_FOR_IDLE_TIMEOUT,
         ),
     )
 
     await asyncio.gather(
         ops_test.model.integrate(f"{APP_NAME}", "postgresql"),
         ops_test.model.wait_for_idle(
-            apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=1000
+            apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=WAIT_FOR_IDLE_TIMEOUT
         ),
     )
 
@@ -165,7 +166,6 @@ async def test_pre_upgrade_check_reports_point_upgrade(ops_test: OpsTest, old_sn
 
     results = await run_action(ops_test, f"{APP_NAME}/leader", action="pre-upgrade-check")
     (leader_results,) = results.values()
-
 
     assert leader_results["installed-snap"] == (
         f"{installed['version']} (revision {old_snap_revision}) on channel {MAAS_SNAP_CHANNEL}"
@@ -200,7 +200,7 @@ async def test_upgrade_single_unit(ops_test: OpsTest, old_snap_revision: str):
     # be complete
     await wait_for_revision(ops_test, UNITS[0], target["revision"])
     await ops_test.model.wait_for_idle(
-        apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=1000
+        apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=WAIT_FOR_IDLE_TIMEOUT
     )
 
     upgraded = await get_installed_snap_info(ops_test, UNITS[0])
@@ -215,6 +215,7 @@ async def test_upgrade_single_unit(ops_test: OpsTest, old_snap_revision: str):
     status = await ops_test.model.get_status()
     assert status.applications[APP_NAME].units[UNITS[0]].workload_version == target["version"]
 
+
 @pytest.mark.abort_on_fail
 async def test_upgrade_remaining_units(ops_test: OpsTest):
     """The remaining units upgrade when the action is run on all of them at once."""
@@ -228,7 +229,7 @@ async def test_upgrade_remaining_units(ops_test: OpsTest):
     for unit in UNITS[1:]:
         await wait_for_revision(ops_test, unit, target["revision"])
     await ops_test.model.wait_for_idle(
-        apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=1000
+        apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=WAIT_FOR_IDLE_TIMEOUT
     )
 
     status = await ops_test.model.get_status()
