@@ -188,13 +188,16 @@ class MaasHelper:
 
     @staticmethod
     def get_api_key(username: str) -> str:
-        """Get API key for a user.
+        """Get an API key for a user.
+
+        A user may have multiple API keys, all with equal permissions. `maas
+        apikey` prints one key per line, so return the first (oldest) one.
 
         Args:
             username (str): username
 
         Returns:
-            str: the API key
+            str: the API key, or an empty string if the user has none
 
         Raises:
             CalledProcessError: failed to fetch key
@@ -205,7 +208,8 @@ class MaasHelper:
             "--username",
             username,
         ]
-        return subprocess.check_output(cmd).decode()
+        keys = subprocess.check_output(cmd).decode().splitlines()
+        return keys[0] if keys else ""
 
     @staticmethod
     def setup_region(maas_url: str, dsn: str, mode: str) -> None:
@@ -246,11 +250,7 @@ class MaasHelper:
         Raises:
             CalledProcessError: failed to login
         """
-        apikey = (
-            subprocess.check_output(["/snap/bin/maas", "apikey", f"--username={admin_username}"])
-            .decode()
-            .replace("\n", "")
-        )
+        apikey = MaasHelper.get_api_key(admin_username)
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".pem", dir=str(MAAS_TMP)) as f:
             login_cmd = [
