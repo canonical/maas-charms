@@ -338,6 +338,18 @@ class TestHelperSetup(unittest.TestCase):
             ]
         )
 
+    @patch("helper.subprocess.check_output")
+    def test_get_api_key_returns_first_of_many(self, mock_run):
+        mock_run.return_value = b"first-key\nsecond-key\nthird-key\n"
+        key = MaasHelper.get_api_key("user")
+        self.assertEqual(key, "first-key")
+
+    @patch("helper.subprocess.check_output")
+    def test_get_api_key_no_keys(self, mock_run):
+        mock_run.return_value = b""
+        key = MaasHelper.get_api_key("user")
+        self.assertEqual(key, "")
+
     @patch("helper.subprocess.check_call")
     def test_msm_enroll(self, mock_run):
         token = "my-jwt-token"
