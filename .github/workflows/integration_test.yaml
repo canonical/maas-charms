@@ -8,7 +8,7 @@ on:
 
 jobs:
   integration-tests:
-    uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@4e1f0ab968d84de47fe6cf179d8fce7256f7494f # main as of 2026-07-01
+    uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@030c5b20a0bb880dcf1ed326bff0fc16b6eb6ac1 # main as of 2026-10-09
     permissions:
       contents: read
     secrets: inherit
