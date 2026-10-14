@@ -6,12 +6,14 @@
   "schedule": ["* 0-4 * * 1"],
   "ignoreDeps": [
     "canonical/operator-workflows",
-    "tj-actions/changed-files"
+    "tj-actions/changed-files",
+    "python"
   ],
   "packageRules": [
     {
       "groupName": "weekly dependencies",
-      "matchPackageNames": ["*"]
+      "matchPackageNames": ["*"],
+      "excludePackageNames": ["python"]
     }
   ]
 }
