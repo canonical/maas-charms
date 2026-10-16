@@ -8,7 +8,7 @@ on:
 
 jobs:
   quality-checks:
-    uses: canonical/operator-workflows/.github/workflows/test.yaml@030c5b20a0bb880dcf1ed326bff0fc16b6eb6ac1 # main as of 2026-10-09
+    uses: canonical/operator-workflows/.github/workflows/test.yaml@1305365b01750a3ab472fd285ec6e1902b5377bb # main as of 2026-10-16
     permissions:
       contents: read
       pull-requests: write
