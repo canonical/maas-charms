@@ -5,6 +5,9 @@ To make contributions to this charm, you'll need a working [development setup](h
 You'll need the following tools installed:
 - [uv](https://docs.astral.sh/uv/) - Python package manager
 - tox 4.16+ with `tox-uv` plugin (install via `uv tool install tox --with tox-uv`)
+- Python 3.14 headers and a C compiler, if developing on Ubuntu 26.04 (`sudo apt install python3.14-dev build-essential`) - to build dependencies from source
+- [charmcraft](https://canonical-charmcraft.readthedocs-hosted.com/) (`sudo snap install charmcraft --classic`) - builds the charm
+
 
 You can create an environment for development with `tox`:
 
