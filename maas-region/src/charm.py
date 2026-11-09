@@ -40,7 +40,7 @@ HAPROXY_TLS = "ingress-tcp-tls"
 HAPROXY_TEMPORAL = "ingress-tcp-temporal"
 HAPROXY_INTERNAL_HTTP_API = "ingress-tcp-internal-http-api"
 
-MAAS_SNAP_CHANNEL = "3.8/edge"
+MAAS_SNAP_CHANNEL = "3.8/stable"
 
 
 # Ubuntu bases each MAAS track's charm is published for. Must be updated when a new

@@ -33,11 +33,22 @@ ACTION_WAIT = "30m"
 # is required to run the integration tests on different architectures.
 DEFAULT_ARCH = "amd64"
 OLD_SNAP_REVISIONS = {
-    "amd64": "42437",
-    "arm64": "42438",
+    "amd64": "43385",
+    "arm64": "43386",
 }
-OLD_SNAP_VERSION = "3.8.0~beta5"
-MAAS_SNAP_CHANNEL = "3.8/edge"
+OLD_SNAP_VERSION = "3.8.0"
+MAAS_SNAP_CHANNEL = "3.8/stable"
+
+# TODO(3.8.1): re-enable this module. It rolls back to an older revision of the track to
+# exercise a point upgrade, but 3.8/stable currently has a single revision. The only
+# older revisions available (e.g. 3.8.0~beta5) originate from 3.8/edge, so the charm
+# reports the installed channel as 3.8/edge: the units block with "MAAS snap channel
+# does not match the charm channel" and pre-upgrade-check reports a channel change
+# rather than a point upgrade. Roll back to an older 3.8/stable revision and remove this
+# skip once one exists.
+pytestmark = pytest.mark.skip(
+    reason="No older 3.8/stable revision to roll back to until 3.8.1 is released"
+)
 
 
 @pytest.fixture(scope="module")
@@ -343,12 +354,12 @@ async def latest_in_store(ops_test: OpsTest, unit: str, channel: str) -> dict[st
     Args:
         ops_test (OpsTest): the test harness
         unit (str): the unit to query the store from, e.g. "maas-region/0"
-        channel (str): the snap channel, e.g. "3.8/edge"
+        channel (str): the snap channel, e.g. "3.8/stable"
 
     Returns:
         dict[str, str]: the channel's version and revision
     """
-    # e.g. "  3.8/edge:  3.8.0~beta6-18657-g.a90cdf264  2026-08-18 (42495) 269MB -"
+    # e.g. "  3.8/stable:       3.8.0-18720-g.445005fe4        2026-11-05 (43385) 273MB -"
     store_channel_re = re.compile(
         r"^\s*(?P<channel>\S+):\s+(?P<version>\S+)\s+\S+\s+\((?P<revision>\d+)\)"
     )
