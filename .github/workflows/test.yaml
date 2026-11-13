@@ -18,3 +18,4 @@ jobs:
       with-uv: true
       require-check-lib: false
       python-version: "3.14"
+      runs-on-base: ubuntu-26.04
