@@ -75,8 +75,8 @@ class TestHelperSnapCache(unittest.TestCase):
 
     @patch("helper.SnapCache", autospec=True)
     def test_get_installed_channel(self, mock_snap):
-        self._setup_snap(mock_snap, present=True, channel="3.8/edge")
-        self.assertEqual(MaasHelper.get_installed_channel(), "3.8/edge")
+        self._setup_snap(mock_snap, present=True, channel="3.8/stable")
+        self.assertEqual(MaasHelper.get_installed_channel(), "3.8/stable")
 
     @patch("helper.SnapCache", autospec=True)
     def test_is_running(self, mock_snap):
