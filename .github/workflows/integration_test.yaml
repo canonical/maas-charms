@@ -19,7 +19,5 @@ jobs:
       with-uv: true
       charmcraft-channel: latest/stable
       python-version: "3.14"
-      self-hosted-runner: true
-      self-hosted-runner-arch: x64
-      self-hosted-runner-label: self-hosted-linux-amd64-noble-large
-      builder-runner-label: self-hosted-linux-amd64-noble-medium
+      runs-on: ubuntu-26.04
+      builder-runner-label: ubuntu-26.04
