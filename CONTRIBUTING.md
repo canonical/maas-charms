@@ -2,7 +2,8 @@
 
 To make contributions to this charm, you'll need a working [development setup](https://juju.is/docs/sdk/dev-setup).
 
-You'll need the following tools installed:
+Run the following commands from the repository root. You'll need these tools installed:
+- Python 3.14
 - [uv](https://docs.astral.sh/uv/) - Python package manager
 - tox 4.16+ with `tox-uv` plugin (install via `uv tool install tox --with tox-uv`)
 - Python 3.14 headers and a C compiler, if developing on Ubuntu 26.04 (`sudo apt install python3.14-dev build-essential`) - to build dependencies from source
@@ -28,12 +29,15 @@ tox run -e static        # static type checking for the charm source
 tox run -e unit          # unit tests
 tox run -e scenario      # scenario tests
 tox run -e integration   # integration tests
-tox                      # runs 'format', 'lint', 'static', 'coverage-report', 'scenario', and 'integration' environments
+tox                      # runs 'format', 'lint', 'unit', 'static', 'coverage-report', and 'scenario'
 ```
+
+Integration tests require a Juju controller and LXD. They build and deploy the
+charm unless you supply a pre-built artifact with `--charm-file`.
 
 ## Build the charm
 
-Build the charm in this git repository using:
+Build the charm from the repository root using:
 
 ```shell
 charmcraft pack
@@ -47,7 +51,6 @@ During development, [jhack](https://github.com/canonical/jhack) is a useful tool
 
 - Sync your local charm code to all deployed units of the maas-region charm:
 ```shell 
-cd maas-region
 jhack sync maas-region
 ```
 - Show the contents of a specific relation:
@@ -70,4 +73,3 @@ charmcraft release maas-region --revision=$REVISION --channel latest/edge/$DEV_B
 ```
 Note that this will be deleted after 30 days, see [the docs](https://canonical.com/juju/docs/juju-cli/3.6/reference/charm/#branch).
 
-<!-- You may want to include any contribution/style guidelines in this document>

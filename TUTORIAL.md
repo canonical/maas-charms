@@ -7,7 +7,7 @@ Create some environment variables to facilitate this tutorial
 ```bash
 # LaunchPad ID
 export LP_ID="my-lp-id"
-export MAAS_REGION_CHARM=./maas-region/maas-region_ubuntu-24.04-amd64.charm
+export MAAS_REGION_CHARM=./maas-region_ubuntu@24.04-amd64.charm
 ```
 
 ## Install required packages

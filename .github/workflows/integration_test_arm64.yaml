@@ -13,7 +13,7 @@ jobs:
             contents: read
         secrets: inherit
         with:
-            working-directory: maas-region
+            working-directory: .
             provider: lxd
             juju-channel: 3.6/stable
             with-uv: true
