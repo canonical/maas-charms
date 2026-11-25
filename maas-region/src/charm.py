@@ -1094,7 +1094,12 @@ class MaasRegionCharm(ops.CharmBase):
             e.add_status(ops.WaitingStatus("Waiting for service ports"))
         elif not self.connection_string:
             e.add_status(ops.WaitingStatus("Waiting for database DSN"))
-        elif not self.maas_api_url:
+        elif (
+            # Initialization runs asynchronously via rolling ops, outside the hook that
+            # requested it, so the unit must not report active until it has completed.
+            self.rolling_ops_manager.is_waiting_callback("initialize")
+            or not MaasHelper.is_maas_initialized()
+        ):
             e.add_status(ops.WaitingStatus("Waiting for MAAS initialization"))
         elif not MaasHelper.is_running():
             e.add_status(ops.BlockedStatus("The MAAS snap service is not active"))

@@ -590,6 +590,49 @@ class TestClusterUpdates(unittest.TestCase):
         self.harness.evaluate_status()
         self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
 
+    @patch("charm.MaasHelper", autospec=True)
+    def test_status_waits_for_maas_initialization(self, mock_helper):
+        mock_helper.get_installed_channel.return_value = MAAS_SNAP_CHANNEL
+        mock_helper.is_maas_initialized.return_value = False
+        self.harness.set_leader(True)
+        self.harness.begin()
+        self.harness.charm._setup_network()
+        db_rel = self.harness.add_relation(MAAS_DB_NAME, "postgresql")
+        self.harness.update_relation_data(
+            db_rel,
+            "postgresql",
+            {
+                "endpoints": "30.0.0.1:5432",
+                "username": "test_maas_db",
+                "password": "my_secret",
+            },
+        )
+        waiting = ops.WaitingStatus("Waiting for MAAS initialization")
+
+        # The initialize operation is queued but the lock has not been executed yet.
+        self.harness.evaluate_status()
+        self.assertEqual(self.harness.model.unit.status, waiting)
+        mock_helper.setup_region.assert_not_called()
+
+        # Initialization failed, so the operation is re-queued for a retry.
+        mock_helper.setup_region.side_effect = subprocess.CalledProcessError(1, "maas")
+        self.harness.charm.on.rollingops_lock_granted.emit()
+        self.harness.evaluate_status()
+        self.assertEqual(self.harness.model.unit.status, waiting)
+
+        # The retry succeeds.
+        mock_helper.setup_region.side_effect = None
+        mock_helper.is_maas_initialized.return_value = True
+        self.harness.charm.on.rollingops_lock_granted.emit()
+        self.assertFalse(self.harness.charm.rolling_ops_manager.is_waiting_callback("initialize"))
+        self.harness.evaluate_status()
+        self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
+
+        # The operation is no longer queued, but MAAS reports it is not initialized.
+        mock_helper.is_maas_initialized.return_value = False
+        self.harness.evaluate_status()
+        self.assertEqual(self.harness.model.unit.status, waiting)
+
 
 class TestCharmActions(unittest.TestCase):
     def setUp(self):
