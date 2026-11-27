@@ -17,4 +17,4 @@ jobs:
       contents: write
     secrets: inherit
     with:
-      working-directory: maas-region
+      working-directory: .

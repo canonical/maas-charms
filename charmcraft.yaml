@@ -22,9 +22,9 @@ links:
   website:
     - https://charmhub.io/maas-region
   source:
-    - https://github.com/canonical/maas-charms/tree/main/maas-region
+    - https://github.com/canonical/maas-region-operator
   issues:
-    - https://github.com/canonical/maas-charms/issues
+    - https://github.com/canonical/maas-region-operator/issues
 
 platforms:
   ubuntu@26.04:amd64:

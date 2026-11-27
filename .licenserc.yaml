@@ -13,11 +13,13 @@ header:
       See LICENSE file for licensing details\.
 
   paths:
-    - 'maas-region/**'
+    - '**'
 
   paths-ignore:
     - '.git/**'
     - '.github/**'
+    - '.gitignore'
+    - 'renovate.json'
     - '**/.gitkeep'
     - '**/*.md'
     - '**/*.svg'
@@ -33,8 +35,8 @@ header:
     - '**/.mypy_cache/**'
     - '**/.pytest_cache/**'
     - '**/.ruff_cache/**'
-    - 'maas-region/lib/charms/**'
-    - 'maas-region/tox.ini'
+    - 'lib/charms/**'
+    - 'tox.ini'
     - '**/.licenserc.yaml'
 
   comment: on-failure

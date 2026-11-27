@@ -58,7 +58,7 @@ jobs:
       matrix:
         base-architecture: [amd64, arm64]
     with:
-      working-directory: maas-region
+      working-directory: .
       tag-prefix: maas-region
       base-name: ubuntu
       base-architecture: ${{ matrix.base-architecture }}
